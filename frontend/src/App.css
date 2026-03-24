@@ -1,0 +1,215 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #F5F5F5;
+}
+
+/* Ant Design overrides for compact density */
+.ant-table-small .ant-table-cell {
+  padding: 4px 8px !important;
+}
+
+.ant-pro-table .ant-pro-table-search {
+  padding: 16px;
+  margin-bottom: 0;
+}
+
+.ant-pro-table-toolbar {
+  padding: 8px 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Login page styles */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #F0F2F5;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.login-logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-logo h1 {
+  font-size: 36px;
+  font-weight: 700;
+  color: #0050B3;
+  margin: 0;
+  letter-spacing: -1px;
+}
+
+.login-logo p {
+  color: #8c8c8c;
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+/* Page header styles */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #D9D9D9;
+}
+
+.page-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1F1F1F;
+  margin: 0;
+}
+
+/* Week selector styles */
+.week-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.week-selector label {
+  font-size: 14px;
+  color: #595959;
+}
+
+/* Stats cards */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: #FAFAFA;
+  border: 1px solid #D9D9D9;
+  padding: 12px 16px;
+  text-align: center;
+}
+
+.stat-card .stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #0050B3;
+}
+
+.stat-card .stat-label {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-top: 4px;
+}
+
+/* Boolean tag styles */
+.tag-yes {
+  background-color: #F6FFED;
+  border-color: #B7EB8F;
+  color: #389E0D;
+}
+
+.tag-no {
+  background-color: #FFF1F0;
+  border-color: #FFA39E;
+  color: #CF1322;
+}
+
+/* Modal form styles */
+.form-section {
+  margin-bottom: 24px;
+}
+
+.form-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F1F1F;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 48px;
+  color: #8c8c8c;
+}
+
+/* Pro Table adjustments */
+.ant-pro-table {
+  background: white;
+}
+
+.ant-pro-table .ant-pro-table-list-toolbar {
+  padding: 0 0 8px 0;
+}
+
+/* Table row status colors */
+.row-status-new {
+  background-color: #E6F7FF !important;
+}
+
+.row-status-closed {
+  background-color: #F6FFED !important;
+}
+
+.row-status-hold {
+  background-color: #FFFBE6 !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .login-card {
+    margin: 16px;
+    padding: 24px;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

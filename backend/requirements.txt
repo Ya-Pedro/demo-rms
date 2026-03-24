@@ -1,0 +1,73 @@
+# ══════════════════════════════════════════════════════════════════
+#  RMS — Production зависимости
+#  Рекомендация 10: убраны неиспользуемые ML/cloud пакеты
+#  (google-genai, openai, litellm, boto3, huggingface, stripe,
+#   tensorflow, numpy, pillow, motor, pymongo — не используются в RMS)
+# ══════════════════════════════════════════════════════════════════
+
+# ── Web Framework ─────────────────────────────────────────────────
+fastapi==0.110.1
+uvicorn==0.25.0
+starlette==0.37.2
+python-multipart==0.0.22
+
+# ── Database ─────────────────────────────────────────────────────
+SQLAlchemy==2.0.46
+aiosqlite==0.22.1
+asyncpg==0.31.0
+greenlet==3.3.2
+
+# ── Migrations ───────────────────────────────────────────────────
+alembic==1.13.1
+# psycopg2-binary нужен Alembic для генерации SQL в offline-режиме
+# и для синхронных подключений при autogenerate.
+# binary-версия не требует компиляции (подходит для Docker).
+psycopg2-binary==2.9.9
+
+# ── Validation ───────────────────────────────────────────────────
+pydantic==2.12.5
+pydantic_core==2.41.5
+email-validator==2.3.0
+
+# ── 2FA (TOTP) ────────────────────────────────────────────────
+pyotp==2.9.0
+qrcode[svg]==7.4.2
+
+# ── Auth / Security ───────────────────────────────────────────────
+python-jose==3.5.0
+passlib==1.7.4
+bcrypt==3.2.2
+cryptography==46.0.5
+
+# ── Email ────────────────────────────────────────────────────────
+fastapi-mail==1.4.1
+aiohttp==3.13.3
+
+# ── Excel export ──────────────────────────────────────────────────
+pandas==3.0.1
+xlsxwriter==3.2.9
+openpyxl==3.1.5
+
+# ── HTTP client ───────────────────────────────────────────────────
+httpx==0.28.1
+
+# ── Config ────────────────────────────────────────────────────────
+python-dotenv==1.2.1
+
+# ── Rate Limiting ────────────────────────────────────────────────
+# slowapi — декораторный rate limiter для FastAPI поверх limits
+slowapi==0.1.9
+# limits — бэкенд для slowapi (Redis-стратегии: fixed window, sliding window)
+limits==3.13.0
+# redis — синхронный клиент (нужен для проверки ping при старте в limiter.py)
+redis==5.2.1
+
+# ── Russian Holidays (Рек. #4)
+holidays==0.62
+
+# ── Utils ─────────────────────────────────────────────────────────
+anyio==4.12.1
+python-dateutil==2.9.0.post0
+aiogram
+
+prometheus-fastapi-instrumentator==6.1.0

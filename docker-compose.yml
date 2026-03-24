@@ -1,0 +1,226 @@
+services:
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: rms_postgres
+    restart: always
+    env_file:
+      - ./backend/.env
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rms_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: rms_redis
+    restart: always
+    env_file:
+      - ./backend/.env
+    command: >
+      sh -c "
+        if [ -n \"$$REDIS_PASSWORD\" ]; then
+          redis-server --requirepass $$REDIS_PASSWORD --appendonly yes
+        else
+          redis-server --appendonly yes
+        fi
+      "
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a $$REDIS_PASSWORD ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - rms_network
+
+  backend:
+    build: ./backend
+    container_name: rms_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    environment:
+      - TZ=Europe/Moscow
+    expose:
+      - "8000"
+    networks:
+      - rms_network
+
+  bot:
+    build: ./backend
+    container_name: rms_bot
+    restart: always
+    command: python bot.py
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env
+    networks:
+      - rms_network
+
+  frontend:
+    build: ./frontend
+    container_name: rms_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    expose:
+      - "8080"
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - rms_network
+
+  db-backup:
+    build: ./backup
+    container_name: rms_db_backup
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./backup/.env
+    environment:
+      - DB_HOST=postgres
+      - TZ=Europe/Moscow
+    networks:
+      - rms_network
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: rms_prometheus
+    restart: always
+    expose:
+      - "9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    networks:
+      - rms_network
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: rms_grafana
+    restart: always
+    env_file:
+      - ./monitoring/.env
+    expose:
+      - "3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - rms_network
+
+  nginx-vts-exporter:
+    image: sophos/nginx-vts-exporter
+    container_name: rms_nginx_vts_exporter
+    restart: always
+    environment:
+      - NGINX_STATUS=http://frontend:8080/status/format/json
+    expose:
+      - "9913"
+    depends_on:
+      - frontend
+    networks:
+      - rms_network
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: rms_postgres_exporter
+    restart: always
+    expose:
+      - "9187"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rms_network
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.59.0
+    container_name: rms_redis_exporter
+    restart: always
+    expose:
+      - "9121"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - rms_network
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: rms_node_exporter
+    restart: always
+    pid: host
+    expose:
+      - "9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker)($$|/)"
+      - "--collector.filesystem.fs-types-exclude=^(tmpfs|overlay|aufs|nsfs)$$"
+    networks:
+      - rms_network
+ 
+  docker-exporter:
+    image: wywywywy/docker_stats_exporter:latest
+    container_name: rms_docker_exporter
+    restart: always
+    expose:
+      - "9487"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - rms_network
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  rms_network:
+    ipam:
+      config:
+        - subnet: 172.100.0.0/24

@@ -1,0 +1,56 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project: rms
+    environment: production
+
+scrape_configs:
+  - job_name: prometheus
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: rms_backend
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          service: backend
+
+  - job_name: rms_nginx
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["nginx-vts-exporter:9913"]
+        labels:
+          service: nginx
+
+  - job_name: rms_postgres
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  - job_name: rms_redis
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  - job_name: rms_node
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: node
+
+  - job_name: rms_docker_exporter
+    scrape_interval: 15s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["docker-exporter:9487"]
+        labels:
+          service: cadvisor

@@ -1,0 +1,135 @@
+/* VacancyTable.css */
+
+/* ======================================================================
+   STACKING CONTEXT — контейнер должен быть isolated, иначе sticky
+   ячейки не могут подняться над соседними колонками при скролле
+   ====================================================================== */
+.vacancy-table-container {
+  height: 100%;
+  /* НЕ задаём z-index здесь — это ломает stacking context для sticky */
+  position: relative;
+}
+
+/* ======================================================================
+   STICKY COLUMNS FIX
+   Ant Design рендерит закреплённые колонки через position:sticky + z-index.
+   Проблема «съезжания» возникает когда внешний CSS перезаписывает z-index
+   на all th/td, нивелируя sticky-логику библиотеки.
+   Решение: задаём z-index точечно только для sticky-ячеек.
+   ====================================================================== */
+
+/* Обычные заголовки — БЕЗ z-index, чтобы не конфликтовать со sticky */
+.vacancy-table-container .ant-table-thead > tr > th {
+  font-size: 12px !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  line-height: 1.2 !important;
+  padding: 8px 4px !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+  background: #FAFAFA !important;
+  height: 70px !important;
+  overflow: visible !important;
+}
+
+/* Sticky-заголовки (fixed left/right) — выше обычных заголовков */
+.vacancy-table-container .ant-table-thead > tr > th.ant-table-cell-fix-left,
+.vacancy-table-container .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  z-index: 4 !important;
+  background: #FAFAFA !important;
+}
+
+/* Sticky-ячейки тела — перекрывают обычные при горизонтальном скролле */
+.vacancy-table-container .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+.vacancy-table-container .ant-table-tbody > tr > td.ant-table-cell-fix-right {
+  z-index: 2 !important;
+  background: #fff !important;
+}
+
+/* Hover-состояние sticky-ячеек (дефолт — для строк без статус-класса) */
+.vacancy-table-container .ant-table-tbody > tr:not([class*="vt-row--"]):hover > td.ant-table-cell-fix-left,
+.vacancy-table-container .ant-table-tbody > tr:not([class*="vt-row--"]):hover > td.ant-table-cell-fix-right {
+  background: #fafafa !important;
+}
+
+/* Вся шапка поверх тела (но ниже dropdown-ов) */
+.vacancy-table-container .ant-table-header {
+  z-index: 3 !important;
+}
+
+/* ======================================================================
+   DROPDOWN / FILTER — рендерятся в body, должны быть выше всего
+   ====================================================================== */
+.ant-table-filter-dropdown,
+.ant-select-dropdown,
+.ant-dropdown,
+.ant-picker-dropdown {
+  z-index: 9999 !important;
+}
+
+.vacancy-table-container .ant-table-filter-trigger {
+  margin-left: 4px;
+  padding: 4px;
+}
+
+.vacancy-table-container .ant-table-filter-trigger-container {
+  position: static !important;
+}
+
+/* ======================================================================
+   COLUMN TITLE
+   ====================================================================== */
+.vacancy-table-container .ant-table-thead > tr > th .ant-table-column-title {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  line-height: 1.2 !important;
+  flex: 1;
+}
+
+/* ======================================================================
+   BODY & GENERAL
+   ====================================================================== */
+.vacancy-table-container .ant-table-tbody > tr > td {
+  padding: 4px 6px !important;
+  font-size: 12px !important;
+}
+
+.vacancy-table-container .ant-table-body {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+}
+
+.vacancy-table-container .ant-pro-table-list-toolbar {
+  padding: 8px 0 !important;
+}
+
+.vacancy-table-container .ant-checkbox-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+}
+
+.vacancy-table-container .ant-tag {
+  margin: 0 !important;
+  font-size: 11px !important;
+  line-height: 18px !important;
+  padding: 0 6px !important;
+}
+
+/* Номер строки */
+.vacancy-table-container .ant-table-tbody > tr > td:first-child {
+  background: #fafafa !important;
+  font-weight: 500 !important;
+}
+
+/* Modal */
+.ant-modal .ant-checkbox-wrapper span {
+  white-space: normal !important;
+  line-height: 1.2 !important;
+}
+
+/* Цвета строк по статусу — общий файл для VacancyTable и ReportsPage */
+@import './statusRows.css';
