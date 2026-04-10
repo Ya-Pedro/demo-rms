@@ -138,12 +138,11 @@ docker exec -it rms_backend python seed.py
 Для смены хранилища код менять не нужно. Достаточно обновить переменные в файле `.env`, отвечающем за бекапы, указав новые доступы к PROD-бакету:
 
 ```env
+# Доступы к БД остаются без изменений
 # Значения, которые нужно поменять в .env для продакшена:
-S3_ENDPOINT_URL=[https://s3.new-prod-storage.com](https://s3.new-prod-storage.com)  # URL нового S3 хранилища
-S3_BUCKET_NAME=rms-prod-backups                  # Название нового бакета
-S3_ACCESS_KEY=новый_access_key                   # Ключ доступа
-S3_SECRET_KEY=новый_secret_key                   # Секретный ключ
-S3_REGION=ru-central1                            # Регион (если применимо)
+S3_BUCKET_NAME=название_prod_бакета                   # Название нового бакета
+S3_ACCESS_KEY=новый_prod_access_key                   # Ключ доступа
+S3_SECRET_KEY=новый_prod_secret_key                   # Секретный ключ
 ```
 
 После изменения файла `.env` перезапустите контейнер бекапов для применения новых настроек:
