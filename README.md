@@ -1,167 +1,152 @@
-# RMS - Recruitment Management System
+# Recruitment Management System (RMS)
 
-Внутренняя HR система для управления вакансиями.
+Данный репозиторий содержит исходный код системы управления наймом (RMS). Проект состоит из бэкенда (Python/FastAPI), фронтенда (React), сервиса резервного копирования в S3 и стека мониторинга (Prometheus + Grafana).
 
-## Требования
+## 📂 Структура проекта
 
-- Docker (для PostgreSQL)
-- Python 3.11+
-- Node.js 18+
+Ниже представлено дерево файлов проекта с описанием назначения каждого компонента:
 
-## Быстрый старт
+```text
+demo-rms/
+├── docker-compose.yml         # Основной файл для управления всеми контейнерами проекта
+├── .gitignore                 # Исключения для Git
+├── backend/                   # Исходный код Python-бэкенда (FastAPI)
+│   ├── Dockerfile             # Сборка образа бэкенда
+│   ├── server.py              # Главная точка входа, инициализация FastAPI приложения
+│   ├── database.py            # Настройки подключения к PostgreSQL
+│   ├── models.py / schemas.py # Описание таблиц БД (SQLAlchemy) и валидация данных (Pydantic)
+│   ├── auth.py                # Логика авторизации и работы с JWT токенами
+│   ├── seed.py                # Скрипт для первичного заполнения БД (справочники)
+│   ├── create_superadmin.py   # Скрипт для создания первой учетной записи суперадмина
+│   ├── routers/               # Папка с API эндпоинтами (вакансии, отчеты, пользователи и т.д.)
+│   ├── services/              # Бизнес-логика системы (работа с вакансиями, делегирование)
+│   ├── jobs/                  # Фоновые задачи (например, еженедельные ролловеры)
+│   └── alembic/               # Инструмент для миграций структуры базы данных
+├── frontend/                  # Исходный код клиентской части (React)
+│   ├── Dockerfile             # Сборка образа фронтенда + статика отдается через Nginx
+│   ├── nginx.conf             # Настройки веб-сервера Nginx (роутинг, SSL, проксирование к API)
+│   ├── package.json / yarn.lock # Зависимости JS/React
+│   ├── src/                   # Компоненты UI, страницы, логика API запросов
+│   └── public/                # Статические файлы (index.html, иконки)
+├── monitoring/                # Настройки стека мониторинга
+│   ├── prometheus/            # Конфигурация Prometheus (сбор метрик)
+│   ├── grafana/               # Настройки Grafana (источники данных и готовые дашборды)
+│   └── download_dashboards.sh # Утилита для загрузки внешних дашбордов
+└── backup/                    # Сервис резервного копирования
+    ├── backup.sh              # Скрипт создания дампа PostgreSQL и отправки его в S3
+    ├── entrypoint.sh          # Точка входа для cron-демона в контейнере
+    └── Dockerfile             # Сборка образа для бэкап-контейнера
+```
 
-### 1. Запуск PostgreSQL
+---
+
+## 🚀 Инструкция по развертыванию
+
+### 1. Подготовка сервера
+
+**Установка Docker** Установите Docker на ваш сервер командой:
+```bash
+curl -fsSL [https://get.docker.com](https://get.docker.com) | sh
+```
+
+**Настройка Firewall (UFW)** В целях безопасности необходимо оставить открытыми только нужные порты. Все остальные порты должны быть закрыты. Выполните следующие команды (замените `ВАШ_IP` на ваш реальный IP-адрес для SSH):
 
 ```bash
-cd /app
-docker-compose up -d
+# Установка UFW (если не установлен)
+apt update && apt install ufw -y
+
+# Сброс правил (по умолчанию всё входящее запрещено)
+ufw default deny incoming
+ufw default allow outgoing
+
+# Разрешить SSH только с вашего IP (порт 22 / TCP)
+ufw allow from ВАШ_IP to any port 22 proto tcp
+
+# Разрешить HTTP и HTTPS для всех (80, 443 / TCP)
+ufw allow 80/tcp
+ufw allow 443/tcp
+
+# Включение Firewall
+ufw enable
 ```
 
-PostgreSQL будет доступен на `localhost:5432`:
-- User: `postgres`
-- Password: `postgres`
-- Database: `rms_db`
+| Порт | Протокол | Откуда         | Назначение                               |
+|------|----------|----------------|------------------------------------------|
+| 22   | TCP      | Только ваш IP  | SSH                                      |
+| 80   | TCP      | 0.0.0.0/0      | HTTP → редирект на HTTPS                 |
+| 443  | TCP      | 0.0.0.0/0      | HTTPS (приложение + Grafana)             |
 
-### 2. Запуск Backend
-
+**Получение SSL-сертификатов** Убедитесь, что порты 80 и 443 свободны. Получите сертификаты:
 ```bash
-cd /app/backend
-
-# Создание виртуального окружения (опционально)
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# или venv\Scripts\activate  # Windows
-
-# Установка зависимостей
-pip install -r requirements.txt
-
-# Инициализация базы данных и создание тестовых данных
-python seed.py
-
-# Запуск сервера
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
+apt install certbot -y
+certbot certonly --standalone -d rms.ittori.ru -d grafana.rms.ittori.ru
 ```
 
-Backend будет доступен на `http://localhost:8001`
-API документация: `http://localhost:8001/docs`
+### 2. Настройка окружения и запуск
 
-### 3. Запуск Frontend
-
+Перейдите в директорию `/opt`, склонируйте проект:
 ```bash
-cd /app/frontend
-
-# Установка зависимостей
-yarn install
-
-# Запуск dev сервера
-yarn start
+cd /opt
+git clone [https://github.com/Ya-Pedro/demo-rms](https://github.com/Ya-Pedro/demo-rms) rms
+cd rms
 ```
 
-Frontend будет доступен на `http://localhost:3000`
+**Добавление файлов `.env`** > ⚠️ **Важно:** Добавьте конфигурационные файлы `.env` в соответствующие папки (например, `/opt/rms/backend/.env`). Данные файлы переданы отдельно (в Telegram Melkor).
 
-## Учетные данные для входа
-
-После запуска `seed.py` в консоли будут выведены учетные данные:
-
-```
-[MOCK EMAIL] Администратор создан
-Login: admin@rms-system.ru
-Pass: admin123
+**Автоматическое обновление сертификатов** Добавьте задачу в cron для автоматического продления сертификатов каждые 2 месяца и перезапуска Nginx:
+```bash
+echo "0 3 1 */2 * certbot renew --quiet && docker compose -f /opt/rms/docker-compose.yml restart frontend" | crontab -
 ```
 
-Также будут созданы рекрутеры:
-- recruiter1@rms-system.ru / recruiter1
-- recruiter2@rms-system.ru / recruiter2
-- recruiter3@rms-system.ru / recruiter3
-
-## Структура проекта
-
-```
-/app/
-├── docker-compose.yml    # PostgreSQL конфигурация
-├── backend/
-│   ├── server.py         # Главный FastAPI приложение
-│   ├── database.py       # Подключение к PostgreSQL
-│   ├── models.py         # SQLAlchemy модели
-│   ├── schemas.py        # Pydantic схемы
-│   ├── auth.py           # JWT аутентификация
-│   ├── seed.py           # Скрипт инициализации данных
-│   ├── requirements.txt  # Python зависимости
-│   └── routers/
-│       ├── auth_router.py
-│       ├── users_router.py
-│       ├── dictionaries_router.py
-│       ├── vacancies_router.py
-│       ├── weekly_reports_router.py
-│       └── export_router.py
-└── frontend/
-    ├── package.json
-    └── src/
-        ├── App.js        # Главный компонент с роутингом
-        ├── App.css       # Стили
-        └── pages/
-            ├── LoginPage.js
-            ├── DashboardPage.js    # Главная таблица вакансий
-            ├── DictionaryPage.js   # Управление справочниками
-            └── UsersPage.js        # Управление пользователями
+**Запуск проекта** Запустите систему в фоновом режиме:
+```bash
+docker compose up -d
 ```
 
-## API Endpoints
+---
 
-### Аутентификация
-- `POST /api/auth/login` - Вход в систему
-- `GET /api/auth/me` - Текущий пользователь
+## 🛠 Инициализация данных
 
-### Пользователи (admin/superadmin)
-- `GET /api/users` - Список пользователей
-- `POST /api/users` - Создать пользователя (пароль генерируется автоматически)
-- `PATCH /api/users/{id}` - Обновить пользователя
-- `DELETE /api/users/{id}` - Деактивировать пользователя
-
-### Справочники
-- `GET /api/dictionaries` - Список элементов справочника
-- `GET /api/dictionaries/types` - Типы справочников
-- `GET /api/dictionaries/by-type/{type}` - Элементы по типу
-- `POST /api/dictionaries` - Создать элемент
-- `PATCH /api/dictionaries/{id}` - Обновить элемент
-- `DELETE /api/dictionaries/{id}` - Деактивировать элемент
-
-### Вакансии
-- `GET /api/vacancies` - Список вакансий (с фильтрами и недельными данными)
-- `GET /api/vacancies/{id}` - Получить вакансию
-- `POST /api/vacancies` - Создать вакансию
-- `PATCH /api/vacancies/{id}` - Обновить вакансию
-- `DELETE /api/vacancies/{id}` - Удалить вакансию
-
-### Еженедельные отчеты
-- `GET /api/weekly-reports/weeks` - Доступные недели
-- `GET /api/weekly-reports` - Список отчетов
-- `POST /api/weekly-reports` - Создать отчет
-- `PATCH /api/weekly-reports/{id}` - Обновить отчет
-
-### Экспорт
-- `GET /api/export/vacancies` - Экспорт в Excel (.xlsx)
-
-## Тестовые данные
-
-Скрипт `seed.py` создает:
-- 1 суперадминистратора
-- 3 рекрутера
-- Все типы справочников с примерами
-- 25 вакансий с рандомными данными
-- Еженедельные отчеты для недель W40-W52 (2024) и W1-W10 (2025)
-
-## Переменные окружения
-
-### Backend (.env)
+После успешного старта контейнеров заполните базу данных справочниками:
+```bash
+docker exec -it rms_backend python seed.py
 ```
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/rms_db
-SECRET_KEY=your-secret-key
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+*Примечание:* Создание профилей рекрутеров выполняется позже через графический интерфейс системы под учетной записью суперадмина.
+
+---
+
+## 📊 Мониторинг (Grafana + Prometheus)
+
+Мониторинг выделен в отдельный профиль `monitoring` для экономии ресурсов, когда он не используется.
+
+* **Включить мониторинг:**
+  ```bash
+  docker compose --profile monitoring up -d
+  ```
+* **Выключить мониторинг:**
+  ```bash
+  docker compose --profile monitoring down
+  ```
+
+---
+
+## 💾 Резервное копирование (Backups) и смена S3 хранилища
+
+Система резервного копирования отправляет дампы БД в S3. По умолчанию настроено личное S3 хранилище.
+
+**Как переключить на PROD хранилище:**
+Для смены хранилища код менять не нужно. Достаточно обновить переменные в файле `.env`, отвечающем за бекапы, указав новые доступы к PROD-бакету:
+
+```env
+# Значения, которые нужно поменять в .env для продакшена:
+S3_ENDPOINT_URL=[https://s3.new-prod-storage.com](https://s3.new-prod-storage.com)  # URL нового S3 хранилища
+S3_BUCKET_NAME=rms-prod-backups                  # Название нового бакета
+S3_ACCESS_KEY=новый_access_key                   # Ключ доступа
+S3_SECRET_KEY=новый_secret_key                   # Секретный ключ
+S3_REGION=ru-central1                            # Регион (если применимо)
 ```
 
-### Frontend (.env)
+После изменения файла `.env` перезапустите контейнер бекапов для применения новых настроек:
+```bash
+docker compose restart backup
 ```
-REACT_APP_BACKEND_URL=http://localhost:8001
-```
-# job_reg

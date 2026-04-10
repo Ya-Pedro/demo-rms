@@ -106,10 +106,15 @@ services:
     networks:
       - rms_network
 
+  # МОНИТОРИНГ (отключён по умолчанию)
+  # Чтобы запустить: docker compose --profile monitoring up -d
+  # Чтобы остановить: docker compose --profile monitoring down
+
   prometheus:
     image: prom/prometheus:v2.51.2
     container_name: rms_prometheus
     restart: always
+    profiles: ["monitoring"]
     expose:
       - "9090"
     volumes:
@@ -129,6 +134,7 @@ services:
     image: grafana/grafana:10.4.2
     container_name: rms_grafana
     restart: always
+    profiles: ["monitoring"]
     env_file:
       - ./monitoring/.env
     expose:
@@ -145,6 +151,7 @@ services:
     image: sophos/nginx-vts-exporter
     container_name: rms_nginx_vts_exporter
     restart: always
+    profiles: ["monitoring"]
     environment:
       - NGINX_STATUS=http://frontend:8080/status/format/json
     expose:
@@ -158,6 +165,7 @@ services:
     image: prometheuscommunity/postgres-exporter:v0.15.0
     container_name: rms_postgres_exporter
     restart: always
+    profiles: ["monitoring"]
     expose:
       - "9187"
     env_file:
@@ -172,6 +180,7 @@ services:
     image: oliver006/redis_exporter:v1.59.0
     container_name: rms_redis_exporter
     restart: always
+    profiles: ["monitoring"]
     expose:
       - "9121"
     env_file:
@@ -186,6 +195,7 @@ services:
     image: prom/node-exporter:v1.8.1
     container_name: rms_node_exporter
     restart: always
+    profiles: ["monitoring"]
     pid: host
     expose:
       - "9100"
@@ -201,11 +211,12 @@ services:
       - "--collector.filesystem.fs-types-exclude=^(tmpfs|overlay|aufs|nsfs)$$"
     networks:
       - rms_network
- 
+
   docker-exporter:
     image: wywywywy/docker_stats_exporter:latest
     container_name: rms_docker_exporter
     restart: always
+    profiles: ["monitoring"]
     expose:
       - "9487"
     volumes:
