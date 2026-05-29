@@ -1,0 +1,153 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: image-registry.openshift-image-registry.svc:5000/demo-rms/backend:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: rms-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: postgres-password
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: redis-password
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: secret-key
+            - name: BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: bot-token
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: smtp-password
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://postgres:$(POSTGRES_PASSWORD)@postgres:5432/rms_db"
+            - name: DATA_SOURCE_NAME
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@postgres:5432/rms_db?sslmode=disable"
+            - name: REDIS_ADDR
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@redis:6379/0"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: backend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telegram-bot
+  labels:
+    app: telegram-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegram-bot
+  template:
+    metadata:
+      labels:
+        app: telegram-bot
+    spec:
+      containers:
+        - name: telegram-bot
+          image: image-registry.openshift-image-registry.svc:5000/demo-rms/backend:latest
+          command: ["python", "bot.py"]
+          envFrom:
+            - configMapRef:
+                name: rms-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: postgres-password
+            - name: BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: bot-token
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: secret-key
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://postgres:$(POSTGRES_PASSWORD)@postgres:5432/rms_db"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-backup
+  labels:
+    app: db-backup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-backup
+  template:
+    metadata:
+      labels:
+        app: db-backup
+    spec:
+      containers:
+        - name: db-backup
+          image: image-registry.openshift-image-registry.svc:5000/demo-rms/db-backup:latest
+          envFrom:
+            - configMapRef:
+                name: rms-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: postgres-password
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: s3-access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rms-secrets
+                  key: s3-secret-key
+            - name: DB_HOST
+              value: "postgres"

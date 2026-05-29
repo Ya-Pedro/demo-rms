@@ -1,51 +1,52 @@
-\
-\
-\
-\
-\
-   
+"""initial_schema — все таблицы RMS
+
+Revision ID: 0001_initial
+Revises: 
+Create Date: 2026-03-01
+"""
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 
-                      
+# revision identifiers
 revision: str = "0001_initial"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+
 def upgrade() -> None:
-                                  
+    """Создаём все таблицы RMS."""
     bind = op.get_bind()
     is_postgres = bind.dialect.name == "postgresql"
 
-                                      
+    # 1. Создаем ENUM типы (безопасно)
     if is_postgres:
-        op.execute(\
-\
-\
-\
-\
-\
-\
-\
-           )
-        op.execute(\
-\
-\
-\
-\
-\
-\
-\
-\
-\
-\
-\
-           )
+        op.execute("""
+            DO $$
+            BEGIN
+                CREATE TYPE userrole AS ENUM ('SUPERADMIN', 'ADMIN', 'RECRUITER');
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END
+            $$;
+        """)
+        op.execute("""
+            DO $$
+            BEGIN
+                CREATE TYPE dictionarytype AS ENUM (
+                    'specialist_level', 'vacancy_status', 'it_role', 'project',
+                    'source', 'employment_type', 'replacement_type', 'feasibility',
+                    'block', 'admin_manager', 'team_lead', 'internal_transfer', 'city'
+                );
+            EXCEPTION WHEN duplicate_object THEN
+                NULL;
+            END
+            $$;
+        """)
 
-                       
+    # 2. Таблица: users
     op.create_table(
         "users",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -54,7 +55,7 @@ def upgrade() -> None:
         sa.Column("full_name", sa.String(255), nullable=False),
         sa.Column(
             "role",
-                                                                                                   
+            # Создаем как String БЕЗ server_default, чтобы избежать конфликта типов при конвертации
             sa.String(50) if is_postgres else sa.Enum("superadmin", "admin", "recruiter", name="userrole"),
             nullable=False,
         ),
@@ -67,12 +68,12 @@ def upgrade() -> None:
     op.create_index("ix_users_id", "users", ["id"], unique=False)
     op.create_index("ix_users_email", "users", ["email"], unique=True)
 
-                                                           
+    # Меняем тип role на ENUM и ТОЛЬКО ПОТОМ ставим default
     if is_postgres:
         op.execute("ALTER TABLE users ALTER COLUMN role TYPE userrole USING role::userrole")
         op.execute("ALTER TABLE users ALTER COLUMN role SET DEFAULT 'recruiter'::userrole")
 
-                              
+    # 3. Таблица: dictionaries
     op.create_table(
         "dictionaries",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -95,7 +96,7 @@ def upgrade() -> None:
     if is_postgres:
         op.execute("ALTER TABLE dictionaries ALTER COLUMN type TYPE dictionarytype USING type::dictionarytype")
 
-                           
+    # 4. Таблица: vacancies
     op.create_table(
         "vacancies",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -158,7 +159,7 @@ def upgrade() -> None:
     op.create_index("ix_vacancies_id", "vacancies", ["id"], unique=False)
     op.create_index("ix_vacancies_vacancy_id", "vacancies", ["vacancy_id"], unique=False)
 
-                                
+    # 5. Таблица: weekly_reports
     op.create_table(
         "weekly_reports",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -179,8 +180,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_weekly_reports_id", "weekly_reports", ["id"], unique=False)
 
+
 def downgrade() -> None:
-                                                 
+    """Удаляем все таблицы в обратном порядке."""
     op.drop_table("weekly_reports")
     op.drop_table("vacancies")
     op.drop_table("dictionaries")

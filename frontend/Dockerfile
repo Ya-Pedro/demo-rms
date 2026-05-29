@@ -6,7 +6,6 @@ COPY . .
 RUN yarn build
 
 FROM alpine:3.19 AS nginx_build
-
 ENV NGINX_VERSION=1.25.4
 ENV VTS_VERSION=0.2.2
 
@@ -31,7 +30,7 @@ RUN cd "nginx-${NGINX_VERSION}" && \
         --conf-path=/etc/nginx/nginx.conf \
         --error-log-path=/var/log/nginx/error.log \
         --http-log-path=/var/log/nginx/access.log \
-        --pid-path=/var/run/nginx.pid \
+        --pid-path=/tmp/nginx.pid \
         --with-http_ssl_module \
         --with-http_v2_module \
         --with-http_realip_module \
@@ -43,7 +42,6 @@ RUN cd "nginx-${NGINX_VERSION}" && \
     && make install
 
 FROM alpine:3.19
-
 RUN apk add --no-cache pcre openssl zlib
 
 COPY --from=nginx_build /usr/sbin/nginx /usr/sbin/nginx
@@ -52,10 +50,13 @@ COPY --from=nginx_build /usr/lib/nginx/modules /usr/lib/nginx/modules
 
 RUN mkdir -p /var/cache/nginx /usr/share/nginx/html /etc/nginx/conf.d /var/log/nginx && \
     ln -sf /dev/stdout /var/log/nginx/access.log && \
-    ln -sf /dev/stderr /var/log/nginx/error.log
+    ln -sf /dev/stderr /var/log/nginx/error.log && \
+    chown -R 1001:0 /var/cache/nginx /var/log/nginx /etc/nginx /usr/share/nginx/html && \
+    chmod -R g=u /var/cache/nginx /var/log/nginx /etc/nginx /usr/share/nginx/html
 
 RUN printf '\
 load_module /usr/lib/nginx/modules/ngx_http_vhost_traffic_status_module.so;\n\
+pid /tmp/nginx.pid;\n\
 \n\
 events {\n\
     worker_connections 1024;\n\
@@ -73,17 +74,10 @@ http {\n\
 }\n' > /etc/nginx/nginx.conf
 
 COPY --from=build /app/build /usr/share/nginx/html
-
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80 443
+EXPOSE 8080
 
-CMD sh -c "\
-    if [ ! -f /etc/letsencrypt/live/rms.ittori.ru/fullchain.pem ]; then \
-        echo 'Local dev mode: Generating dummy SSL certs...'; \
-        mkdir -p /etc/letsencrypt/live/rms.ittori.ru /etc/letsencrypt/live/grafana.rms.ittori.ru; \
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/letsencrypt/live/rms.ittori.ru/privkey.pem -out /etc/letsencrypt/live/rms.ittori.ru/fullchain.pem -subj '/CN=localhost'; \
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/letsencrypt/live/grafana.rms.ittori.ru/privkey.pem -out /etc/letsencrypt/live/grafana.rms.ittori.ru/fullchain.pem -subj '/CN=grafana.localhost'; \
-    fi; \
-    nginx -g 'daemon off;' \
-"
+USER 1001
+
+CMD ["nginx", "-g", "daemon off;"]

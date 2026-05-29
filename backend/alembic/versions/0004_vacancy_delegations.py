@@ -1,9 +1,9 @@
-\
-\
-\
-\
-\
-   
+"""Add vacancy_delegations table
+
+Revision ID: 0004_vacancy_delegations
+Revises: 0003_add_2fa_fields
+Create Date: 2026-03-10
+"""
 from alembic import op
 import sqlalchemy as sa
 
@@ -11,6 +11,7 @@ revision = '0004_vacancy_delegations'
 down_revision = '0003'
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     op.create_table(
@@ -29,6 +30,7 @@ def upgrade() -> None:
         'vacancy_delegations',
         ['vacancy_id', 'delegated_to_id', 'is_active'],
     )
+
 
 def downgrade() -> None:
     op.drop_index('ix_vacancy_delegations_active', table_name='vacancy_delegations')

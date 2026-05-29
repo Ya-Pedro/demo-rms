@@ -1,4 +1,22 @@
-
+/**
+ * VacancyTable.js — оптимизированная версия v2 (патч 3 багов)
+ *
+ * ─── ИСПРАВЛЕНИЯ ОТНОСИТЕЛЬНО ОПТИМИЗИРОВАННОЙ ВЕРСИИ ────────────────────────
+ *
+ * БАГ 1 (columns useMemo): hideInSetting-колонки (№, Действия) не входили
+ *   в columnOrder → при непустом columnOrder попадали в fallback-хвост → теряли
+ *   позицию (больше не первые) и fixed:'left'.
+ *   FIX: hideInSetting-колонки всегда вставляются ПЕРВЫМИ, до обхода columnOrder.
+ *
+ * БАГ 2 (openColumnSettings): читал fixed из rawColumns (не обновляется при
+ *   изменении настроек) → шестерёнка показывала устаревший fixed, при повторном
+ *   применении закрепление сбрасывалось.
+ *   FIX: читаем из columns (уже с применёнными настройками).
+ *
+ * БАГ 3 (rawColumns useMemo deps): curPage и pageSize используются в рендере
+ *   ячейки №, но отсутствовали в deps → нумерация не обновлялась при смене страницы.
+ *   FIX: добавлены в deps.
+ */
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import RecruiterTour from '../components/RecruiterTour';
@@ -40,11 +58,13 @@ const saveTableSettings = (uid, settings) => {
 
 const getPopupContainer = () => document.body;
 
+// Маппинг статуса вакансии → CSS-класс строки таблицы.
+// Цвета применяются ко всей строке <tr> через rowClassName.
 const STATUS_ROW_CLASS = {
   'Открыта':                  'vt-row--open',
   'Согласование фин условий': 'vt-row--beige',
   'Проверка СБ':              'vt-row--beige',
-  'Проверка сб':              'vt-row--beige',
+  'Проверка сб':              'vt-row--beige', // fallback на случай разного регистра
   'Оффер':                    'vt-row--light-green',
   'Подготовка документов':    'vt-row--light-green',
   'Выход':                    'vt-row--light-green',
@@ -134,6 +154,7 @@ const NUMBER_FILTER_KEYS = new Set([
 
 const PIN_LABEL = { left: 'Слева', right: 'Справа', none: 'Нет' };
 const PIN_COLOR = { left: '#1890FF', right: '#FA8C16', none: undefined };
+
 
 const ColumnSettingsModal = React.memo(({ visible, onClose, onApply, localOrder, setLocalOrder }) => {
   const moveUp = useCallback((idx) => {
@@ -230,6 +251,7 @@ const ColumnSettingsModal = React.memo(({ visible, onClose, onApply, localOrder,
   );
 });
 
+
 const VacancyTable = ({
   actionRef,
   tableKey,
@@ -249,6 +271,7 @@ const VacancyTable = ({
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdmin      = user?.role === 'admin' || user?.role === 'superadmin';
 
+  // Делегирование вакансий
   const [delegationModal, setDelegationModal] = useState({ open: false, vacancy: null });
   const openDelegationModal = useCallback((record) => setDelegationModal({ open: true, vacancy: record }), []);
   const closeDelegationModal = useCallback(() => setDelegationModal({ open: false, vacancy: null }), []);
@@ -258,6 +281,9 @@ const VacancyTable = ({
   const [loading,      setLoading]      = useState(false);
   const [curPage,      setCurPage]      = useState(1);
 
+  // Lazy initial state — читаем localStorage синхронно при первом рендере.
+  // Устраняет «прыжок»: таблица сразу стартует с сохранёнными настройками
+  // и делает только один правильный запрос, а не два (дефолт → сохранённый).
   const [pageSize, setPageSize] = useState(() => {
     const saved = loadTableSettings(userId);
     return saved?.pageSize || DEFAULT_PAGE_SIZE;
@@ -277,6 +303,8 @@ const VacancyTable = ({
 
   const [filteredInfo, setFilteredInfo] = useState({});
 
+  // Инициализируем ref тем же значением, что и sortedInfo,
+  // чтобы первый fetchData сразу получил правильную сортировку.
   const sortedInfoRef = useRef((() => {
     const saved = loadTableSettings(userId);
     return saved?.sortedInfo || {};
@@ -373,7 +401,7 @@ const VacancyTable = ({
 
   useEffect(() => {
     fetchData();
-  }, [tableKey]);
+  }, [tableKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (actionRef && typeof actionRef === 'object') {
@@ -446,6 +474,7 @@ const VacancyTable = ({
     }
   }, [importFile, fetchData]);
 
+  // [БАГ 3 FIX] curPage и pageSize добавлены в deps
   const rawColumns = useMemo(() => {
     const dictFilter = (items) => ({
       filters: (items || []).map(d => ({ text: d.value, value: d.id })),
@@ -691,13 +720,14 @@ const VacancyTable = ({
         title: WH('Зарплата кандидатов Gross'), dataIndex: 'salary_gross', key: 'salary_gross', width: 140, align: 'center',
         render: (v) => v != null ? Number(v).toLocaleString('ru-RU') : '-',
         sorter: true, sortOrder: si.columnKey === 'salary_gross' ? si.order : null,
-
+        //filteredValue: fi.salary_gross || null,
+        //...TEXT_FILTER_DROPDOWN,
       },
     ];
   }, [
     filteredInfo, sortedInfo, dictionaries, users,
     onReportClick, onEdit, onDelete, isAdmin,
-    curPage, pageSize, openDelegationModal, openHistoryDrawer,
+    curPage, pageSize, openDelegationModal, openHistoryDrawer, // [БАГ 3 FIX]
   ]);
 
   const rawColMap = useMemo(() => {
@@ -706,6 +736,9 @@ const VacancyTable = ({
     return m;
   }, [rawColumns]);
 
+  // [БАГ 1 FIX] hideInSetting-колонки (№, Действия) всегда идут ПЕРВЫМИ.
+  // Раньше при непустом columnOrder они попадали в fallback-хвост и теряли
+  // позицию и fixed:'left', так как не входят в columnOrder.
   const columns = useMemo(() => {
     const pinned   = rawColumns.filter(c => c.hideInSetting);
     const settable = rawColumns.filter(c => !c.hideInSetting);
@@ -737,6 +770,9 @@ const VacancyTable = ({
     return [...pinned, ...ordered];
   }, [rawColumns, rawColMap, columnOrder, columnsStateMap]);
 
+  // [БАГ 2 FIX] Читаем fixed из `columns`, а не из `rawColumns`.
+  // rawColumns содержит исходный fixed из пропсов и не обновляется при
+  // изменении настроек. columns уже содержит applied fixed из columnOrder.
   const openColumnSettings = useCallback(() => {
     const settable = columns.filter(c => !c.hideInSetting && c.key);
     setColModalLocalOrder(settable.map(col => {
@@ -753,7 +789,7 @@ const VacancyTable = ({
       };
     }));
     setColModalVisible(true);
-  }, [columns, columnsStateMap]);
+  }, [columns, columnsStateMap]); // зависит от columns, не rawColumns
 
   const applyColumnSettings = useCallback(() => {
     const newState = {};

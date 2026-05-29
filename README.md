@@ -1,151 +1,133 @@
-# Recruitment Management System (RMS)
+# RMS — Recruitment Management System
+### Инструкция по развёртыванию в OpenShift Local (CRC)
 
-Данный репозиторий содержит исходный код системы управления наймом (RMS). Проект состоит из бэкенда (Python/FastAPI), фронтенда (React), сервиса резервного копирования в S3 и стека мониторинга (Prometheus + Grafana).
+Репозиторий содержит полный стек Recruitment Management System, адаптированный под политику безопасности **SCC Restricted**: все контейнеры запускаются от non-root пользователей на непривилегированных портах.
 
-## 📂 Структура проекта
+---
 
-Ниже представлено дерево файлов проекта с описанием назначения каждого компонента:
+## Требования
 
-```text
-demo-rms/
-├── docker-compose.yml         # Основной файл для управления всеми контейнерами проекта
-├── .gitignore                 # Исключения для Git
-├── backend/                   # Исходный код Python-бэкенда (FastAPI)
-│   ├── Dockerfile             # Сборка образа бэкенда
-│   ├── server.py              # Главная точка входа, инициализация FastAPI приложения
-│   ├── database.py            # Настройки подключения к PostgreSQL
-│   ├── models.py / schemas.py # Описание таблиц БД (SQLAlchemy) и валидация данных (Pydantic)
-│   ├── auth.py                # Логика авторизации и работы с JWT токенами
-│   ├── seed.py                # Скрипт для первичного заполнения БД (справочники)
-│   ├── create_superadmin.py   # Скрипт для создания первой учетной записи суперадмина
-│   ├── routers/               # Папка с API эндпоинтами (вакансии, отчеты, пользователи и т.д.)
-│   ├── services/              # Бизнес-логика системы (работа с вакансиями, делегирование)
-│   ├── jobs/                  # Фоновые задачи (например, еженедельные ролловеры)
-│   └── alembic/               # Инструмент для миграций структуры базы данных
-├── frontend/                  # Исходный код клиентской части (React)
-│   ├── Dockerfile             # Сборка образа фронтенда + статика отдается через Nginx
-│   ├── nginx.conf             # Настройки веб-сервера Nginx (роутинг, SSL, проксирование к API)
-│   ├── package.json / yarn.lock # Зависимости JS/React
-│   ├── src/                   # Компоненты UI, страницы, логика API запросов
-│   └── public/                # Статические файлы (index.html, иконки)
-├── monitoring/                # Настройки стека мониторинга
-│   ├── prometheus/            # Конфигурация Prometheus (сбор метрик)
-│   ├── grafana/               # Настройки Grafana (источники данных и готовые дашборды)
-│   └── download_dashboards.sh # Утилита для загрузки внешних дашбордов
-└── backup/                    # Сервис резервного копирования
-    ├── backup.sh              # Скрипт создания дампа PostgreSQL и отправки его в S3
-    ├── entrypoint.sh          # Точка входа для cron-демона в контейнере
-    └── Dockerfile             # Сборка образа для бэкап-контейнера
+- OpenShift Local (CRC) — запущен и авторизован (`crc start`, `oc login`)
+- Docker или Podman
+- Утилита `oc` в `$PATH`
+- Проект `demo-rms` создан в кластере: `oc new-project demo-rms`
+
+---
+
+## Шаг 1 — Сборка и публикация образов
+
+> **Важно:** Сборку необходимо выполнять с флагом `--provenance=false`. Без него BuildKit добавляет аттестации происхождения, которые реестр OpenShift не может разобрать и возвращает ошибку 500.
+
+Выполните из корня репозитория:
+
+```bash
+# Адрес внутреннего реестра кластера
+REGISTRY=$(oc registry info)
+
+# Бэкенд
+docker build --provenance=false -t backend:latest ./backend
+docker tag backend:latest $REGISTRY/demo-rms/backend:latest
+docker push $REGISTRY/demo-rms/backend:latest
+
+# Фронтенд
+docker build --provenance=false -t frontend:latest ./frontend
+docker tag frontend:latest $REGISTRY/demo-rms/frontend:latest
+docker push $REGISTRY/demo-rms/frontend:latest
+
+# Сервис бэкапов
+docker build --provenance=false -t db-backup:latest ./backup
+docker tag db-backup:latest $REGISTRY/demo-rms/db-backup:latest
+docker push $REGISTRY/demo-rms/db-backup:latest
 ```
 
 ---
 
-## 🚀 Инструкция по развертыванию
+## Шаг 2 — Развёртывание инфраструктуры
 
-### 1. Подготовка сервера
+Применяем все манифесты одной командой. `oc apply` автоматически создаст PVC, Secret, ConfigMap, Deployment, Service и Edge-маршруты:
 
-**Установка Docker** Установите Docker на ваш сервер командой:
 ```bash
-curl -fsSL [https://get.docker.com](https://get.docker.com) | sh
+cd openshift-manifests/
+oc apply -f .
 ```
 
-**Настройка Firewall (UFW)** В целях безопасности необходимо оставить открытыми только нужные порты. Все остальные порты должны быть закрыты. Выполните следующие команды (замените `ВАШ_IP` на ваш реальный IP-адрес для SSH):
+Дождитесь, пока все поды перейдут в статус `1/1 Running`:
 
 ```bash
-# Установка UFW (если не установлен)
-apt update && apt install ufw -y
-
-# Сброс правил (по умолчанию всё входящее запрещено)
-ufw default deny incoming
-ufw default allow outgoing
-
-# Разрешить SSH только с вашего IP (порт 22 / TCP)
-ufw allow from ВАШ_IP to any port 22 proto tcp
-
-# Разрешить HTTP и HTTPS для всех (80, 443 / TCP)
-ufw allow 80/tcp
-ufw allow 443/tcp
-
-# Включение Firewall
-ufw enable
-```
-
-| Порт | Протокол | Откуда         | Назначение                               |
-|------|----------|----------------|------------------------------------------|
-| 22   | TCP      | Только ваш IP  | SSH                                      |
-| 80   | TCP      | 0.0.0.0/0      | HTTP → редирект на HTTPS                 |
-| 443  | TCP      | 0.0.0.0/0      | HTTPS (приложение + Grafana)             |
-
-**Получение SSL-сертификатов** Убедитесь, что порты 80 и 443 свободны. Получите сертификаты:
-```bash
-apt install certbot -y
-certbot certonly --standalone -d rms.ittori.ru -d grafana.rms.ittori.ru
-```
-
-### 2. Настройка окружения и запуск
-
-Перейдите в директорию `/opt`, склонируйте проект:
-```bash
-cd /opt
-git clone [https://github.com/Ya-Pedro/demo-rms](https://github.com/Ya-Pedro/demo-rms) rms
-cd rms
-```
-
-**Добавление файлов `.env`** > ⚠️ **Важно:** Добавьте конфигурационные файлы `.env` в соответствующие папки (например, `/opt/rms/backend/.env`). Данные файлы переданы отдельно (в Telegram Melkor).
-
-**Автоматическое обновление сертификатов** Добавьте задачу в cron для автоматического продления сертификатов каждые 2 месяца и перезапуска Nginx:
-```bash
-echo "0 3 1 */2 * certbot renew --quiet && docker compose -f /opt/rms/docker-compose.yml restart frontend" | crontab -
-```
-
-**Запуск проекта** Запустите систему в фоновом режиме:
-```bash
-docker compose up -d
+oc get pods -w
 ```
 
 ---
 
-## 🛠 Инициализация данных
+## Шаг 3 — Инициализация базы данных
 
-После успешного старта контейнеров заполните базу данных справочниками:
+> **Обязательный шаг.** Тома базы данных разворачиваются пустыми — без этой команды приложение не будет работать.
+
 ```bash
-docker exec -it rms_backend python seed.py
+oc exec -it deployment/backend -- python seed.py
 ```
-*Примечание:* Создание профилей рекрутеров выполняется позже через графический интерфейс системы под учетной записью суперадмина.
+
+Что делает скрипт:
+
+1. Пересоздаёт все таблицы PostgreSQL по моделям SQLAlchemy.
+2. Создаёт кастомные типы ENUM на уровне СУБД (`userrole`, `dictionarytype`).
+3. Загружает справочники: ИТ-роли, проекты, ТЭО, блоки — всё необходимое для выпадающих списков интерфейса.
+4. Создаёт два системных аккаунта с правами суперадминистратора для первоначального входа.
 
 ---
 
-## 📊 Мониторинг (Grafana + Prometheus)
+## Первый вход в систему
 
-Мониторинг выделен в отдельный профиль `monitoring` для экономии ресурсов, когда он не используется.
+Добавьте домен в `/etc/hosts`:
 
-* **Включить мониторинг:**
-  ```bash
-  docker compose --profile monitoring up -d
-  ```
-* **Выключить мониторинг:**
-  ```bash
-  docker compose --profile monitoring down
-  ```
+```
+127.0.0.1   rms.ittori.ru
+```
+
+| Параметр | Значение |
+|----------|----------|
+| URL | `https://rms.ittori.ru` |
+| Логин | `admin1@rms-system.ru` или `admin2@rms-system.ru` |
+| Пароль | `admin123` |
+
+### Роли пользователей
+
+| Роль | Доступ |
+|------|--------|
+| `SUPERADMIN` | Полное администрирование: пользователи, словари, настройки |
+| `ADMIN` | Управление проектами и координация |
+| `RECRUITER` | Ведение вакансий и работа с кандидатами |
 
 ---
 
-## 💾 Резервное копирование (Backups) и смена S3 хранилища
+## ⚠️ Безопасность — обязательно после первого входа
 
-Система резервного копирования отправляет дампы БД в S3. По умолчанию настроено личное S3 хранилище.
+Дефолтные аккаунты созданы **только** для первоначального доступа. Сразу после входа:
 
-**Как переключить на PROD хранилище:**
-Для смены хранилища код менять не нужно. Достаточно обновить переменные в файле `.env`, отвечающем за бекапы, указав новые доступы к PROD-бакету:
+1. Создайте собственные именные учётные записи с ролью `SUPERADMIN`.
+2. Войдите под новыми аккаунтами.
+3. Удалите дефолтных пользователей `admin1` и `admin2`.
 
-```env
-# Доступы к БД остаются без изменений
-# Значения, которые нужно поменять в .env для продакшена:
-S3_BUCKET_NAME=название_prod_бакета                   # Название нового бакета
-S3_ACCESS_KEY=новый_prod_access_key                   # Ключ доступа
-S3_SECRET_KEY=новый_prod_secret_key                   # Секретный ключ
+---
+
+## Структура репозитория
+
+```
+.
+├── backend/                  # Исходный код бэкенда (FastAPI)
+│   ├── alembic/versions/     # Миграции БД
+│   └── seed.py               # Скрипт инициализации данных
+├── frontend/                 # Исходный код фронтенда
+│   ├── Dockerfile            # Запуск от пользователя 1001, порт 8080
+│   └── nginx.conf            # Конфиг без SSL и секции Grafana
+├── backup/                   # Сервис резервного копирования БД
+├── openshift-manifests/      # YAML-манифесты для oc apply
+│   ├── 01_shared.yaml
+│   ├── 02_databases.yaml
+│   ├── 03_backend_stack.yaml
+│   ├── 04_frontend.yaml
+│   └── 05_monitoring.yaml
+└── README.md
 ```
 
-После изменения файла `.env` перезапустите контейнер бекапов для применения новых настроек:
-```bash
-docker compose restart backup
-```
+> Переменные окружения и секреты хранятся в нативных объектах OpenShift (`ConfigMap` / `Secret`). Файлы `.env` и `.env.production` в репозиторий не включаются — они перечислены в `.gitignore`.
