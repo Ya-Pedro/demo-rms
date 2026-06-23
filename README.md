@@ -21,23 +21,20 @@
 Выполните из корня репозитория:
 
 ```bash
-# Адрес внутреннего реестра кластера
-REGISTRY=$(oc registry info)
+# 1. Скачиваем с Docker Hub
+sudo docker pull yapedro/rms-db-backup:latest
+sudo docker pull yapedro/rms-frontend:latest
+sudo docker pull yapedro/rms-backend:latest
 
-# Бэкенд
-docker build --provenance=false -t backend:latest ./backend
-docker tag backend:latest $REGISTRY/demo-rms/backend:latest
-docker push $REGISTRY/demo-rms/backend:latest
+# 2. Переименовываем
+sudo docker tag yapedro/rms-backend:latest $REGISTRY/poc-sandbox/backend:latest
+sudo docker tag yapedro/rms-frontend:latest $REGISTRY/poc-sandbox/frontend:latest
+sudo docker tag yapedro/rms-db-backup:latest $REGISTRY/poc-sandbox/db-backup:latest
 
-# Фронтенд
-docker build --provenance=false -t frontend:latest ./frontend
-docker tag frontend:latest $REGISTRY/demo-rms/frontend:latest
-docker push $REGISTRY/demo-rms/frontend:latest
-
-# Сервис бэкапов
-docker build --provenance=false -t db-backup:latest ./backup
-docker tag db-backup:latest $REGISTRY/demo-rms/db-backup:latest
-docker push $REGISTRY/demo-rms/db-backup:latest
+# 3. Заливаем в OpenShift
+sudo docker push $REGISTRY/poc-sandbox/backend:latest
+sudo docker push $REGISTRY/poc-sandbox/frontend:latest
+sudo docker push $REGISTRY/poc-sandbox/db-backup:latest
 ```
 
 ---

@@ -26,7 +26,7 @@ def upgrade() -> None:
         op.execute("""
             DO $$
             BEGIN
-                CREATE TYPE userrole AS ENUM ('SUPERADMIN', 'ADMIN', 'RECRUITER');
+                CREATE TYPE userrole AS ENUM ('superadmin', 'admin', 'recruiter');
             EXCEPTION WHEN duplicate_object THEN
                 NULL;
             END
