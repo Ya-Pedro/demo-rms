@@ -9,6 +9,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
+
 # revision identifiers
 revision: str = "0001_initial"
 down_revision: Union[str, None] = None
