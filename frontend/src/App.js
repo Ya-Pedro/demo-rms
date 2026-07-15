@@ -149,37 +149,41 @@ const { Header, Sider, Content } = Layout;
 
 const themeConfig = {
   token: {
-    colorPrimary: '#0050B3',
-    colorInfo: '#0050B3',
-    colorSuccess: '#389E0D',
-    colorWarning: '#FAAD14',
-    colorError: '#F5222D',
-    colorTextBase: '#1F1F1F',
-    colorBgBase: '#FFFFFF',
+    colorPrimary: '#2563eb', // Modern vibrant blue
+    colorInfo: '#3b82f6',
+    colorSuccess: '#10b981',
+    colorWarning: '#f59e0b',
+    colorError: '#ef4444',
+    colorTextBase: '#0f172a',
+    colorBgBase: '#ffffff',
+    colorBgLayout: '#f8fafc',
+    colorBorder: '#e2e8f0',
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    borderRadius: 2,
-    wireframe: true,
+    borderRadius: 8, // Modern rounded corners
+    wireframe: false, // Turn off wireframe for softer look
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)',
   },
   components: {
     Table: {
-      cellPaddingBlock: 4,
-      cellPaddingInline: 8,
-      headerBg: '#F5F5F5',
-      headerColor: '#000000',
-      borderColor: '#D9D9D9',
-      rowHoverBg: '#E6F7FF',
+      cellPaddingBlock: 12,
+      cellPaddingInline: 16,
+      headerBg: '#f1f5f9',
+      headerColor: '#475569',
+      borderColor: '#f1f5f9',
+      rowHoverBg: '#eff6ff',
+      headerBorderRadius: 8,
     },
     Button: {
-      borderRadius: 2,
-      controlHeight: 32,
+      borderRadius: 8,
+      controlHeight: 36,
       fontWeight: 500,
     },
     Input: {
-      borderRadius: 2,
-      controlHeight: 32,
+      borderRadius: 8,
+      controlHeight: 36,
     },
     Card: {
-      borderRadius: 0,
+      borderRadius: 12,
     },
   },
 };

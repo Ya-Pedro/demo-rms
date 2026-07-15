@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rms-config
+data:
+  ENV: "production"
+  POSTGRES_USER: "postgres"
+  POSTGRES_DB: "rms_db"
+  S3_BUCKET_NAME: "rms-db-backups"
+  CORS_ORIGINS: "https://rms.ittori.ru"
+  SMTP_SERVER: "smtp.yandex.ru"
+  SMTP_PORT: "465"
+  SMTP_USERNAME: "gusharinv@yandex.ru"
+  SMTP_FROM: "gusharinv@yandex.ru"
+  SMTP_STARTTLS: "False"
+  SMTP_SSL_TLS: "True"
+  SMTP_USE_CREDENTIALS: "True"
+  SMTP_VALIDATE_CERTS: "True"
+  TOTP_ISSUER: "RMS"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "15"
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"
+  APP_TIMEZONE: "Europe/Moscow"
+  ENABLE_HEALTH_CHECK: "false"
+  REACT_APP_IDLE_TIMEOUT_MINUTES: "15"
+  WDS_SOCKET_PORT: "443"
+  REACT_APP_BACKEND_URL: "https://rms.ittori.ru"
+  GF_SECURITY_ADMIN_USER: "admin"
+  GF_AUTH_ANONYMOUS_ENABLED: "false"
+  GF_SERVER_DOMAIN: "grafana.rms.ittori.ru"
+  GF_SERVER_ROOT_URL: "https://grafana.rms.ittori.ru/"
+  GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+  GF_ANALYTICS_REPORTING_ENABLED: "false"
+  GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rms-secrets
+type: Opaque
+stringData:
+  postgres-password: "***"
+  redis-password: "***"
+  secret-key: "***"
+  bot-token: "***"
+  s3-access-key: "***"
+  s3-secret-key: "***"
+  smtp-password: "***"
+  gf-admin-password: "***"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi

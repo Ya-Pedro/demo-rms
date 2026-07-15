@@ -89,35 +89,37 @@ const BarTip = ({ active, payload, label }) => {
   );
 };
 
-const PieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
-  if (percent < 0.05) return null;
-  const R = Math.PI / 180;
-  const r = innerRadius + (outerRadius - innerRadius) * 0.58;
-  return (
-    <text x={cx + r * Math.cos(-midAngle * R)} y={cy + r * Math.sin(-midAngle * R)}
-      fill="#fff" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={700}>
-      {`${(percent * 100).toFixed(1)}%`}
-    </text>
-  );
-};
-
 const NoData = ({ text = 'Нет данных' }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 220 }}>
     <Empty description={<Text type="secondary" style={{ fontSize: 12 }}>{text}</Text>} image={Empty.PRESENTED_IMAGE_SIMPLE} />
   </div>
 );
 
+const renderPieLabel = (props) => {
+  const { cx, cy, midAngle, outerRadius, percent } = props;
+  if (percent < 0.05) return null;
+  const RADIAN = Math.PI / 180;
+  const radius = outerRadius + 16;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill={T.text} fontSize={12} fontWeight={600} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
+};
+
 const DonutCard = ({ title, icon, data, color }) => (
   <Card style={CS} bodyStyle={{ padding: '16px 24px' }} headStyle={CHS}
     title={<><span style={{ marginRight: 8, color }}>{icon}</span>{title}</>}>
     {!data?.length ? <NoData /> : (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-        <div style={{ width: 180, height: 180 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+        <div style={{ width: '100%', height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie data={data} dataKey="value" nameKey="name"
-                cx="50%" cy="50%" innerRadius={48} outerRadius={88}
-                labelLine={false} label={PieLabel}>
+                cx="50%" cy="50%" outerRadius={55}
+                labelLine={true} label={renderPieLabel}>
                 {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
               </Pie>
               <RTooltip content={<PieTip />} />
@@ -131,7 +133,7 @@ const DonutCard = ({ title, icon, data, color }) => (
                 display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
                 background: PALETTE[i % PALETTE.length], flexShrink: 0
               }} />
-              <span style={{ fontSize: 13, color: T.sub, fontWeight: 500 }}>
+              <span style={{ fontSize: 12, color: T.sub, fontWeight: 500 }}>
                 {item.name}
               </span>
               <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>

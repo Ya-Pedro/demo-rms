@@ -121,7 +121,6 @@
 
 /* Номер строки */
 .vacancy-table-container .ant-table-tbody > tr > td:first-child {
-  background: #fafafa !important;
   font-weight: 500 !important;
 }
 

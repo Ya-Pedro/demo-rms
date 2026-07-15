@@ -32,8 +32,8 @@ async def get_users(
 \
 \
        
-    query = select(User).where(User.is_active == True)
-    count_query = select(func.count(User.id)).where(User.is_active == True)
+    query = select(User)
+    count_query = select(func.count(User.id))
     
                                        
     
