@@ -14,8 +14,8 @@ dayjs.extend(isoWeek);
 
 const { RangePicker } = DatePicker;
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 const EXPORT_PERIODS = [
   { value: 'current_week', label: 'За текущую неделю' },
   { value: 'current_month', label: 'За текущий месяц' },
@@ -43,7 +43,28 @@ const generateWeekOptions = () => {
   return options;
 };
 
+
+const HighlightFormItem = (props) => {
+  return (
+    <Form.Item noStyle dependencies={[props.name]}>
+      {({ getFieldValue }) => {
+        const val = getFieldValue(props.name);
+        const isEmpty = val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0);
+        return (
+          <Form.Item 
+            {...props} 
+            className={`${props.className || ''} ${props.editing && isEmpty ? 'highlight-empty-field' : ''}`}
+          >
+            {props.children}
+          </Form.Item>
+        );
+      }}
+    </Form.Item>
+  );
+};
+
 const DashboardPage = () => {
+
   const actionRef = useRef();
   const [form] = Form.useForm();
   const [reportForm] = Form.useForm();
@@ -76,6 +97,18 @@ const DashboardPage = () => {
   const [user, setUser] = useState(() => tokenStorage.getUser() || {});
   const isRecruiter = user?.role === 'recruiter';
 
+  const excludedStatuses = isRecruiter ? (dictionaries.vacancy_status || [])
+    .filter(d => d.value === 'Закрыта' || d.value === 'Отмена')
+    .map(d => d.id) : [];
+
+  console.log("DEBUG DashboardPage:", {
+    user_role: user?.role,
+    isRecruiter,
+    vacancy_status_exists: !!dictionaries.vacancy_status,
+    vacancy_status_len: dictionaries.vacancy_status ? dictionaries.vacancy_status.length : 0,
+    excludedStatuses
+  });
+
   const handleVacanciesTourComplete = useCallback(async () => {
     try {
       const { completeTour } = await import('../api');
@@ -97,7 +130,7 @@ const DashboardPage = () => {
       const types = [
         'specialist_level', 'vacancy_status', 'it_role', 'project',
         'source', 'employment_type', 'replacement_type', 'feasibility',
-        'block', 'admin_manager', 'team_lead', 'internal_transfer', 'city'
+        'block', 'admin_manager', 'internal_transfer'
       ];
       const results = {};
       for (const type of types) {
@@ -213,6 +246,9 @@ const DashboardPage = () => {
       const token = tokenStorage.getAccess();
       const params = new URLSearchParams();
       params.append('period', exportPeriod);
+      if (excludedStatuses && excludedStatuses.length > 0) {
+        excludedStatuses.forEach(id => params.append('exclude_status_id', id));
+      }
 
       if (exportPeriod === 'custom' && exportCustomDates && exportCustomDates.length === 2) {
         params.append('start_date', exportCustomDates[0].format('YYYY-MM-DD'));
@@ -223,9 +259,9 @@ const DashboardPage = () => {
         const filters = tableState.filters;
         const filterKeys = [
           'status_id', 'project_id', 'recruiter_id', 'it_role_id',
-          'level_id', 'city_id', 'source_id', 'block_id',
+          'level_id', 'source_id', 'block_id',
           'employment_type_id', 'feasibility_id', 'replacement_type_id',
-          'admin_manager_id', 'team_lead_id', 'internal_transfer_id',
+          'admin_manager_id', 'internal_transfer_id',
         ];
         for (const key of filterKeys) {
           if (filters[key]?.length) {
@@ -237,6 +273,7 @@ const DashboardPage = () => {
         const textKeys = [
           'vacancy_id', 'position_name', 'candidate_name', 'candidate_company',
           'ex_employee_name', 'unit_id', 'salary_gross', 'iqhr_link',
+          'city_text', 'team_lead_text',
         ];
         for (const key of textKeys) {
           if (filters[key]?.[0]) {
@@ -245,7 +282,7 @@ const DashboardPage = () => {
         }
       }
 
-      const url = `${BACKEND_URL}/api/export/vacancies?${params.toString()}`;
+      const url = `${API_BASE}/export/vacancies?${params.toString()}`;
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -258,17 +295,16 @@ const DashboardPage = () => {
       const link = document.createElement('a');
       link.href = downloadUrl;
 
-      const cd = response.headers.get('Content-Disposition');
+      const contentDisposition = response.headers.get('Content-Disposition');
       let filename = 'vacancies_export.xlsx';
-      if (cd) {
-        const m = cd.match(/filename="?(.+?)"?$/);
-        if (m) filename = m[1];
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (match && match[1]) filename = match[1];
       }
 
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
       window.URL.revokeObjectURL(downloadUrl);
 
       setExportModalVisible(false);
@@ -395,6 +431,7 @@ const DashboardPage = () => {
   return (
     <div data-testid="dashboard-page" className="vacancy-table-container">
       <VacancyTable
+        excludeStatusIds={excludedStatuses}
         actionRef={actionRef}
         tableKey={tableKey}
         dictionaries={dictionaries}
@@ -573,19 +610,19 @@ const DashboardPage = () => {
             <div className="form-section-title">Основная информация</div>
             <Row gutter={16}>
               <Col span={6}>
-                <Form.Item name="vacancy_id" label="ID вакансии">
+                <HighlightFormItem editing={!!editingVacancy} name="vacancy_id" label="ID вакансии">
                   <Input />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={8}>
-                <Form.Item name="position_name" label="Вакансия" rules={[{ required: true }]}>
+                <HighlightFormItem editing={!!editingVacancy} name="position_name" label="Вакансия" rules={[{ required: true }]}>
                   <Input data-testid="vacancy-position" />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={4}>
-                <Form.Item name="quantity" label="Кол-во" initialValue={1}>
+                <HighlightFormItem editing={!!editingVacancy} name="quantity" label="Кол-во" initialValue={1}>
                   <InputNumber min={1} style={{ width: '100%' }} />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               {}
             </Row>
@@ -597,63 +634,63 @@ const DashboardPage = () => {
             <div className="form-section-title">Справочники</div>
             <Row gutter={16}>
               <Col span={6}>
-                <Form.Item name="level_id" label="Уровень">
+                <HighlightFormItem editing={!!editingVacancy} name="level_id" label="Уровень">
                   <Select options={(dictionaries.specialist_level || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="status_id" label="Статус">
-                  <Select options={(dictionaries.vacancy_status || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="status_id" label="Статус">
+                  <Select options={(dictionaries.vacancy_status || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="it_role_id" label="ИТ Роль">
-                  <Select options={(dictionaries.it_role || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="it_role_id" label="ИТ Роль">
+                  <Select options={(dictionaries.it_role || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="project_id" label="Проект">
-                  <Select options={(dictionaries.project || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="project_id" label="Проект">
+                  <Select options={(dictionaries.project || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={6}>
-                <Form.Item name="source_id" label="Источник">
-                  <Select options={(dictionaries.source || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="source_id" label="Источник">
+                  <Select options={(dictionaries.source || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="city_id" label="Город">
-                  <Select options={(dictionaries.city || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="city_text" label="Город">
+                  <Input allowClear />
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="employment_type_id" label="Вид занятости">
+                <HighlightFormItem editing={!!editingVacancy} name="employment_type_id" label="Вид занятости">
                   <Select options={(dictionaries.employment_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="replacement_type_id" label="Новая/Замена">
+                <HighlightFormItem editing={!!editingVacancy} name="replacement_type_id" label="Новая/Замена">
                   <Select options={(dictionaries.replacement_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={6}>
-                <Form.Item name="internal_transfer_id" label="Внутр. перевод">
+                <HighlightFormItem editing={!!editingVacancy} name="internal_transfer_id" label="Внутр. перевод">
                   <Select options={(dictionaries.internal_transfer || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="block_id" label="Блок">
-                  <Select options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="block_id" label="Блок">
+                  <Select options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="feasibility_id" label="ТЭО">
-                  <Select options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="feasibility_id" label="ТЭО">
+                  <Select options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                </HighlightFormItem>
               </Col>
             </Row>
           </div>
@@ -664,17 +701,17 @@ const DashboardPage = () => {
             <div className="form-section-title">Люди</div>
             <Row gutter={16}>
               <Col span={8}>
-                <Form.Item name="admin_manager_id" label="Адм. руководитель">
+                <HighlightFormItem editing={!!editingVacancy} name="admin_manager_id" label="Адм. руководитель">
                   <Select options={(dictionaries.admin_manager || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={8}>
-                <Form.Item name="team_lead_id" label="Тимлид">
-                  <Select options={(dictionaries.team_lead || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
-                </Form.Item>
+                <HighlightFormItem editing={!!editingVacancy} name="team_lead_text" label="Тимлид">
+                  <Input allowClear />
+                </HighlightFormItem>
               </Col>
               <Col span={8}>
-                <Form.Item name="recruiter_id" label="Рекрутер">
+                <HighlightFormItem editing={!!editingVacancy} name="recruiter_id" label="Рекрутер">
                   <Select 
                     options={users.map(u => ({ value: u.id, label: u.full_name }))} 
                     allowClear={!isRecruiter}
@@ -683,24 +720,24 @@ const DashboardPage = () => {
                     disabled={isRecruiter && !editingVacancy}
                     placeholder={isRecruiter ? user?.full_name : 'Выберите рекрутера'}
                   />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={8}>
-                <Form.Item name="candidate_name" label="ФИО кандидата">
+                <HighlightFormItem editing={!!editingVacancy} name="candidate_name" label="ФИО кандидата">
                   <Input />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={8}>
-                <Form.Item name="candidate_company" label="Компания кандидата">
+                <HighlightFormItem editing={!!editingVacancy} name="candidate_company" label="Компания кандидата">
                   <Input />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={8}>
-                <Form.Item name="ex_employee_name" label="ФИО бывшего сотр.">
+                <HighlightFormItem editing={!!editingVacancy} name="ex_employee_name" label="ФИО бывшего сотр.">
                   <Input />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
             </Row>
           </div>
@@ -711,24 +748,24 @@ const DashboardPage = () => {
             <div className="form-section-title">Даты</div>
             <Row gutter={16}>
               <Col span={6}>
-                <Form.Item name="open_date" label="Дата открытия">
+                <HighlightFormItem editing={!!editingVacancy} name="open_date" label="Дата открытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="close_date" label="Дата закрытия">
+                <HighlightFormItem editing={!!editingVacancy} name="close_date" label="Дата закрытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="status_changed_at" label="Дата изм. статуса">
+                <HighlightFormItem editing={!!editingVacancy} name="status_changed_at" label="Дата изм. статуса">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={6}>
-                <Form.Item name="hold_days" label="Дни в холде" initialValue={0}>
+                <HighlightFormItem editing={!!editingVacancy} name="hold_days" label="Дни в холде" initialValue={0}>
                   <InputNumber min={0} style={{ width: '100%' }} data-testid="vacancy-hold-days" />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
             </Row>
           </div>
@@ -739,58 +776,22 @@ const DashboardPage = () => {
             <div className="form-section-title">Дополнительно</div>
             <Row gutter={16}>
               <Col span={8}>
-                <Form.Item name="unit_id" label="ID ШЕ">
+                <HighlightFormItem editing={!!editingVacancy} name="unit_id" label="ID ШЕ">
                   <Input />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
               <Col span={16}>
-                <Form.Item name="iqhr_link" label="Ссылка IQHR">
+                <HighlightFormItem editing={!!editingVacancy} name="iqhr_link" label="Ссылка IQHR">
                   <Input />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={8}>
                 {}
-                <Form.Item name="salary_gross" label="Зарплата кандидатов Gross">
+                <HighlightFormItem editing={!!editingVacancy} name="salary_gross" label="Cовокупный доход финального кандидата, gross">
                   <InputNumber min={0} style={{ width: '100%' }} placeholder="руб." />
-                </Form.Item>
-              </Col>
-            </Row>
-          </div>
-
-          <Divider />
-
-          {}
-          <div className="form-section">
-            <div className="form-section-title">Воронка (текущая неделя)</div>
-            <Row gutter={16}>
-              <Col span={6}>
-                <Form.Item name="resume_at_customer" label="Передано заказчику" initialValue={0}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                <Form.Item name="resume_approved" label="Резюме одобрено" initialValue={0}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                <Form.Item name="interviews_fact" label="Собеседования факт" initialValue={0}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                <Form.Item name="interviews_plan" label="Собеседования план" initialValue={0}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col span={6}>
-                <Form.Item name="offer_made" label="Оффер сделан" initialValue={0}>
-                  <InputNumber min={0} style={{ width: '100%' }} />
-                </Form.Item>
+                </HighlightFormItem>
               </Col>
             </Row>
           </div>

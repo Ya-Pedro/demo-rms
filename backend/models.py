@@ -108,6 +108,7 @@ class Vacancy(Base):
     
                                              
     team_lead_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
+    team_lead_text = Column(String(255), nullable=True, comment="Тимлид (текст)")
     
                                          
     project_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)

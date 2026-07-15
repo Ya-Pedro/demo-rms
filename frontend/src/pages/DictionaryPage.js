@@ -15,9 +15,7 @@ const DICTIONARY_TYPES = [
   { value: 'feasibility', label: 'ТЭО проекта' },
   { value: 'block', label: 'Блок' },
   { value: 'admin_manager', label: 'Административный руководитель' },
-  { value: 'team_lead', label: 'Тимлид' },
   { value: 'internal_transfer', label: 'Внутренний перевод' },
-  { value: 'city', label: 'Город' },
 ];
 
 const DictionaryPage = () => {

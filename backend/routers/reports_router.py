@@ -5,8 +5,8 @@
 \
 \
    
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, case
 from sqlalchemy.orm import selectinload
@@ -164,6 +164,7 @@ async def get_current_week(current_user: User = Depends(get_current_user)):
 
 @router.get("/all")
 async def get_all_reports(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = Query(0, ge=0),
@@ -196,6 +197,56 @@ async def get_all_reports(
        
                                                 
     conditions = []
+    
+    from services.vacancy_filter import apply_vacancy_filters
+    qp = request.query_params
+    
+    def get_list(key: str):
+        vals = qp.getlist(key)
+        if not vals:
+            return None
+        res = []
+        for v in vals:
+            if v.lstrip('-').isdigit():
+                res.append(int(v))
+        return res if res else None
+        
+    def get_str(key: str):
+        v = qp.get(key)
+        return v if v else None
+        
+    _, vacancy_conditions = apply_vacancy_filters(
+        query=select(Vacancy),
+        current_user=current_user,
+        status_id=get_list('status_name'),
+        level_id=get_list('level_name'),
+        it_role_id=get_list('it_role_name'),
+        project_id=get_list('project_name'),
+        admin_manager_id=get_list('customer'),
+        source_id=get_list('source_name'),
+        block_id=get_list('block_name'),
+        employment_type_id=get_list('employment_type_name'),
+        feasibility_id=get_list('feasibility_name'),
+        replacement_type_id=get_list('replacement_type_name'),
+        internal_transfer_id=get_list('internal_transfer_name'),
+        recruiter_id=get_list('recruiter_name'),
+        
+        search_vacancy_id=get_str('vacancy_ext_id'),
+        search_position_name=get_str('vacancy_name'),
+        search_candidate_name=get_str('candidate_name'),
+        search_team_lead_text=get_str('team_lead_name'),
+        search_city_text=get_str('city_name'),
+        search_candidate_company=get_str('candidate_company'),
+        search_ex_employee_name=get_str('ex_employee_name'),
+        search_unit_id=get_str('unit_id'),
+        search_iqhr_link=get_str('iqhr_link'),
+        search_quantity=get_str('quantity'),
+        search_salary_gross=get_str('salary_gross'),
+        search_work_duration_days=get_str('work_duration_days'),
+    )
+    print(f"DEBUG: get_all_reports query_params={qp}")
+    print(f"DEBUG: vacancy_conditions={vacancy_conditions}")
+    conditions.extend(vacancy_conditions)
                                                            
     if current_user.role == UserRole.RECRUITER:
         from sqlalchemy import or_
@@ -298,11 +349,41 @@ async def get_all_reports(
         agg_q = agg_q.where(and_(*conditions))
     
     agg_q = agg_q.group_by(Vacancy.id, Vacancy.vacancy_id, Vacancy.position_name)
+
+    having_conditions = []
+    
+    search_total_resumes_sent = get_str('total_resumes_sent')
+    if search_total_resumes_sent and search_total_resumes_sent.isdigit():
+        having_conditions.append(func.sum(WeeklyReport.resumes_sent) == int(search_total_resumes_sent))
+
+    search_total_candidates_agreed = get_str('total_candidates_agreed')
+    if search_total_candidates_agreed and search_total_candidates_agreed.isdigit():
+        having_conditions.append(func.sum(WeeklyReport.candidates_agreed) == int(search_total_candidates_agreed))
+
+    search_total_interviews_planned = get_str('total_interviews_planned')
+    if search_total_interviews_planned and search_total_interviews_planned.isdigit():
+        having_conditions.append(func.sum(WeeklyReport.interviews_planned) == int(search_total_interviews_planned))
+
+    search_total_interviews_conducted = get_str('total_interviews_conducted')
+    if search_total_interviews_conducted and search_total_interviews_conducted.isdigit():
+        having_conditions.append(func.sum(WeeklyReport.interviews_conducted) == int(search_total_interviews_conducted))
+
+    search_total_offer_made = get_str('total_offer_made')
+    if search_total_offer_made and search_total_offer_made.isdigit():
+        having_conditions.append(func.sum(WeeklyReport.offer_made) == int(search_total_offer_made))
+
+    search_report_count = get_str('report_count')
+    if search_report_count and search_report_count.isdigit():
+        having_conditions.append(func.count(WeeklyReport.id) == int(search_report_count))
+
+    if having_conditions:
+        agg_q = agg_q.having(and_(*having_conditions))
     
                         
     count_subq = agg_q.subquery()
     count_q = select(func.count()).select_from(count_subq)
     total = (await db.execute(count_q)).scalar()
+    print(f"DEBUG: get_all_reports total={total}")
     
                                          
                           
@@ -313,7 +394,7 @@ async def get_all_reports(
         'close_date':                 Vacancy.close_date,
         'quantity':                   Vacancy.quantity,
         'salary_gross':               Vacancy.salary_gross,
-        'work_duration_days':         Vacancy.id,               
+        'work_duration_days':         func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0),
         'total_resumes_sent':         func.sum(WeeklyReport.resumes_sent),
         'total_candidates_agreed':    func.sum(WeeklyReport.candidates_agreed),
         'total_interviews_conducted': func.sum(WeeklyReport.interviews_conducted),
@@ -322,12 +403,43 @@ async def get_all_reports(
         'report_count':               func.count(WeeklyReport.id),
         'first_report_date':          func.min(WeeklyReport.created_at),
         'last_updated':               func.max(WeeklyReport.updated_at),
+        'level_name':                 Vacancy.level_id,
+        'status_name':                Vacancy.status_id,
+        'it_role_name':               Vacancy.it_role_id,
+        'customer':                   Vacancy.admin_manager_id,
+        'team_lead_name':             Vacancy.team_lead_text,
+        'project_name':               Vacancy.project_id,
+        'city_name':                  Vacancy.city_text,
+        'source_name':                Vacancy.source_id,
+        'internal_transfer_name':     Vacancy.internal_transfer_id,
+        'status_changed_at':          Vacancy.status_changed_at,
+        'candidate_name':             Vacancy.candidate_name,
+        'candidate_company':          Vacancy.candidate_company,
+        'replacement_type_name':      Vacancy.replacement_type_id,
+        'ex_employee_name':           Vacancy.ex_employee_name,
+        'unit_id':                    Vacancy.unit_id,
+        'employment_type_name':       Vacancy.employment_type_id,
+        'feasibility_name':           Vacancy.feasibility_id,
+        'iqhr_link':                  Vacancy.iqhr_link,
+        'recruiter_name':             Vacancy.recruiter_id,
+        'block_name':                 Vacancy.block_id,
     }
-    sort_col = SORT_MAP.get(sort_field, Vacancy.id)
-    if sort_order == 'asc':
-        agg_q = agg_q.order_by(sort_col.asc())
+    
+    if sort_field:
+        fields = sort_field.split(',')
+        orders = sort_order.split(',') if sort_order else []
+        for i, f in enumerate(fields):
+            sort_col = SORT_MAP.get(f.strip())
+            if sort_col is not None:
+                order_dir = orders[i].strip() if i < len(orders) else 'desc'
+                if order_dir == 'asc':
+                    agg_q = agg_q.order_by(sort_col.asc().nulls_last())
+                else:
+                    agg_q = agg_q.order_by(sort_col.desc().nulls_last())
+        agg_q = agg_q.order_by(Vacancy.id.desc())
     else:
-        agg_q = agg_q.order_by(sort_col.desc())
+        agg_q = agg_q.order_by(Vacancy.id.desc())
+
     agg_q = agg_q.offset(skip).limit(limit)
     
     rows = (await db.execute(agg_q)).all()
@@ -374,8 +486,10 @@ async def get_all_reports(
             "level_name": v.level.value if v and v.level else None,
             "status_name": v.status.value if v and v.status else None,
             "it_role_name": v.it_role.value if v and v.it_role else None,
-            "customer": (v.admin_manager.value if v and v.admin_manager else
-                        (v.project.value if v and v.project else "-")),
+            # customer — только admin_manager (без fallback к project)
+            "customer": v.admin_manager.value if v and v.admin_manager else None,
+            "admin_manager_name": v.admin_manager.value if v and v.admin_manager else None,
+            "team_lead_name": v.team_lead_text if v else None,
             "recruiter_name": v.recruiter.full_name if v and v.recruiter else None,
             "project_name": v.project.value if v and v.project else None,
             "city_name": v.city.value if v and v.city else (v.city_text if v else None),
@@ -410,6 +524,7 @@ async def get_all_reports(
 
 @router.get("/all/export")
 async def export_all_reports(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     year: Optional[int] = Query(None),
@@ -430,6 +545,96 @@ async def export_all_reports(
        
                                                       
     conditions = []
+    from services.vacancy_filter import apply_vacancy_filters
+    qp = request.query_params
+    
+    def get_list(key: str):
+        vals = qp.getlist(key)
+        if not vals:
+            return None
+        res = []
+        for v in vals:
+            if v.lstrip('-').isdigit():
+                res.append(int(v))
+        return res if res else None
+        
+    def get_str(key: str):
+        v = qp.get(key)
+        return v if v else None
+        
+    _, vacancy_conditions = apply_vacancy_filters(
+        query=select(Vacancy),
+        current_user=current_user,
+        status_id=get_list('status_name'),
+        level_id=get_list('level_name'),
+        it_role_id=get_list('it_role_name'),
+        project_id=get_list('project_name'),
+        admin_manager_id=get_list('customer'),
+        source_id=get_list('source_name'),
+        block_id=get_list('block_name'),
+        employment_type_id=get_list('employment_type_name'),
+        feasibility_id=get_list('feasibility_name'),
+        replacement_type_id=get_list('replacement_type_name'),
+        internal_transfer_id=get_list('internal_transfer_name'),
+        recruiter_id=get_list('recruiter_name'),
+        
+        search_vacancy_id=get_str('vacancy_ext_id'),
+        search_position_name=get_str('vacancy_name'),
+        search_candidate_name=get_str('candidate_name'),
+        search_team_lead_text=get_str('team_lead_name'),
+        search_city_text=get_str('city_name'),
+        search_candidate_company=get_str('candidate_company'),
+        search_ex_employee_name=get_str('ex_employee_name'),
+        search_unit_id=get_str('unit_id'),
+        search_iqhr_link=get_str('iqhr_link'),
+    )
+    conditions.extend(vacancy_conditions)
+
+    
+    from services.vacancy_filter import apply_vacancy_filters
+    qp = request.query_params
+    
+    def get_list(key: str):
+        vals = qp.getlist(key)
+        if not vals:
+            return None
+        res = []
+        for v in vals:
+            if v.lstrip('-').isdigit():
+                res.append(int(v))
+        return res if res else None
+        
+    def get_str(key: str):
+        v = qp.get(key)
+        return v if v else None
+        
+    _, vacancy_conditions = apply_vacancy_filters(
+        query=select(Vacancy),
+        current_user=current_user,
+        status_id=get_list('status_name'),
+        level_id=get_list('level_name'),
+        it_role_id=get_list('it_role_name'),
+        project_id=get_list('project_name'),
+        admin_manager_id=get_list('customer'),
+        source_id=get_list('source_name'),
+        block_id=get_list('block_name'),
+        employment_type_id=get_list('employment_type_name'),
+        feasibility_id=get_list('feasibility_name'),
+        replacement_type_id=get_list('replacement_type_name'),
+        internal_transfer_id=get_list('internal_transfer_name'),
+        recruiter_id=get_list('recruiter_name'),
+        
+        search_vacancy_id=get_str('vacancy_ext_id'),
+        search_position_name=get_str('vacancy_name'),
+        search_candidate_name=get_str('candidate_name'),
+        search_team_lead_text=get_str('team_lead_name'),
+        search_city_text=get_str('city_name'),
+        search_candidate_company=get_str('candidate_company'),
+        search_ex_employee_name=get_str('ex_employee_name'),
+        search_unit_id=get_str('unit_id'),
+        search_iqhr_link=get_str('iqhr_link'),
+    )
+    conditions.extend(vacancy_conditions)
                                                                 
     if current_user.role == UserRole.RECRUITER:
         from sqlalchemy import or_
@@ -623,8 +828,8 @@ async def export_all_reports(
     output.seek(0)
 
     filename = f"reports_export_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-    return StreamingResponse(
-        output,
+    return Response(
+        content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

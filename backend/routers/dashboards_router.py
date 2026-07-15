@@ -90,8 +90,10 @@ async def get_dashboard_metrics(
     it_role_map   = await _dict_map(db, DictionaryType.IT_ROLE)
     level_map     = await _dict_map(db, DictionaryType.SPECIALIST_LEVEL)
     admin_mgr_map = await _dict_map(db, DictionaryType.ADMIN_MANAGER)
+    replacement_map = await _dict_map(db, DictionaryType.REPLACEMENT_TYPE)
+    employment_map  = await _dict_map(db, DictionaryType.EMPLOYMENT_TYPE)
 
-                     
+    # 3.2. Разбираем статусы
     closed_ids = {k for k, v in status_map.items() if v == "Закрыта"}
     exit_ids   = {k for k, v in status_map.items() if v == "Выход"}
     hold_ids   = {k for k, v in status_map.items() if v == "Hold"}
@@ -99,7 +101,7 @@ async def get_dashboard_metrics(
     open_ids   = {k for k, v in status_map.items()
                   if v not in ("Закрыта", "Выход", "Отмена", "Hold")}
 
-                                                                                
+    # 3.3. Тянем вакансии (только нужные поля)
     all_vacs = (await db.execute(
         select(
             Vacancy.id, Vacancy.status_id, Vacancy.source_id,
@@ -108,15 +110,21 @@ async def get_dashboard_metrics(
             Vacancy.admin_manager_id, Vacancy.recruiter_id,
             Vacancy.candidate_company,
             Vacancy.open_date, Vacancy.close_date,
+            Vacancy.replacement_type_id, Vacancy.employment_type_id,
+            Vacancy.salary_gross, Vacancy.quantity,
         )
     )).all()
 
                                                                                 
     def passes(v) -> bool:
-        d = v.open_date
-        if d:
-            if dt_start and d < dt_start: return False
-            if dt_end   and d > dt_end:   return False
+        if v.quantity == 0.001:
+            return False
+        if v.open_date:
+            if dt_end and v.open_date > dt_end:
+                return False
+        if dt_start:
+            if v.close_date and v.close_date < dt_start:
+                return False
         if f_it_roles   and v.it_role_id       not in f_it_roles:   return False
         if f_levels     and v.level_id         not in f_levels:     return False
         if f_admin_mgrs and v.admin_manager_id not in f_admin_mgrs: return False
@@ -171,8 +179,9 @@ async def get_dashboard_metrics(
                                                                                  
     src_cnt: Counter = Counter()
     for v in vacs:
-        label = source_map.get(v.source_id, "Не указан") if v.source_id else "Не указан"
-        src_cnt[label] += 1
+        if v.status_id in closed_ids:
+            label = source_map.get(v.source_id, "Не указан") if v.source_id else "Не указан"
+            src_cnt[label] += 1
     total1 = sum(src_cnt.values()) or 1
     chart1 = sorted(
         [{"name": k, "value": cnt, "pct": round(cnt / total1 * 100, 1)}
@@ -286,7 +295,6 @@ async def get_dashboard_metrics(
     )
 
                                                                                
-                                                                         
     recruiter_load: dict = defaultdict(int)
     for v in vacs:
         if v.recruiter_id:
@@ -300,6 +308,40 @@ async def get_dashboard_metrics(
         key=lambda x: -x["value"],
     )
 
+    lvl_cnt: Counter = Counter()
+    for v in vacs:
+        label = level_map.get(v.level_id, "Не указан") if v.level_id else "Не указан"
+        lvl_cnt[label] += 1
+    chart_levels = sorted([{"level": k, "value": cnt} for k, cnt in lvl_cnt.items()], key=lambda x: -x["value"])
+
+    rep_cnt: Counter = Counter()
+    for v in vacs:
+        label = replacement_map.get(v.replacement_type_id, "Не указан") if v.replacement_type_id else "Не указан"
+        rep_cnt[label] += 1
+    total_rep = sum(rep_cnt.values()) or 1
+    chart_replacement = sorted([{"name": k, "value": cnt, "pct": round(cnt/total_rep*100,1)} for k, cnt in rep_cnt.items()], key=lambda x: -x["value"])
+
+    emp_cnt: Counter = Counter()
+    for v in vacs:
+        label = employment_map.get(v.employment_type_id, "Не указан") if v.employment_type_id else "Не указан"
+        emp_cnt[label] += 1
+    total_emp = sum(emp_cnt.values()) or 1
+    chart_employment = sorted([{"name": k, "value": cnt, "pct": round(cnt/total_emp*100,1)} for k, cnt in emp_cnt.items()], key=lambda x: -x["value"])
+
+    import statistics
+    sals = [v.salary_gross for v in vacs if v.salary_gross and v.salary_gross > 0]
+    if sals:
+        sals.sort()
+        try:
+            q = statistics.quantiles(sals, n=4)
+            p25, p50, p75 = q[0], q[1], q[2]
+        except AttributeError:
+            n = len(sals)
+            p25, p50, p75 = sals[n // 4], sals[n // 2], sals[(n * 3) // 4]
+    else:
+        p25, p50, p75 = 0, 0, 0
+    chart_salaries = {"p25": round(p25), "p50": round(p50), "p75": round(p75)}
+
     def _opts(m: dict):
         return sorted([{"id": k, "value": v} for k, v in m.items()], key=lambda x: x["value"])
 
@@ -312,6 +354,10 @@ async def get_dashboard_metrics(
         "chart6_statuses":    chart6,
         "chart7_jo_rate":     chart7,
         "chart8_recruiter_load": chart8,
+        "chart_levels":       chart_levels,
+        "chart_replacement":  chart_replacement,
+        "chart_employment":   chart_employment,
+        "chart_salaries":     chart_salaries,
         "filters": {
             "blocks":         _opts(block_map),
             "projects":       _opts(project_map),

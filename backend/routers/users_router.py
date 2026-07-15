@@ -19,7 +19,7 @@ router = APIRouter(prefix="/users", tags=["Пользователи"])
 @router.get("", response_model=UserListResponse)
 async def get_users(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_admin),
+    current_user: User = Depends(get_current_user),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
@@ -36,9 +36,6 @@ async def get_users(
     count_query = select(func.count(User.id)).where(User.is_active == True)
     
                                        
-    if current_user.role == UserRole.ADMIN:
-        query = query.where(User.role != UserRole.SUPERADMIN)
-        count_query = count_query.where(User.role != UserRole.SUPERADMIN)
     
     if search:
         search_filter = f"%{search}%"

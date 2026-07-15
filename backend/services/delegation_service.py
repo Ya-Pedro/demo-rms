@@ -39,11 +39,7 @@ class DelegationService:
                                                                                 
 
     def _require_admin(self, current_user: User) -> None:
-        if current_user.role == UserRole.RECRUITER:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Только администратор может управлять делегированием",
-            )
+        pass
 
     async def _get_vacancy_or_404(self, vacancy_id: int) -> Vacancy:
         result = await self.db.execute(
@@ -125,7 +121,15 @@ class DelegationService:
         end_date: date,
         current_user: User,
     ) -> VacancyDelegation:
-        self._require_admin(current_user)
+        vacancy = await self._get_vacancy_or_404(vacancy_id)
+        
+        # Разрешаем делегировать админам/суперадминам и самому рекрутеру (владельцу вакансии)
+        if current_user.role not in (UserRole.SUPERADMIN, UserRole.ADMIN):
+            if vacancy.recruiter_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Нет прав на делегирование этой вакансии"
+                )
 
         if end_date < start_date:
             raise HTTPException(
@@ -202,14 +206,23 @@ class DelegationService:
     async def revoke_delegation(
         self, delegation_id: int, current_user: User
     ) -> None:
-        self._require_admin(current_user)
-
         result = await self.db.execute(
             select(VacancyDelegation).where(VacancyDelegation.id == delegation_id)
         )
         delegation = result.scalar_one_or_none()
         if not delegation:
-            raise HTTPException(status_code=404, detail="Делегирование не найдено")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Делегирование не найдено"
+            )
+
+        vacancy = await self._get_vacancy_or_404(delegation.vacancy_id)
+        if current_user.role not in (UserRole.SUPERADMIN, UserRole.ADMIN):
+            if vacancy.recruiter_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Нет прав на отзыв делегирования этой вакансии"
+                )
 
         delegation.is_active = False
 
@@ -241,7 +254,14 @@ class DelegationService:
     async def list_delegations(
         self, vacancy_id: int, current_user: User
     ) -> List[VacancyDelegation]:
-        self._require_admin(current_user)
+        vacancy = await self._get_vacancy_or_404(vacancy_id)
+        if current_user.role not in (UserRole.SUPERADMIN, UserRole.ADMIN):
+            if vacancy.recruiter_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Нет прав на просмотр делегирований этой вакансии"
+                )
+
         result = await self.db.execute(
             select(VacancyDelegation)
             .options(

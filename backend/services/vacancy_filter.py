@@ -24,7 +24,7 @@ def _today() -> date:
         return (datetime.now(timezone.utc) + timedelta(hours=3)).date()
 from typing import List, Optional
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, func
 from sqlalchemy.orm import Query
 
 from models import Vacancy, UserRole, User, VacancyDelegation
@@ -37,14 +37,12 @@ def apply_vacancy_filters(
     query,
     current_user: User,
     *,
-                                               
     status_id: Optional[List[int]] = None,
+    exclude_status_id: Optional[List[int]] = None,
     level_id: Optional[List[int]] = None,
     it_role_id: Optional[List[int]] = None,
     project_id: Optional[List[int]] = None,
     admin_manager_id: Optional[List[int]] = None,
-    team_lead_id: Optional[List[int]] = None,
-    city_id: Optional[List[int]] = None,
     source_id: Optional[List[int]] = None,
     block_id: Optional[List[int]] = None,
     employment_type_id: Optional[List[int]] = None,
@@ -62,8 +60,11 @@ def apply_vacancy_filters(
     search_unit_id: Optional[str] = None,
     search_iqhr_link: Optional[str] = None,
     search_salary_gross: Optional[str] = None,
+    search_city_text: Optional[str] = None,
+    search_team_lead_text: Optional[str] = None,
                             
     search_quantity: Optional[str] = None,
+    search_work_duration_days: Optional[str] = None,
                                                                               
     search_open_date: Optional[str] = None,
     search_close_date: Optional[str] = None,
@@ -115,8 +116,6 @@ def apply_vacancy_filters(
         "it_role_id": (Vacancy.it_role_id, it_role_id),
         "project_id": (Vacancy.project_id, project_id),
         "admin_manager_id": (Vacancy.admin_manager_id, admin_manager_id),
-        "team_lead_id": (Vacancy.team_lead_id, team_lead_id),
-        "city_id": (Vacancy.city_id, city_id),
         "source_id": (Vacancy.source_id, source_id),
         "block_id": (Vacancy.block_id, block_id),
         "employment_type_id": (Vacancy.employment_type_id, employment_type_id),
@@ -127,7 +126,18 @@ def apply_vacancy_filters(
     }
     for _name, (col, values) in _dict_filters.items():
         if values:
-            conditions.append(col.in_(values))
+            if 0 in values:
+                # If 0 is in the filter list, filter for NULL as well
+                valid_ids = [v for v in values if v != 0]
+                if valid_ids:
+                    conditions.append(or_(col.in_(valid_ids), col.is_(None)))
+                else:
+                    conditions.append(col.is_(None))
+            else:
+                conditions.append(col.in_(values))
+
+    if exclude_status_id:
+        conditions.append(or_(Vacancy.status_id.not_in(exclude_status_id), Vacancy.status_id.is_(None)))
 
                                                                                 
     _text_filters = {
@@ -138,7 +148,8 @@ def apply_vacancy_filters(
         "search_ex_employee_name": (Vacancy.ex_employee_name, search_ex_employee_name),
         "search_unit_id": (Vacancy.unit_id, search_unit_id),
         "search_iqhr_link": (Vacancy.iqhr_link, search_iqhr_link),
-        "search_salary_gross": (Vacancy.salary_gross, search_salary_gross),
+        "search_city_text": (Vacancy.city_text, search_city_text),
+        "search_team_lead_text": (Vacancy.team_lead_text, search_team_lead_text),
     }
     for _name, (col, val) in _text_filters.items():
         if val:
@@ -149,6 +160,26 @@ def apply_vacancy_filters(
         try:
             conditions.append(Vacancy.quantity == int(search_quantity))
         except (ValueError, TypeError):
+            pass
+
+    if search_salary_gross is not None:
+        try:
+            conditions.append(Vacancy.salary_gross == int(search_salary_gross))
+        except (ValueError, TypeError):
+            pass
+
+    if search_work_duration_days is not None:
+        try:
+            conditions.append(
+                (func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)) == int(search_work_duration_days)
+            )
+        except (ValueError, TypeError):
+            pass
+
+    if search_salary_gross is not None:
+        try:
+            conditions.append(Vacancy.salary_gross == int(search_salary_gross))
+        except:
             pass
 
                                                                                

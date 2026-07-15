@@ -214,6 +214,7 @@ async def export_vacancies_excel(
     end_date: Optional[date] = Query(None, description="Custom end date"),
                                                           
     status_id: Optional[List[int]] = Query(None),
+    exclude_status_id: Optional[List[int]] = Query(None),
     project_id: Optional[List[int]] = Query(None),
     recruiter_id: Optional[List[int]] = Query(None),
     it_role_id: Optional[List[int]] = Query(None),
@@ -262,6 +263,7 @@ async def export_vacancies_excel(
         query,
         current_user,
         status_id=status_id,
+        exclude_status_id=exclude_status_id,
         project_id=project_id,
         recruiter_id=recruiter_id,
         it_role_id=it_role_id,

@@ -107,6 +107,44 @@ const NoData = ({ text = 'Нет данных' }) => (
   </div>
 );
 
+const DonutCard = ({ title, icon, data, color }) => (
+  <Card style={CS} bodyStyle={{ padding: '16px 24px' }} headStyle={CHS}
+    title={<><span style={{ marginRight: 8, color }}>{icon}</span>{title}</>}>
+    {!data?.length ? <NoData /> : (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+        <div style={{ width: 180, height: 180 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name"
+                cx="50%" cy="50%" innerRadius={48} outerRadius={88}
+                labelLine={false} label={PieLabel}>
+                {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+              </Pie>
+              <RTooltip content={<PieTip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+          {data.map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                background: PALETTE[i % PALETTE.length], flexShrink: 0
+              }} />
+              <span style={{ fontSize: 13, color: T.sub, fontWeight: 500 }}>
+                {item.name}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
+                {item.pct}%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </Card>
+);
+
 export default function DashboardsPage() {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
@@ -173,6 +211,11 @@ export default function DashboardsPage() {
   const chart6 = data?.chart6_statuses  || [];
   const chart7 = data?.chart7_jo_rate   || { jo_rate: 0, closed: 0, offers_total: 0 };
   const chart8 = data?.chart8_recruiter_load || [];
+  
+  const chartLevels      = data?.chart_levels      || [];
+  const chartReplacement = data?.chart_replacement || [];
+  const chartEmployment  = data?.chart_employment  || [];
+  const chartSalaries    = data?.chart_salaries    || { p25: 0, p50: 0, p75: 0 };
 
   const joRate  = chart7.jo_rate;
   const joColor = joRate >= 70 ? T.green : joRate >= 40 ? T.amber : T.red;
@@ -293,10 +336,10 @@ export default function DashboardsPage() {
         <Row gutter={[20, 20]}>
 
           {}
-          <Col xs={24} lg={10}>
+          <Col xs={24} lg={24}>
             <Card style={CS} bodyStyle={{ padding: '20px 28px' }} headStyle={CHS}
               title={<><RiseOutlined style={{ marginRight: 8, color: T.blue }} />Коэффициент принятия Job Offer</>}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1, color: joColor, letterSpacing: '-2px' }}>
                     {joRate.toFixed(1)}<span style={{ fontSize: 28, fontWeight: 600 }}>%</span>
@@ -317,44 +360,75 @@ export default function DashboardsPage() {
                   valueStyle={{ fontSize: 28, fontWeight: 700, color: T.blue }}
                   prefix={<TeamOutlined style={{ fontSize: 18, marginRight: 4 }} />}
                 />
+                <Divider type="vertical" style={{ height: 72, margin: '0' }} />
+                <div style={{ display: 'flex', gap: 24, paddingLeft: 16 }}>
+                  <Statistic
+                    title={<Text style={{ fontSize: 12, color: T.muted }}>Медианная ЗП (Gross)</Text>}
+                    value={chartSalaries.p50}
+                    valueStyle={{ fontSize: 28, fontWeight: 700, color: T.purple }}
+                    suffix="₽"
+                  />
+                  <Statistic
+                    title={<Text style={{ fontSize: 12, color: T.muted }}>Q1 (25%)</Text>}
+                    value={chartSalaries.p25}
+                    valueStyle={{ fontSize: 20, fontWeight: 600, color: T.sub }}
+                    suffix="₽"
+                  />
+                  <Statistic
+                    title={<Text style={{ fontSize: 12, color: T.muted }}>Q3 (75%)</Text>}
+                    value={chartSalaries.p75}
+                    valueStyle={{ fontSize: 20, fontWeight: 600, color: T.sub }}
+                    suffix="₽"
+                  />
+                </div>
               </div>
             </Card>
           </Col>
 
-          <Col xs={24} lg={14}>
-            <Card style={CS} bodyStyle={{ padding: '16px 24px' }} headStyle={CHS}
-              title={<><PieChartOutlined style={{ marginRight: 8, color: T.purple }} />Источник найма</>}>
-              {!chart1.length ? <NoData /> : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-                  <div style={{ width: 220, height: 180, flexShrink: 0 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={chart1} dataKey="value" nameKey="name"
-                          cx="50%" cy="50%" innerRadius={48} outerRadius={88}
-                          labelLine={false} label={PieLabel}>
-                          {chart1.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                        </Pie>
-                        <RTooltip content={<PieTip />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {chart1.map((item, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{
-                          display: 'inline-block', width: 13, height: 13, borderRadius: '50%',
-                          background: PALETTE[i % PALETTE.length], flexShrink: 0
-                        }} />
-                        <span style={{ fontSize: 15, color: T.sub, fontWeight: 500, whiteSpace: 'nowrap' }}>
-                          {item.name}
-                        </span>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: T.text, marginLeft: 4 }}>
-                          {item.pct}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+          <Col xs={24} lg={8}>
+            <DonutCard 
+              title="Источник найма" 
+              icon={<PieChartOutlined />} 
+              color={T.purple} 
+              data={chart1} 
+            />
+          </Col>
+
+          <Col xs={24} lg={8}>
+            <DonutCard 
+              title="Тип вакансии (Новая/Замена)" 
+              icon={<PieChartOutlined />} 
+              color={T.amber} 
+              data={chartReplacement} 
+            />
+          </Col>
+
+          <Col xs={24} lg={8}>
+            <DonutCard 
+              title="Вид занятости" 
+              icon={<PieChartOutlined />} 
+              color={T.teal} 
+              data={chartEmployment} 
+            />
+          </Col>
+
+          <Col xs={24} lg={12}>
+            <Card style={CS} bodyStyle={CBS} headStyle={CHS}
+              title={<><TeamOutlined style={{ marginRight: 8, color: T.blue }} />Распределение вакансий по уровню ИТ роли</>}>
+              {!chartLevels.length ? <NoData text="Нет данных по уровням" /> : (
+                <ResponsiveContainer width="100%" height={Math.max(200, chartLevels.length * 42 + 20)}>
+                  <BarChart data={chartLevels} layout="vertical" barSize={22}
+                    margin={{ top: 4, right: 64, bottom: 4, left: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
+                    <YAxis type="category" dataKey="level" width={140} axisLine={false} tickLine={false} style={{ fontSize: 14, fill: T.sub }} />
+                    <RTooltip content={<BarTip />} />
+                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+                      {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: 14, fill: T.text }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               )}
             </Card>
           </Col>

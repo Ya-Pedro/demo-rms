@@ -148,6 +148,7 @@ class VacancyBase(BaseModel):
     offer_made: int = 0
     city_id: Optional[int] = None
     city_text: Optional[str] = None
+    team_lead_text: Optional[str] = None
     source_id: Optional[int] = None
     internal_transfer_id: Optional[int] = None
     status_changed_at: Optional[date] = None
@@ -186,6 +187,7 @@ class VacancyUpdate(BaseModel):
     offer_made: Optional[int] = None
     city_id: Optional[int] = None
     city_text: Optional[str] = None
+    team_lead_text: Optional[str] = None
     source_id: Optional[int] = None
     internal_transfer_id: Optional[int] = None
     status_changed_at: Optional[date] = None
@@ -234,6 +236,7 @@ class VacancyResponse(BaseModel):
     offer_made: int = 0
     city_id: Optional[int] = None
     city_text: Optional[str] = None
+    team_lead_text: Optional[str] = None
     source_id: Optional[int] = None
     internal_transfer_id: Optional[int] = None
     status_changed_at: Optional[date] = None

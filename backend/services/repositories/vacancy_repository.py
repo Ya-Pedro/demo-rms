@@ -20,9 +20,7 @@ VACANCY_LOAD_OPTIONS = [
     selectinload(Vacancy.status),
     selectinload(Vacancy.it_role),
     selectinload(Vacancy.admin_manager),
-    selectinload(Vacancy.team_lead),
     selectinload(Vacancy.project),
-    selectinload(Vacancy.city),
     selectinload(Vacancy.source),
     selectinload(Vacancy.internal_transfer),
     selectinload(Vacancy.replacement_type),
@@ -58,15 +56,26 @@ class VacancyRepository:
         sort_order: str = "desc",
     ) -> List[Vacancy]:
         if sort_field:
-            sort_col = getattr(Vacancy, sort_field, None)
-                                                                                                
-            from sqlalchemy.orm.attributes import InstrumentedAttribute
-            if sort_col is not None and isinstance(sort_col, InstrumentedAttribute):
-                base_query = base_query.order_by(
-                    sort_col.asc() if sort_order == "asc" else sort_col.desc()
-                )
-            else:
-                base_query = base_query.order_by(Vacancy.id.desc())
+            fields = sort_field.split(',')
+            orders = sort_order.split(',') if sort_order else []
+            for i, f in enumerate(fields):
+                field_name = f.strip()
+                order_dir = orders[i].strip() if i < len(orders) else 'desc'
+                if field_name == 'work_duration_days':
+                    sort_col = func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)
+                    if order_dir == 'asc':
+                        base_query = base_query.order_by(sort_col.asc().nulls_last())
+                    else:
+                        base_query = base_query.order_by(sort_col.desc().nulls_last())
+                else:
+                    sort_col = getattr(Vacancy, field_name, None)
+                    from sqlalchemy.orm.attributes import InstrumentedAttribute
+                    if sort_col is not None and isinstance(sort_col, InstrumentedAttribute):
+                        if order_dir == 'asc':
+                            base_query = base_query.order_by(sort_col.asc().nulls_last())
+                        else:
+                            base_query = base_query.order_by(sort_col.desc().nulls_last())
+            base_query = base_query.order_by(Vacancy.id.desc())
         else:
             base_query = base_query.order_by(Vacancy.id.desc())
 

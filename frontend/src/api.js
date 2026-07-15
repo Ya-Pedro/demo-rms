@@ -53,7 +53,7 @@ export const exportVacancies = async (params = {}) => {
 
 export const exportVacanciesSmart = async (params = {}) => {
   const token = getAuthToken();
-  const url = `${BACKEND_URL}/api/export/vacancies/smart`;
+  const url = `${getApiUrl()}/export/vacancies/smart`;
   
   try {
     const response = await fetch(url, {
@@ -106,9 +106,11 @@ function downloadBlob(blob, response) {
   document.body.appendChild(link);
   link.click();
   
-  // Cleanup
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(downloadUrl);
+  // Cleanup (with delay for browser to start download)
+  setTimeout(() => {
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+  }, 1000);
 }
 
 export default {

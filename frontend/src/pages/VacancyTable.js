@@ -125,15 +125,15 @@ const NUMBER_FILTER_DROPDOWN = {
     <div style={{ padding: 8 }}>
       <Input
         autoFocus
-        placeholder="Число..."
+        placeholder="Точное значение..."
         value={selectedKeys[0]}
         onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
         onPressEnter={() => confirm()}
-        style={{ width: 120, marginBottom: 8, display: 'block' }}
+        style={{ width: 140, marginBottom: 8, display: 'block' }}
       />
       <Space>
-        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 60 }}>Найти</Button>
-        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 60 }}>Сброс</Button>
+        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 65 }}>Найти</Button>
+        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 65 }}>Сброс</Button>
       </Space>
     </div>
   ),
@@ -141,22 +141,84 @@ const NUMBER_FILTER_DROPDOWN = {
 };
 
 const TEXT_FILTER_KEYS = new Set([
-  'vacancy_id', 'position_name', 'candidate_name', 'candidate_company',
-  'ex_employee_name', 'unit_id', 'iqhr_link', 'salary_gross',
-]);
-const DATE_FILTER_KEYS = new Set([
-  'open_date', 'close_date', 'status_changed_at',
+  'vacancy_id', 'position_name', 'team_lead_text', 'city_text',
+  'candidate_name', 'candidate_company', 'ex_employee_name', 'unit_id',
 ]);
 const NUMBER_FILTER_KEYS = new Set([
-  'quantity', 'resume_at_customer', 'resume_approved',
-  'interviews_fact', 'interviews_plan', 'offer_made',
+  'quantity', 'resume_at_customer', 'resume_approved', 
+  'interviews_fact', 'interviews_plan', 'offer_made', 
+  'work_duration_days', 'salary_gross'
 ]);
+const DATE_FILTER_KEYS = new Set(['open_date', 'close_date', 'status_changed_at']);
 
-const PIN_LABEL = { left: 'Слева', right: 'Справа', none: 'Нет' };
-const PIN_COLOR = { left: '#1890FF', right: '#FA8C16', none: undefined };
+const PIN_LABEL = { left: 'Слева', none: 'Нет' };
+const PIN_COLOR = { left: '#1890FF', none: undefined };
 
 
-const ColumnSettingsModal = React.memo(({ visible, onClose, onApply, localOrder, setLocalOrder }) => {
+const ResizableHeaderCell = (props) => {
+  const { onResize, width, ...restProps } = props;
+  const [hovered, setHovered] = React.useState(false);
+
+  if (!width) {
+    return <th {...restProps} />;
+  }
+
+  const isSticky = restProps.style?.position === 'sticky' || (restProps.className && restProps.className.includes('ant-table-cell-fix-'));
+  const cellStyle = {
+    ...restProps.style,
+  };
+  if (!isSticky) {
+    cellStyle.position = 'relative';
+  }
+
+  return (
+    <th
+      {...restProps}
+      style={cellStyle}
+    >
+      {restProps.children}
+      <div
+        style={{
+          position: 'absolute',
+          right: 0,
+          top: 0,
+          width: 8,
+          height: '100%',
+          cursor: 'col-resize',
+          zIndex: 10,
+          transition: 'background 0.2s',
+          background: hovered ? 'rgba(0, 80, 179, 0.3)' : 'transparent',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+        }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const startX = e.clientX;
+          const startWidth = width;
+
+          const handleMouseMove = (moveEvent) => {
+            const newWidth = Math.min(800, Math.max(80, startWidth + (moveEvent.clientX - startX)));
+            onResize(newWidth);
+          };
+
+          const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+          };
+
+          document.addEventListener('mousemove', handleMouseMove);
+          document.addEventListener('mouseup', handleMouseUp);
+        }}
+      />
+    </th>
+  );
+};
+
+const ColumnSettingsModal = React.memo(({ visible, onClose, onApply, localOrder, setLocalOrder, showReorder }) => {
   const moveUp = useCallback((idx) => {
     if (idx <= 0) return;
     setLocalOrder(prev => {
@@ -187,7 +249,7 @@ const ColumnSettingsModal = React.memo(({ visible, onClose, onApply, localOrder,
     setLocalOrder(prev => {
       const next = [...prev];
       const cur = next[idx].fixed || 'none';
-      const pins = ['none', 'left', 'right'];
+      const pins = ['none', 'left'];
       next[idx] = { ...next[idx], fixed: pins[(pins.indexOf(cur) + 1) % pins.length] };
       return next;
     });
@@ -225,14 +287,18 @@ const ColumnSettingsModal = React.memo(({ visible, onClose, onApply, localOrder,
               }}>
                 {item.label}
               </span>
-              <Tooltip title="Вверх">
-                <Button type="text" size="small" icon={<ArrowUpOutlined />}
-                  disabled={idx === 0} onClick={() => moveUp(idx)} />
-              </Tooltip>
-              <Tooltip title="Вниз">
-                <Button type="text" size="small" icon={<ArrowDownOutlined />}
-                  disabled={idx === localOrder.length - 1} onClick={() => moveDown(idx)} />
-              </Tooltip>
+              {showReorder && (
+                <>
+                  <Tooltip title="Вверх">
+                    <Button type="text" size="small" icon={<ArrowUpOutlined />}
+                      disabled={idx === 0} onClick={() => moveUp(idx)} />
+                  </Tooltip>
+                  <Tooltip title="Вниз">
+                    <Button type="text" size="small" icon={<ArrowDownOutlined />}
+                      disabled={idx === localOrder.length - 1} onClick={() => moveDown(idx)} />
+                  </Tooltip>
+                </>
+              )}
               <Tooltip title={`Закрепить (${PIN_LABEL[item.fixed || 'none']})`}>
                 <Button type="text" size="small" icon={<PushpinOutlined />}
                   onClick={() => cyclePin(idx)}
@@ -266,6 +332,7 @@ const VacancyTable = ({
   onTableStateChange,
   onResetRequest,
   onTourComplete,
+  excludeStatusIds = [],
 }) => {
   const userId       = user?.id;
   const isSuperAdmin = user?.role === 'superadmin';
@@ -361,21 +428,30 @@ const VacancyTable = ({
     si     = sortedInfoRef.current,
     filter = filteredInfo,
   } = {}) => {
+    console.log("DEBUG VacancyTable fetchData:", {
+      excludeStatusIds,
+      excludeStatusIds_len: excludeStatusIds ? excludeStatusIds.length : 0
+    });
     setLoading(true);
     try {
       const sp = new URLSearchParams();
       sp.append('skip',  String((page - 1) * ps));
       sp.append('limit', String(ps));
 
-      const field = si?.columnKey || si?.field || null;
-      const order = si?.order || null;
-      if (field && order) {
-        sp.append('sort_field', field);
-        sp.append('sort_order', order === 'ascend' ? 'asc' : 'desc');
+      const sorters = Array.isArray(si) ? si : (si?.field || si?.columnKey ? [si] : []);
+      const sf = sorters.map(s => s.field || s.columnKey).filter(Boolean);
+      const so = sorters.map(s => s.order === 'ascend' ? 'asc' : 'desc');
+      if (sf.length > 0) {
+        sp.append('sort_field', sf.join(','));
+        sp.append('sort_order', so.join(','));
       }
 
       sp.append('week_number', String(dayjs().isoWeek()));
       sp.append('year',        String(dayjs().year()));
+
+      if (excludeStatusIds && excludeStatusIds.length > 0) {
+        excludeStatusIds.forEach(id => sp.append('exclude_status_id', String(id)));
+      }
 
       for (const [key, values] of Object.entries(filter || {})) {
         if (!values || values.length === 0) continue;
@@ -397,11 +473,11 @@ const VacancyTable = ({
     } finally {
       setLoading(false);
     }
-  }, [curPage, pageSize, filteredInfo]);
+  }, [curPage, pageSize, filteredInfo, (excludeStatusIds || []).join(',')]);
 
   useEffect(() => {
     fetchData();
-  }, [tableKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tableKey, (excludeStatusIds || []).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (actionRef && typeof actionRef === 'object') {
@@ -412,27 +488,27 @@ const VacancyTable = ({
   const handleTableChange = useCallback((pagination, filters, sorter) => {
     const newPage = pagination.current  || 1;
     const newPs   = pagination.pageSize || pageSize;
-    const newSi   = sorter  || {};
-    const newFi   = filters || {};
+    
+    let newSi = sorter;
 
     sortedInfoRef.current = newSi;
     setSortedInfo(newSi);
-    setFilteredInfo(newFi);
+    setFilteredInfo(filters || {});
     setCurPage(newPage);
     if (newPs !== pageSize) setPageSize(newPs);
 
-    fetchData({ page: newPage, ps: newPs, si: newSi, filter: newFi });
+    fetchData({ page: newPage, ps: newPs, si: newSi, filter: filters });
   }, [pageSize, fetchData]);
 
   const handleResetFilters = useCallback(() => {
-    sortedInfoRef.current = {};
-    setSortedInfo({});
+    sortedInfoRef.current = [];
+    setSortedInfo([]);
     setFilteredInfo({});
     setCurPage(1);
     if (onResetRequest) {
       onResetRequest();
     } else {
-      fetchData({ page: 1, si: {}, filter: {} });
+      fetchData({ page: 1, si: [], filter: {} });
     }
     message.success('Фильтры и сортировка сброшены');
   }, [onResetRequest, fetchData]);
@@ -474,10 +550,29 @@ const VacancyTable = ({
     }
   }, [importFile, fetchData]);
 
+  const mkSort = (field) => {
+    let order = null;
+    if (Array.isArray(sortedInfo)) {
+      const match = sortedInfo.find(s => s.field === field || s.columnKey === field);
+      order = match ? match.order : null;
+    } else {
+      order = (sortedInfo?.field === field || sortedInfo?.columnKey === field) ? sortedInfo.order : null;
+    }
+    return {
+      sorter: { multiple: 1 },
+      sortOrder: order,
+    };
+  };
+
   // [БАГ 3 FIX] curPage и pageSize добавлены в deps
   const rawColumns = useMemo(() => {
-    const dictFilter = (items) => ({
-      filters: (items || []).map(d => ({ text: d.value, value: d.id })),
+    const dictFilter = (items, excludeIds) => ({
+      filters: [
+        ...(items || [])
+          .filter(d => !(excludeIds && excludeIds.length > 0 && excludeIds.includes(d.id)))
+          .map(d => ({ text: d.value, value: d.id })),
+        { text: 'Без указания', value: 0 }
+      ],
       filterSearch: true,
       filterDropdownProps: { getPopupContainer },
     });
@@ -494,53 +589,52 @@ const VacancyTable = ({
       },
       {
         title: 'Действия', dataIndex: '_actions', key: '_actions',
-        width: 148, fixed: 'left', hideInSetting: true,
+        width: 200, fixed: 'left', hideInSetting: true,
         render: (_, record) => (
           <Space size="small">
             <Tooltip title="Добавить отчет">
               <Button type="text" size="small" icon={<FileTextOutlined />}
                 onClick={() => onReportClick?.(record)} data-tour="report-btn" />
             </Tooltip>
-            {isAdmin && (
-              <Tooltip title="История изменений">
-                <Button type="text" size="small" icon={<HistoryOutlined />}
-                  style={{ color: '#722ed1' }}
-                  onClick={() => openHistoryDrawer(record)} />
-              </Tooltip>
-            )}
-            {isAdmin && (
-              <Tooltip title="Делегировать">
-                <Button type="text" size="small" icon={<UserSwitchOutlined />}
-                  style={{ color: record.delegation ? '#fa8c16' : undefined }}
-                  onClick={() => openDelegationModal(record)} />
-              </Tooltip>
-            )}
+            <Tooltip title="История изменений">
+              <Button type="text" size="small" icon={<HistoryOutlined />}
+                style={{ color: '#722ed1' }}
+                onClick={() => openHistoryDrawer(record)} data-tour="history-btn" />
+            </Tooltip>
+            <Tooltip title="Делегировать">
+              <Button type="text" size="small" icon={<UserSwitchOutlined />}
+                style={{ color: record.delegation ? '#fa8c16' : undefined }}
+                onClick={() => openDelegationModal(record)} data-tour="delegate-btn" />
+            </Tooltip>
             <Tooltip title="Редактировать">
               <Button type="text" size="small" icon={<EditOutlined />}
                 onClick={() => onEdit(record)} data-tour="edit-btn" />
             </Tooltip>
-            <Tooltip title="Удалить">
-              <Button type="text" size="small" danger icon={<DeleteOutlined />}
-                onClick={() => onDelete(record.id)} data-tour="delete-btn" />
-            </Tooltip>
+            {isAdmin && (
+              <Tooltip title="Удалить">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                  onClick={() => onDelete(record.id)} data-tour="delete-btn" />
+              </Tooltip>
+            )}
           </Space>
         ),
       },
       {
-        title: 'ID вакансии', dataIndex: 'vacancy_id', key: 'vacancy_id',
+        title: 'ID вакансии', dataIndex: 'vacancy_id', key: 'vacancy_id', ...mkSort('vacancy_id'),
         width: 120, ...(isAdmin ? { fixed: 'left' } : {}),
         filteredValue: fi.vacancy_id || null,
         ...TEXT_FILTER_DROPDOWN,
       },
       {
-        title: 'Дата открытия', dataIndex: 'open_date', key: 'open_date', width: 110,
+        title: 'Дата открытия', dataIndex: 'open_date', key: 'open_date', ...mkSort('open_date'),
+        width: 110,
         render: (d) => d ? dayjs(d).format('DD.MM.YY') : '-',
-        sorter: true, sortOrder: si.columnKey === 'open_date' ? si.order : null,
-        filteredValue: fi.open_date || null,
+         filteredValue: fi.open_date || null,
         ...DATE_FILTER_DROPDOWN,
       },
       {
-        title: WH('Количество'), dataIndex: 'quantity', key: 'quantity', width: 100, align: 'center',
+        title: WH('Количество'), dataIndex: 'quantity', key: 'quantity', ...mkSort('quantity'),
+        width: 100, align: 'center',
         filteredValue: fi.quantity || null,
         ...NUMBER_FILTER_DROPDOWN,
       },
@@ -562,7 +656,7 @@ const VacancyTable = ({
           return s ? <span style={{ fontSize: 11 }}>{s}</span> : '-';
         },
         filteredValue: fi.status_id || null,
-        ...dictFilter(dictionaries.vacancy_status),
+        ...dictFilter(dictionaries.vacancy_status, excludeStatusIds),
       },
       {
         title: 'ИТ роль', dataIndex: 'it_role_id', key: 'it_role_id', width: 130, ellipsis: true,
@@ -577,10 +671,10 @@ const VacancyTable = ({
         ...dictFilter(dictionaries.admin_manager),
       },
       {
-        title: 'Тимлид', dataIndex: 'team_lead_id', key: 'team_lead_id', width: 150, ellipsis: true,
-        render: (_, r) => r.team_lead_name || r.team_lead?.value || '-',
-        filteredValue: fi.team_lead_id || null,
-        ...dictFilter(dictionaries.team_lead),
+        title: 'Тимлид', dataIndex: 'team_lead_text', key: 'team_lead_text', width: 150, ellipsis: true,
+        render: (_, r) => r.team_lead_text || r.team_lead_name || r.team_lead?.value || '-',
+        filteredValue: fi.team_lead_text || null,
+        ...TEXT_FILTER_DROPDOWN,
       },
       {
         title: 'Проект', dataIndex: 'project_id', key: 'project_id', width: 150,
@@ -589,30 +683,45 @@ const VacancyTable = ({
         ...dictFilter(dictionaries.project),
       },
       {
-        title: WH('Передано заказчику'), dataIndex: 'resume_at_customer', key: 'resume_at_customer', width: 110, align: 'center',
+        title: WH('Передано заказчику'), dataIndex: 'resume_at_customer', key: 'resume_at_customer', ...mkSort('resume_at_customer'),
+        width: 110, align: 'center',
+        filteredValue: fi.resume_at_customer || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: (v) => <span style={{ fontWeight: 500, color: '#1890FF' }}>{v || 0}</span>,
       },
       {
-        title: WH('Резюме одобрено'), dataIndex: 'resume_approved', key: 'resume_approved', width: 110, align: 'center',
+        title: WH('Резюме одобрено'), dataIndex: 'resume_approved', key: 'resume_approved', ...mkSort('resume_approved'),
+        width: 110, align: 'center',
+        filteredValue: fi.resume_approved || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: (v) => <span style={{ fontWeight: 500, color: '#52C41A' }}>{v || 0}</span>,
       },
       {
-        title: WH('Собеседования факт'), dataIndex: 'interviews_fact', key: 'interviews_fact', width: 110, align: 'center',
+        title: WH('Собеседования факт'), dataIndex: 'interviews_fact', key: 'interviews_fact', ...mkSort('interviews_fact'),
+        width: 110, align: 'center',
+        filteredValue: fi.interviews_fact || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: (v) => <span style={{ fontWeight: 500, color: '#722ED1' }}>{v || 0}</span>,
       },
       {
-        title: WH('Собеседования план'), dataIndex: 'interviews_plan', key: 'interviews_plan', width: 110, align: 'center',
+        title: WH('Собеседования план'), dataIndex: 'interviews_plan', key: 'interviews_plan', ...mkSort('interviews_plan'),
+        width: 110, align: 'center',
+        filteredValue: fi.interviews_plan || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: (v) => <span style={{ fontWeight: 500, color: '#FA8C16' }}>{v || 0}</span>,
       },
       {
-        title: WH('Оффер сделан'), dataIndex: 'offer_made', key: 'offer_made', width: 100, align: 'center',
+        title: WH('Оффер сделан'), dataIndex: 'offer_made', key: 'offer_made', ...mkSort('offer_made'),
+        width: 100, align: 'center',
+        filteredValue: fi.offer_made || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: (v) => <span style={{ fontWeight: 500, color: '#EB2F96' }}>{v || 0}</span>,
       },
       {
-        title: 'Город', dataIndex: 'city_id', key: 'city_id', width: 110,
-        render: (_, r) => r.city_name || r.city?.value || r.city_text || '-',
-        filteredValue: fi.city_id || null,
-        ...dictFilter(dictionaries.city),
+        title: 'Город', dataIndex: 'city_text', key: 'city_text', width: 110,
+        render: (_, r) => r.city_text || r.city_name || r.city?.value || '-',
+        filteredValue: fi.city_text || null,
+        ...TEXT_FILTER_DROPDOWN,
       },
       {
         title: 'Источник найма', dataIndex: 'source_id', key: 'source_id', width: 120,
@@ -627,13 +736,15 @@ const VacancyTable = ({
         ...dictFilter(dictionaries.internal_transfer),
       },
       {
-        title: 'Дата изм. статуса', dataIndex: 'status_changed_at', key: 'status_changed_at', width: 120,
+        title: 'Дата изм. статуса', dataIndex: 'status_changed_at', key: 'status_changed_at', ...mkSort('status_changed_at'),
+        width: 120,
         render: (d) => d ? dayjs(d).format('DD.MM.YY') : '-',
         filteredValue: fi.status_changed_at || null,
         ...DATE_FILTER_DROPDOWN,
       },
       {
-        title: 'Дата закрытия', dataIndex: 'close_date', key: 'close_date', width: 110,
+        title: 'Дата закрытия', dataIndex: 'close_date', key: 'close_date', ...mkSort('close_date'),
+        width: 110,
         render: (d) => d ? dayjs(d).format('DD.MM.YY') : '-',
         filteredValue: fi.close_date || null,
         ...DATE_FILTER_DROPDOWN,
@@ -681,8 +792,6 @@ const VacancyTable = ({
         render: (link) => link
           ? <a href={link} target="_blank" rel="noopener noreferrer">Открыть</a>
           : '-',
-        filteredValue: fi.iqhr_link || null,
-        ...TEXT_FILTER_DROPDOWN,
       },
       {
         title: 'Рекрутер', dataIndex: 'recruiter_id', key: 'recruiter_id', width: 185, ellipsis: true,
@@ -701,7 +810,10 @@ const VacancyTable = ({
             </span>
           );
         },
-        filters: (users || []).map(u => ({ text: u.full_name, value: u.id })),
+        filters: [
+          ...(users || []).map(u => ({ text: u.full_name, value: u.id })),
+          { text: 'Без указания', value: 0 }
+        ],
         filterSearch: true,
         filterDropdownProps: { getPopupContainer },
         filteredValue: fi.recruiter_id || null,
@@ -713,22 +825,35 @@ const VacancyTable = ({
         ...dictFilter(dictionaries.block),
       },
       {
-        title: WH('Срок работы (дней)'), dataIndex: 'work_duration_days', key: 'work_duration_days', width: 100, align: 'center',
+        title: WH('Срок работы (дней)'), dataIndex: 'work_duration_days', key: 'work_duration_days',
+        width: 100, align: 'center',
         render: (v) => v != null ? v : '-',
       },
       {
-        title: WH('Зарплата кандидатов Gross'), dataIndex: 'salary_gross', key: 'salary_gross', width: 140, align: 'center',
+        title: WH('Зарплата кандидатов Gross'), dataIndex: 'salary_gross', key: 'salary_gross', ...mkSort('salary_gross'),
+        width: 140, align: 'center',
+        filteredValue: fi.salary_gross || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: (v) => v != null ? Number(v).toLocaleString('ru-RU') : '-',
-        sorter: true, sortOrder: si.columnKey === 'salary_gross' ? si.order : null,
-        //filteredValue: fi.salary_gross || null,
-        //...TEXT_FILTER_DROPDOWN,
       },
     ];
   }, [
     filteredInfo, sortedInfo, dictionaries, users,
     onReportClick, onEdit, onDelete, isAdmin,
     curPage, pageSize, openDelegationModal, openHistoryDrawer, // [БАГ 3 FIX]
+    excludeStatusIds,
   ]);
+
+  const handleResize = useCallback((key, width) => {
+    setColumnsStateMap(prev => {
+      const next = { ...prev };
+      next[key] = {
+        ...next[key],
+        width,
+      };
+      return next;
+    });
+  }, []);
 
   const rawColMap = useMemo(() => {
     const m = {};
@@ -743,32 +868,58 @@ const VacancyTable = ({
     const pinned   = rawColumns.filter(c => c.hideInSetting);
     const settable = rawColumns.filter(c => !c.hideInSetting);
 
+    let list = [];
     if (!columnOrder || columnOrder.length === 0) {
       const visible = settable.filter(c => {
         const s = columnsStateMap[c.key];
         return !s || s.show !== false;
+      }).map(c => {
+        const savedWidth = columnsStateMap[c.key]?.width;
+        const widthVal = savedWidth ? Math.min(800, Math.max(80, savedWidth)) : (c.width ? Math.min(800, Math.max(80, c.width)) : 80);
+        return {
+          ...c,
+          width: widthVal
+        };
       });
-      return [...pinned, ...visible];
+      list = [...pinned, ...visible];
+    } else {
+      const ordered = [];
+      const used    = new Set();
+
+      columnOrder.forEach(item => {
+        if (item.show === false) { used.add(item.key); return; }
+        const col = rawColMap[item.key];
+        if (!col) return;
+        used.add(item.key);
+        const fixedVal = item.fixed === 'left' ? 'left' : undefined;
+        const savedWidth = columnsStateMap[col.key]?.width;
+        const widthVal = savedWidth ? Math.min(800, Math.max(80, savedWidth)) : (col.width ? Math.min(800, Math.max(80, col.width)) : 80);
+        ordered.push({ 
+          ...col, 
+          fixed: fixedVal, 
+          width: widthVal 
+        });
+      });
+
+      settable.forEach(c => { if (!used.has(c.key)) ordered.push(c); });
+      list = [...pinned, ...ordered];
     }
 
-    const ordered = [];
-    const used    = new Set();
-
-    columnOrder.forEach(item => {
-      if (item.show === false) { used.add(item.key); return; }
-      const col = rawColMap[item.key];
-      if (!col) return;
-      used.add(item.key);
-      const fixedVal = item.fixed === 'left'  ? 'left'
-                     : item.fixed === 'right' ? 'right'
-                     : undefined;
-      ordered.push({ ...col, fixed: fixedVal });
+    return list.map(col => {
+      if (!col.key || col.hideInSetting) return col;
+      return {
+        ...col,
+        onHeaderCell: (c) => ({
+          width: c.width,
+          onResize: (width) => handleResize(col.key, width),
+        }),
+      };
     });
+  }, [rawColumns, rawColMap, columnOrder, columnsStateMap, handleResize]);
 
-    settable.forEach(c => { if (!used.has(c.key)) ordered.push(c); });
-
-    return [...pinned, ...ordered];
-  }, [rawColumns, rawColMap, columnOrder, columnsStateMap]);
+  const tableWidth = useMemo(() => {
+    return columns.reduce((acc, col) => acc + (col.width || 100), 0);
+  }, [columns]);
 
   // [БАГ 2 FIX] Читаем fixed из `columns`, а не из `rawColumns`.
   // rawColumns содержит исходный fixed из пропсов и не обновляется при
@@ -794,10 +945,12 @@ const VacancyTable = ({
   const applyColumnSettings = useCallback(() => {
     const newState = {};
     colModalLocalOrder.forEach((item, idx) => {
+      const currentWidth = columnsStateMap[item.key]?.width;
       newState[item.key] = {
         show:  item.show,
         order: idx,
         fixed: item.fixed !== 'none' ? item.fixed : undefined,
+        ...(currentWidth ? { width: currentWidth } : {}),
       };
     });
     setColumnsStateMap(newState);
@@ -805,9 +958,11 @@ const VacancyTable = ({
       key: item.key, show: item.show, fixed: item.fixed || 'none',
     })));
     setColModalVisible(false);
-  }, [colModalLocalOrder]);
+  }, [colModalLocalOrder, columnsStateMap]);
 
-  const hasActiveFilters = Object.values(filteredInfo).some(v => v && v.length > 0);
+  const activeFiltersCount = Object.values(filteredInfo).filter(v => v && v.length > 0).length;
+  const activeSortsCount = Array.isArray(sortedInfo) ? sortedInfo.length : (sortedInfo?.columnKey ? 1 : 0);
+  const totalActiveCount = activeFiltersCount + activeSortsCount;
 
   return (
     <>
@@ -829,11 +984,11 @@ const VacancyTable = ({
         )}
         <Button
           icon={<ClearOutlined />} size="small"
-          disabled={!hasActiveFilters && !sortedInfo?.columnKey}
+          disabled={totalActiveCount === 0}
           onClick={handleResetFilters}
           data-testid="reset-filters-button" data-tour="reset-filters-btn"
         >
-          Сбросить фильтры
+          {totalActiveCount > 0 ? `Активных фильтров по столбцам: ${totalActiveCount} Сбросить фильтры` : 'Сбросить фильтры'}
         </Button>
         <Button icon={<ReloadOutlined />} size="small"
           onClick={() => fetchData()} title="Обновить" data-tour="reload-btn" />
@@ -856,7 +1011,7 @@ const VacancyTable = ({
           onClick={onCreate} data-testid="create-vacancy-button" data-tour="create-btn">
           Создать
         </Button>
-        {isAdmin && (
+        {(isAdmin || user?.role === 'recruiter') && (
           <Tooltip title="Настройка столбцов">
             <Button icon={<SettingOutlined />} size="small"
               onClick={openColumnSettings} data-testid="column-settings-button" />
@@ -866,6 +1021,11 @@ const VacancyTable = ({
 
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <Table
+          components={{
+            header: {
+              cell: ResizableHeaderCell,
+            },
+          }}
           dataSource={data}
           columns={columns}
           rowKey="id"
@@ -873,7 +1033,7 @@ const VacancyTable = ({
           bordered
           loading={loading}
           rowClassName={getRowClassName}
-          scroll={{ x: 5200, y: 'calc(100vh - 235px)' }}
+          scroll={{ x: tableWidth, y: 'calc(100vh - 235px)' }}
           pagination={{
             current:         curPage,
             pageSize,
@@ -892,6 +1052,7 @@ const VacancyTable = ({
         onApply={applyColumnSettings}
         localOrder={colModalLocalOrder}
         setLocalOrder={setColModalLocalOrder}
+        showReorder={isAdmin}
       />
 
       <Modal

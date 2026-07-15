@@ -28,12 +28,11 @@ async def get_vacancies(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     status_id: Optional[List[int]] = Query(None),
+    exclude_status_id: Optional[List[int]] = Query(None),
     level_id: Optional[List[int]] = Query(None),
     it_role_id: Optional[List[int]] = Query(None),
     project_id: Optional[List[int]] = Query(None),
     admin_manager_id: Optional[List[int]] = Query(None),
-    team_lead_id: Optional[List[int]] = Query(None),
-    city_id: Optional[List[int]] = Query(None),
     source_id: Optional[List[int]] = Query(None),
     block_id: Optional[List[int]] = Query(None),
     employment_type_id: Optional[List[int]] = Query(None),
@@ -50,7 +49,10 @@ async def get_vacancies(
     search_unit_id: Optional[str] = Query(None),
     search_iqhr_link: Optional[str] = Query(None),
     search_salary_gross: Optional[str] = Query(None),
+    search_city_text: Optional[str] = Query(None),
+    search_team_lead_text: Optional[str] = Query(None),
     search_quantity: Optional[str] = Query(None),
+    search_work_duration_days: Optional[str] = Query(None),
     search_resume_at_customer: Optional[str] = Query(None),
     search_resume_approved: Optional[str] = Query(None),
     search_interviews_fact: Optional[str] = Query(None),
@@ -66,6 +68,7 @@ async def get_vacancies(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
 ):
+    print(f"DEBUG get_vacancies: user={current_user.email}, role={current_user.role}, exclude_status_id={exclude_status_id}", flush=True)
     filter_params = {k: v for k, v in locals().items()
                      if k not in ("db", "current_user", "skip", "limit",
                                   "sort_field", "sort_order", "week_number",
@@ -272,7 +275,7 @@ async def import_vacancies(
     await db.commit()
     return {"created": created, "updated": updated, "errors": errors[:20], "total_rows": len(df)}
 
-@router.get("/{vacancy_id}/history", summary="История изменений вакансии (только admin/superadmin)")
+@router.get("/{vacancy_id}/history", summary="История изменений вакансии")
 async def get_vacancy_history(
     vacancy_id: int,
     start_date: Optional[str] = Query(None),
@@ -283,9 +286,6 @@ async def get_vacancy_history(
     from datetime import date as _date
     from services.vacancy_history_service import VacancyHistoryService, ROLE_LABELS
     import json as _json
-
-    if current_user.role == UserRole.RECRUITER:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только для администраторов")
 
     sd = _date.fromisoformat(start_date) if start_date else None
     ed = _date.fromisoformat(end_date)   if end_date   else None

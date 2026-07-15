@@ -82,10 +82,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
-      - "443:443"
-    expose:
-      - "8080"
+      - "80:8080"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
@@ -232,6 +229,3 @@ volumes:
 
 networks:
   rms_network:
-    ipam:
-      config:
-        - subnet: 172.100.0.0/24

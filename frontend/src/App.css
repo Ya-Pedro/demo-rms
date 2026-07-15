@@ -213,3 +213,26 @@ body {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Beautiful empty field highlight */
+.highlight-empty-field .ant-input,
+.highlight-empty-field .ant-select-selector,
+.highlight-empty-field .ant-picker,
+.highlight-empty-field .ant-input-number {
+  background-color: #fff1f0 !important;
+  border-color: #ffa39e !important;
+  box-shadow: 0 0 4px rgba(255, 163, 158, 0.5) !important;
+  transition: all 0.3s ease-in-out;
+}
+.highlight-empty-field .ant-input:hover,
+.highlight-empty-field .ant-select-selector:hover,
+.highlight-empty-field .ant-picker:hover,
+.highlight-empty-field .ant-input-number:hover {
+  background-color: #fff2f0 !important;
+  border-color: #ff7875 !important;
+}
+.highlight-empty-field .ant-form-item-label > label {
+  color: #cf1322 !important;
+  font-weight: 500;
+}
+
