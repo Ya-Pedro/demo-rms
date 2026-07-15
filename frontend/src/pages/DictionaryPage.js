@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { Table, Button, Select, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Alert } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons';
 import { api } from '../App';
+import useIsMobile from '../hooks/useIsMobile';
 
 const DICTIONARY_TYPES = [
   { value: 'specialist_level', label: 'Уровень специалиста' },
@@ -20,6 +21,7 @@ const DICTIONARY_TYPES = [
 
 const DictionaryPage = () => {
   const [form] = Form.useForm();
+  const isMobile = useIsMobile();
   
   const [selectedType, setSelectedType] = useState('specialist_level');
   const [modalVisible, setModalVisible] = useState(false);
@@ -74,13 +76,13 @@ const DictionaryPage = () => {
     {
       title: 'Порядок',
       dataIndex: 'sort_order',
-      width: 80,
+      width: 100,
       align: 'center',
     },
     {
       title: 'Активен',
       dataIndex: 'is_active',
-      width: 80,
+      width: 100,
       align: 'center',
       render: (val) => (
         <Tag color={val ? 'success' : 'default'}>
@@ -214,7 +216,7 @@ const DictionaryPage = () => {
             value={selectedType}
             onChange={setSelectedType}
             options={DICTIONARY_TYPES}
-            style={{ width: 250 }}
+            style={{ width: isMobile ? '100%' : 250 }}
             data-testid="dictionary-type-selector"
           />
           {isAdmin && (
@@ -250,7 +252,7 @@ const DictionaryPage = () => {
         bordered
         loading={tableLoading}
         pagination={false}
-        scroll={{ y: 600 }}
+        scroll={{ x: isMobile ? 600 : undefined, y: 'calc(100vh - 300px)' }}
         title={() => <strong>{getCurrentTypeLabel()}</strong>}
       />
 
@@ -262,6 +264,7 @@ const DictionaryPage = () => {
         confirmLoading={loading}
         okText="Сохранить"
         cancelText="Отмена"
+        width={isMobile ? '95vw' : undefined}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item

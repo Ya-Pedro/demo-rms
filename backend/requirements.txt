@@ -60,7 +60,10 @@ slowapi==0.1.9
 # limits — бэкенд для slowapi (Redis-стратегии: fixed window, sliding window)
 limits==3.13.0
 # redis — синхронный клиент (нужен для проверки ping при старте в limiter.py)
-redis==5.2.1
+redis==4.6.0
+
+# ── Caching ───────────────────────────────────────────────────────
+fastapi-cache2[redis]==0.2.2
 
 # ── Russian Holidays (Рек. #4)
 holidays==0.62

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Table, Button, Space, Tag, Modal, Form, Input, Select, message, Popconfirm } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../App';
+import useIsMobile from '../hooks/useIsMobile';
 
 const ALL_ROLES = [
   { value: 'superadmin', label: 'Суперадминистратор' },
@@ -17,6 +18,7 @@ const ADMIN_ROLES = [
 
 const UsersPage = () => {
   const [form] = Form.useForm();
+  const isMobile = useIsMobile();
   
   const [data, setData] = useState([]);
   const [tableLoading, setTableLoading] = useState(false);
@@ -229,7 +231,7 @@ const UsersPage = () => {
         bordered
         loading={tableLoading}
         pagination={false}
-        scroll={{ y: 600 }}
+        scroll={{ x: isMobile ? 900 : undefined, y: 'calc(100vh - 300px)' }}
       />
 
       <Modal
@@ -240,7 +242,7 @@ const UsersPage = () => {
         confirmLoading={loading}
         okText="Сохранить"
         cancelText="Отмена"
-        width={500}
+        width={isMobile ? '95vw' : 500}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           {!editingUser && (

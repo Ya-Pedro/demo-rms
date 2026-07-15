@@ -45,7 +45,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=False)
-    role = Column(SQLEnum(UserRole), default=UserRole.RECRUITER, nullable=False)
+    role = Column(SQLEnum(UserRole), default=UserRole.RECRUITER, nullable=False, index=True)
     is_active = Column(Boolean, default=True)
     is_temporary_password = Column(Boolean, default=True)
                                                                                 
@@ -86,22 +86,22 @@ class Vacancy(Base):
     vacancy_id = Column(String(50), nullable=True, index=True, comment="ID вакансии")
     
                              
-    open_date = Column(Date, nullable=True, comment="Дата открытия")
+    open_date = Column(Date, nullable=True, index=True, comment="Дата открытия")
     
                                   
     quantity = Column(Integer, default=1, comment="Кол-во вакансий")
     
                                          
-    level_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
+    level_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True, index=True)
     
                                           
     position_name = Column(String(255), nullable=False, comment="Вакансия")
     
                                      
-    status_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
+    status_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True, index=True)
     
                              
-    it_role_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
+    it_role_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True, index=True)
     
                                                    
     admin_manager_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
@@ -140,7 +140,7 @@ class Vacancy(Base):
     status_changed_at = Column(Date, nullable=True, comment="Дата изменения статуса")
     
                                        
-    close_date = Column(Date, nullable=True, comment="Дата закрытия вакансии")
+    close_date = Column(Date, nullable=True, index=True, comment="Дата закрытия вакансии")
     
                                 
     candidate_name = Column(String(255), nullable=True, comment="ФИО кандидата")
@@ -167,7 +167,7 @@ class Vacancy(Base):
     iqhr_link = Column(String(500), nullable=True, comment="Ссылка на заявку IQHR")
     
                          
-    recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     
                            
     block_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)

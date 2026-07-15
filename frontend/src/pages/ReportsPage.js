@@ -12,6 +12,7 @@ import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { api } from '../App';
 import ReportsTour from '../components/ReportsTour';
+import useIsMobile from '../hooks/useIsMobile';
 import './statusRows.css';
 
 dayjs.extend(isoWeek);
@@ -198,6 +199,7 @@ const NUMBER_FILTER_DROPDOWN = {
 
 const ReportsPage = () => {
 
+  const isMobile = useIsMobile();
   const [user, setUser] = useState(() => tokenStorage.getUser());
 
   const handleReportsTourComplete = useCallback(async () => {
@@ -758,17 +760,17 @@ const ReportsPage = () => {
 
           <Select placeholder="Год" value={selYear}
             onChange={v => { setSelYear(v); setSelWeek(null); }}
-            allowClear style={{ width:90 }} options={YEAR_OPTIONS} size="small"
+            allowClear style={{ width: isMobile ? 70 : 90 }} options={YEAR_OPTIONS} size="small"
           />
           <Select placeholder="Месяц" value={selMonth} onChange={setSelMonth}
-            allowClear style={{ width:120 }} options={MONTH_OPTIONS} size="small"
+            allowClear style={{ width: isMobile ? 90 : 120 }} options={MONTH_OPTIONS} size="small"
           />
           <Select placeholder="Неделя" value={selWeek} onChange={setSelWeek}
-            allowClear style={{ width:260 }} options={weekOptions}
+            allowClear style={{ width: isMobile ? '100%' : 260 }} options={weekOptions}
             showSearch optionFilterProp="label" size="small"
           />
           <RangePicker value={dateRange} onChange={setDateRange} format="DD.MM.YYYY"
-            placeholder={['Начало','Конец']} style={{ width:230 }} size="small"
+            placeholder={['Начало','Конец']} style={{ width: isMobile ? '100%' : 230 }} size="small"
           />
 
           <Input.Search
@@ -780,7 +782,7 @@ const ReportsPage = () => {
             allowClear
             onClear={() => { setSearchVacancyId(''); fetchData({ page: 1, svid: '' }); }}
             size="small"
-            style={{ width: 180 }}
+            style={{ width: isMobile ? '100%' : 180 }}
           />
 
           <Button type="primary" size="small"
@@ -878,7 +880,7 @@ const ReportsPage = () => {
         okText="Скачать"
         cancelText="Отмена"
         confirmLoading={exportLoading}
-        width={440}
+        width={isMobile ? '95vw' : 440}
       >
         <div style={{ marginBottom:16 }}>
           <label style={{ display:'block', marginBottom:8, fontWeight:500 }}>Выберите период:</label>

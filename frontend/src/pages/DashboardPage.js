@@ -9,6 +9,7 @@ import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { api } from '../App';
 import VacancyTable from './VacancyTable';
+import useIsMobile from '../hooks/useIsMobile';
 
 dayjs.extend(isoWeek);
 
@@ -65,6 +66,7 @@ const HighlightFormItem = (props) => {
 
 const DashboardPage = () => {
 
+  const isMobile = useIsMobile();
   const actionRef = useRef();
   const [form] = Form.useForm();
   const [reportForm] = Form.useForm();
@@ -456,7 +458,7 @@ const DashboardPage = () => {
         okText="Скачать"
         cancelText="Отмена"
         confirmLoading={exportLoading}
-        width={480}
+        width={isMobile ? '95vw' : 480}
         data-testid="export-modal"
       >
         <div style={{ marginBottom: 20 }}>
@@ -529,7 +531,7 @@ const DashboardPage = () => {
         okText="Сохранить"
         cancelText="Отмена"
         confirmLoading={reportLoading}
-        width={480}
+        width={isMobile ? '95vw' : 480}
         data-testid="report-modal"
       >
         {reportVacancy && (
@@ -595,7 +597,7 @@ const DashboardPage = () => {
         title={editingVacancy ? 'Редактирование вакансии' : 'Новая вакансия'}
         open={drawerVisible}
         onClose={() => setDrawerVisible(false)}
-        width={800}
+        width={isMobile ? '100%' : 800}
         extra={
           <Space>
             <Button onClick={() => setDrawerVisible(false)}>Отмена</Button>
@@ -609,17 +611,17 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Основная информация</div>
             <Row gutter={16}>
-              <Col span={6}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="vacancy_id" label="ID вакансии">
                   <Input />
                 </HighlightFormItem>
               </Col>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="position_name" label="Вакансия" rules={[{ required: true }]}>
                   <Input data-testid="vacancy-position" />
                 </HighlightFormItem>
               </Col>
-              <Col span={4}>
+              <Col span={isMobile ? 24 : 4}>
                 <HighlightFormItem editing={!!editingVacancy} name="quantity" label="Кол-во" initialValue={1}>
                   <InputNumber min={1} style={{ width: '100%' }} />
                 </HighlightFormItem>
@@ -633,61 +635,61 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Справочники</div>
             <Row gutter={16}>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="level_id" label="Уровень">
                   <Select options={(dictionaries.specialist_level || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="status_id" label="Статус">
                   <Select options={(dictionaries.vacancy_status || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="it_role_id" label="ИТ Роль">
                   <Select options={(dictionaries.it_role || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="project_id" label="Проект">
                   <Select options={(dictionaries.project || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="source_id" label="Источник">
                   <Select options={(dictionaries.source || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="city_text" label="Город">
                   <Input allowClear />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="employment_type_id" label="Вид занятости">
                   <Select options={(dictionaries.employment_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="replacement_type_id" label="Новая/Замена">
                   <Select options={(dictionaries.replacement_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="internal_transfer_id" label="Внутр. перевод">
                   <Select options={(dictionaries.internal_transfer || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="block_id" label="Блок">
                   <Select options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="feasibility_id" label="ТЭО">
                   <Select options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
@@ -700,17 +702,17 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Люди</div>
             <Row gutter={16}>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="admin_manager_id" label="Адм. руководитель">
                   <Select options={(dictionaries.admin_manager || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="team_lead_text" label="Тимлид">
                   <Input allowClear />
                 </HighlightFormItem>
               </Col>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="recruiter_id" label="Рекрутер">
                   <Select 
                     options={users.map(u => ({ value: u.id, label: u.full_name }))} 
@@ -724,17 +726,17 @@ const DashboardPage = () => {
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="candidate_name" label="ФИО кандидата">
                   <Input />
                 </HighlightFormItem>
               </Col>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="candidate_company" label="Компания кандидата">
                   <Input />
                 </HighlightFormItem>
               </Col>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="ex_employee_name" label="ФИО бывшего сотр.">
                   <Input />
                 </HighlightFormItem>
@@ -747,22 +749,22 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Даты</div>
             <Row gutter={16}>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="open_date" label="Дата открытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="close_date" label="Дата закрытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="status_changed_at" label="Дата изм. статуса">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
                 </HighlightFormItem>
               </Col>
-              <Col span={6}>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="hold_days" label="Дни в холде" initialValue={0}>
                   <InputNumber min={0} style={{ width: '100%' }} data-testid="vacancy-hold-days" />
                 </HighlightFormItem>
@@ -775,19 +777,19 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Дополнительно</div>
             <Row gutter={16}>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="unit_id" label="ID ШЕ">
                   <Input />
                 </HighlightFormItem>
               </Col>
-              <Col span={16}>
+              <Col span={isMobile ? 24 : 16}>
                 <HighlightFormItem editing={!!editingVacancy} name="iqhr_link" label="Ссылка IQHR">
                   <Input />
                 </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={8}>
+              <Col span={isMobile ? 24 : 8}>
                 {}
                 <HighlightFormItem editing={!!editingVacancy} name="salary_gross" label="Cовокупный доход финального кандидата, gross">
                   <InputNumber min={0} style={{ width: '100%' }} placeholder="руб." />

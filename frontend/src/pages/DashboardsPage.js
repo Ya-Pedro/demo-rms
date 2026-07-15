@@ -1,22 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
+import useIsMobile from '../hooks/useIsMobile';
 import {
-  Row, Col, Card, Select, Spin, Typography, Statistic,
-  Tag, Divider, Empty, DatePicker, Radio, Space, Button,
+  Row, Col, Card, Select, Skeleton, Typography, Statistic,
+  Tag, Divider, Empty, DatePicker, Button, Spin, Space, Radio,
 } from 'antd';
 import {
   ResponsiveContainer,
-  PieChart, Pie, Cell, Tooltip as RTooltip, Legend,
+  PieChart, Pie, Cell, Tooltip as RTooltip,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList,
   Cell as BCell,
 } from 'recharts';
 import {
   RiseOutlined, TeamOutlined, TrophyOutlined,
-  FieldTimeOutlined, BankOutlined, FunnelPlotOutlined,
-  PieChartOutlined, CalendarOutlined, FilterOutlined,
-  ClearOutlined,
+  FunnelPlotOutlined, PieChartOutlined, FilterOutlined,
+  ClearOutlined, FieldTimeOutlined, BankOutlined, CalendarOutlined,
+  FileTextOutlined, ReloadOutlined
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../App';
+import { tokenStorage } from '../tokenStorage';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -45,7 +47,7 @@ const CS  = { borderRadius: 10, border: `1px solid ${T.border}`, boxShadow: '0 1
 const CBS = { padding: '14px 18px' };
 const CHS = { borderBottom: `1px solid ${T.border}`, padding: '12px 20px', minHeight: 'unset', fontSize: 14, fontWeight: 700, color: T.text };
 
-const MultiFlt = ({ value, onChange, options, placeholder, style }) => (
+const MultiFlt = ({ value, onChange, options, placeholder, style, isMobile }) => (
   <Select
     mode="multiple"
     value={value || []}
@@ -54,7 +56,7 @@ const MultiFlt = ({ value, onChange, options, placeholder, style }) => (
     allowClear
     size="small"
     maxTagCount={1}
-    style={{ minWidth: 150, fontSize: 12, ...style }}
+    style={{ minWidth: isMobile ? 120 : 150, fontSize: 12, ...style }}
     getPopupContainer={() => document.body}
     showSearch
     optionFilterProp="children"
@@ -148,9 +150,7 @@ const DonutCard = ({ title, icon, data, color }) => (
 );
 
 export default function DashboardsPage() {
-  const [data,    setData]    = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  const isMobile = useIsMobile();
   const [period,         setPeriod]        = useState(null);
   const [itRoleIds,      setItRoleIds]     = useState(null);
   const [levelIds,       setLevelIds]      = useState(null);
@@ -159,10 +159,9 @@ export default function DashboardsPage() {
   const [recruiterIds,   setRecruiterIds]  = useState(null);
   const [blockIds,       setBlockIds]      = useState(null);
   const [statusIds,      setStatusIds]     = useState(null);
+  const [groupBy,        setGroupBy]       = useState('it_role');
 
-  const [groupBy, setGroupBy] = useState('it_role');
-
-  const buildParams = useCallback(() => {
+  const buildParams = () => {
     const p = new URLSearchParams();
     if (period?.[0]) p.append('start_date', period[0].format('YYYY-MM-DD'));
     if (period?.[1]) p.append('end_date',   period[1].format('YYYY-MM-DD'));
@@ -175,21 +174,24 @@ export default function DashboardsPage() {
     if (statusIds?.length)    p.append('status_ids',        statusIds.join(','));
     if (groupBy)              p.append('group_by',          groupBy);
     return p;
-  }, [period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, groupBy]);
+  };
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.get(`/dashboards/metrics?${buildParams()}`);
-      setData(res.data);
-    } catch (e) {
-      console.error('Dashboard error', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [buildParams]);
+  const fetchDashboardData = async () => {
+    const params = buildParams();
+    params.append('_t', Date.now());
+    const res = await api.get(`/dashboards/metrics?${params.toString()}`);
+    return res.data;
+  };
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { data, isLoading, isFetching, refetch } = useQuery({
+    queryKey: [
+      'dashboards',
+      period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, groupBy
+    ],
+    queryFn: fetchDashboardData,
+    keepPreviousData: true,
+    refetchOnWindowFocus: true,
+  });
 
   const clearFilters = () => {
     setPeriod(null);
@@ -213,7 +215,6 @@ export default function DashboardsPage() {
   const chart6 = data?.chart6_statuses  || [];
   const chart7 = data?.chart7_jo_rate   || { jo_rate: 0, closed: 0, offers_total: 0 };
   const chart8 = data?.chart8_recruiter_load || [];
-  
   const chartLevels      = data?.chart_levels      || [];
   const chartReplacement = data?.chart_replacement || [];
   const chartEmployment  = data?.chart_employment  || [];
@@ -237,20 +238,29 @@ export default function DashboardsPage() {
   const chart6Details = chart6.filter(r => !DRILL_DOWN_EXCLUDE.has(r.status));
 
   return (
-    <div style={{ padding: '20px 24px', background: T.bg, minHeight: '100vh' }}>
+    <div style={{ padding: isMobile ? '12px 8px' : '20px 24px', background: T.bg, minHeight: '100vh' }}>
 
-      {}
-      <div style={{ marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0, fontWeight: 700, color: T.text }}>Аналитика и дашборды</Title>
-        <Text style={{ color: T.muted, fontSize: 13 }}>Агрегированная статистика по всем вакансиям</Text>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <Title level={4} style={{ margin: 0, fontWeight: 700, color: T.text }}>Аналитика и дашборды</Title>
+          <Text style={{ color: T.muted, fontSize: 13 }}>Агрегированная статистика по всем вакансиям</Text>
+        </div>
+        <Button 
+          type="primary" 
+          icon={<ReloadOutlined />} 
+          onClick={() => refetch()} 
+          loading={isFetching}
+          style={{ borderRadius: 6 }}
+        >
+          Обновить
+        </Button>
       </div>
 
-      {}
       <Card
         style={{ borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 20 }}
         bodyStyle={{ padding: '14px 20px' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
           <FilterOutlined style={{ color: T.sub, fontSize: 14 }} />
           <Text style={{ fontSize: 13, color: T.sub, marginRight: 4, whiteSpace: 'nowrap' }}>Фильтры:</Text>
 
@@ -261,79 +271,34 @@ export default function DashboardsPage() {
             format="DD.MM.YYYY"
             placeholder={['Дата открытия от', 'до']}
             allowClear
-            style={{ width: 230 }}
+            style={{ width: isMobile ? 180 : 230 }}
           />
 
-          <MultiFlt
-            value={itRoleIds}
-            onChange={setItRoleIds}
-            options={f.it_roles}
-            placeholder="ИТ роль"
-          />
-
-          <MultiFlt
-            value={levelIds}
-            onChange={setLevelIds}
-            options={f.levels}
-            placeholder="Уровень"
-          />
-
-          <MultiFlt
-            value={adminMgrIds}
-            onChange={setAdminMgrIds}
-            options={f.admin_managers}
-            placeholder="Адм. руководитель"
-            style={{ minWidth: 180 }}
-          />
-
-          <MultiFlt
-            value={projectIds}
-            onChange={setProjectIds}
-            options={f.projects}
-            placeholder="Проект"
-          />
-
-          <MultiFlt
-            value={recruiterIds}
-            onChange={setRecruiterIds}
-            options={f.recruiters}
-            placeholder="Рекрутер"
-          />
-
-          <MultiFlt
-            value={blockIds}
-            onChange={setBlockIds}
-            options={f.blocks}
-            placeholder="ИТ Блок"
-          />
-
-          <MultiFlt
-            value={statusIds}
-            onChange={setStatusIds}
-            options={f.statuses}
-            placeholder="Статус вакансии"
-            style={{ minWidth: 160 }}
-          />
+          <MultiFlt value={itRoleIds} onChange={setItRoleIds} options={f.it_roles} placeholder="ИТ роль" isMobile={isMobile} />
+          <MultiFlt value={levelIds} onChange={setLevelIds} options={f.levels} placeholder="Уровень" isMobile={isMobile} />
+          <MultiFlt value={adminMgrIds} onChange={setAdminMgrIds} options={f.admin_managers} placeholder="Адм. руководитель" isMobile={isMobile} style={{ minWidth: isMobile ? 140 : 180 }} />
+          <MultiFlt value={projectIds} onChange={setProjectIds} options={f.projects} placeholder="Проект" isMobile={isMobile} />
+          <MultiFlt value={recruiterIds} onChange={setRecruiterIds} options={f.recruiters} placeholder="Рекрутер" isMobile={isMobile} />
+          <MultiFlt value={blockIds} onChange={setBlockIds} options={f.blocks} placeholder="ИТ Блок" isMobile={isMobile} />
+          <MultiFlt value={statusIds} onChange={setStatusIds} options={f.statuses} placeholder="Статус вакансии" isMobile={isMobile} style={{ minWidth: isMobile ? 130 : 160 }} />
 
           {hasFilters && (
-            <Button
-              size="small"
-              icon={<ClearOutlined />}
-              onClick={clearFilters}
-              style={{ color: T.red, borderColor: T.red, fontSize: 12 }}
-            >
+            <Button size="small" icon={<ClearOutlined />} onClick={clearFilters} style={{ color: T.red, borderColor: T.red, fontSize: 12 }}>
               Сбросить
             </Button>
           )}
-
-          {loading && <Spin size="small" style={{ marginLeft: 8 }} />}
+          {isFetching && <Spin size="small" style={{ marginLeft: 8 }} />}
         </div>
       </Card>
 
-      {loading && !data ? (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-          <Spin size="large" />
-        </div>
+      {isLoading && !data ? (
+        <Row gutter={[20, 20]}>
+          <Col xs={24} lg={12}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
+          <Col xs={24} lg={12}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
+          <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
+          <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
+          <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
+        </Row>
       ) : (
         <Row gutter={[20, 20]}>
 
@@ -341,33 +306,33 @@ export default function DashboardsPage() {
           <Col xs={24} lg={24}>
             <Card style={CS} bodyStyle={{ padding: '20px 28px' }} headStyle={CHS}
               title={<><RiseOutlined style={{ marginRight: 8, color: T.blue }} />Коэффициент принятия Job Offer</>}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 12 : 32, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 64, fontWeight: 800, lineHeight: 1, color: joColor, letterSpacing: '-2px' }}>
-                    {joRate.toFixed(1)}<span style={{ fontSize: 28, fontWeight: 600 }}>%</span>
+                  <div style={{ fontSize: isMobile ? 36 : 64, fontWeight: 800, lineHeight: 1, color: joColor, letterSpacing: '-2px' }}>
+                    {joRate.toFixed(1)}<span style={{ fontSize: isMobile ? 18 : 28, fontWeight: 600 }}>%</span>
                   </div>
                   <Tag color={joTag} style={{ marginTop: 8, fontSize: 12, padding: '2px 10px' }}>{joLabel}</Tag>
                 </div>
-                <Divider type="vertical" style={{ height: 72, margin: '0' }} />
+                {!isMobile && <Divider type="vertical" style={{ height: 72, margin: '0' }} />}
                 <Statistic
                   title={<Text style={{ fontSize: 12, color: T.muted }}>Закрытых + Выход</Text>}
                   value={chart7.closed}
-                  valueStyle={{ fontSize: 28, fontWeight: 700, color: T.green }}
+                  valueStyle={{ fontSize: isMobile ? 20 : 28, fontWeight: 700, color: T.green }}
                   prefix={<TrophyOutlined style={{ fontSize: 18, marginRight: 4 }} />}
                 />
-                <Divider type="vertical" style={{ height: 72, margin: '0' }} />
+                {!isMobile && <Divider type="vertical" style={{ height: 72, margin: '0' }} />}
                 <Statistic
                   title={<Text style={{ fontSize: 12, color: T.muted }}>Всего офферов</Text>}
                   value={chart7.offers_total}
-                  valueStyle={{ fontSize: 28, fontWeight: 700, color: T.blue }}
+                  valueStyle={{ fontSize: isMobile ? 20 : 28, fontWeight: 700, color: T.blue }}
                   prefix={<TeamOutlined style={{ fontSize: 18, marginRight: 4 }} />}
                 />
-                <Divider type="vertical" style={{ height: 72, margin: '0' }} />
+                {!isMobile && <Divider type="vertical" style={{ height: 72, margin: '0' }} />}
                 <div style={{ display: 'flex', gap: 24, paddingLeft: 16 }}>
                   <Statistic
                     title={<Text style={{ fontSize: 12, color: T.muted }}>Медианная ЗП (Gross)</Text>}
                     value={chartSalaries.p50}
-                    valueStyle={{ fontSize: 28, fontWeight: 700, color: T.purple }}
+                    valueStyle={{ fontSize: isMobile ? 20 : 28, fontWeight: 700, color: T.purple }}
                     suffix="₽"
                   />
                   <Statistic
@@ -420,10 +385,10 @@ export default function DashboardsPage() {
               {!chartLevels.length ? <NoData text="Нет данных по уровням" /> : (
                 <ResponsiveContainer width="100%" height={Math.max(200, chartLevels.length * 42 + 20)}>
                   <BarChart data={chartLevels} layout="vertical" barSize={22}
-                    margin={{ top: 4, right: 64, bottom: 4, left: 16 }}>
+                    margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 16 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
-                    <YAxis type="category" dataKey="level" width={140} axisLine={false} tickLine={false} style={{ fontSize: 14, fill: T.sub }} />
+                    <YAxis type="category" dataKey="level" width={isMobile ? 90 : 140} axisLine={false} tickLine={false} style={{ fontSize: 14, fill: T.sub }} />
                     <RTooltip content={<BarTip />} />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
                       {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
@@ -447,12 +412,12 @@ export default function DashboardsPage() {
                     data={chart8}
                     layout="vertical"
                     barSize={18}
-                    margin={{ top: 4, right: 64, bottom: 4, left: 8 }}>
+                    margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false}
                       style={{ fontSize: 11, fill: T.muted }}
                       domain={[0, dataMax => Math.round((chart8[0]?.value || dataMax) * 1.2)]} />
-                    <YAxis type="category" dataKey="recruiter" width={175}
+                    <YAxis type="category" dataKey="recruiter" width={isMobile ? 100 : 175}
                       axisLine={false} tickLine={false} style={{ fontSize: 14, fill: T.sub }} />
                     <RTooltip
                       content={({ active, payload, label }) => {
@@ -484,10 +449,10 @@ export default function DashboardsPage() {
               ) : (
                 <ResponsiveContainer width="100%" height={Math.max(200, chart6Details.length * 48 + 24)}>
                   <BarChart data={chart6Details} layout="vertical" barSize={26}
-                    margin={{ top: 4, right: 80, bottom: 4, left: 8 }}>
+                    margin={{ top: 4, right: isMobile ? 16 : 80, bottom: 4, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
-                    <YAxis type="category" dataKey="status" width={210} axisLine={false} tickLine={false} style={{ fontSize: 15, fill: T.sub }} />
+                    <YAxis type="category" dataKey="status" width={isMobile ? 100 : 210} axisLine={false} tickLine={false} style={{ fontSize: 15, fill: T.sub }} />
                     <RTooltip content={<BarTip />} />
                     <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                       {chart6Details.map((r, i) => (
@@ -527,10 +492,10 @@ export default function DashboardsPage() {
               title={<><FunnelPlotOutlined style={{ marginRight: 8, color: T.teal }} />Воронка найма</>}>
               {chart3.every(r => r.value === 0) ? <NoData /> : (
                 <ResponsiveContainer width="100%" height={230}>
-                  <BarChart data={chart3} layout="vertical" barSize={24} margin={{ top: 4, right: 64, bottom: 4, left: 8 }}>
+                  <BarChart data={chart3} layout="vertical" barSize={24} margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 11, fill: T.muted }} />
-                    <YAxis type="category" dataKey="stage" width={175} axisLine={false} tickLine={false} style={{ fontSize: 13, fill: T.sub, fontWeight: 500 }} />
+                    <YAxis type="category" dataKey="stage" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: 13, fill: T.sub, fontWeight: 500 }} />
                     <RTooltip content={<BarTip />} />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
                       {chart3.map((_, i) => <BCell key={i} fill={PALETTE[i]} />)}
@@ -556,10 +521,10 @@ export default function DashboardsPage() {
               {!chart5.length ? <NoData text="Нет данных по закрытым вакансиям" /> : (
                 <ResponsiveContainer width="100%" height={Math.max(220, chart5.length * 44 + 40)}>
                   <BarChart data={chart5} layout="vertical" barSize={24}
-                    margin={{ top: 4, right: 90, bottom: 4, left: 8 }}>
+                    margin={{ top: 4, right: isMobile ? 16 : 90, bottom: 4, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 11, fill: T.muted }} />
-                    <YAxis type="category" dataKey="label" width={175} axisLine={false} tickLine={false} style={{ fontSize: 13, fill: T.sub }} />
+                    <YAxis type="category" dataKey="label" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: 13, fill: T.sub }} />
                     <RTooltip
                       content={({ active, payload, label }) => {
                         if (!active || !payload?.length) return null;
@@ -590,10 +555,10 @@ export default function DashboardsPage() {
               {!chart4.length ? <NoData text="Нет данных о компаниях кандидатов" /> : (
                 <ResponsiveContainer width="100%" height={Math.max(220, chart4.length * 38 + 40)}>
                   <BarChart data={chart4} layout="vertical" barSize={22}
-                    margin={{ top: 4, right: 72, bottom: 4, left: 16 }}>
+                    margin={{ top: 4, right: isMobile ? 16 : 72, bottom: 4, left: 16 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
-                    <YAxis type="category" dataKey="company" width={150} axisLine={false} tickLine={false} style={{ fontSize: 15, fill: T.sub }} />
+                    <YAxis type="category" dataKey="company" width={isMobile ? 90 : 150} axisLine={false} tickLine={false} style={{ fontSize: 15, fill: T.sub }} />
                     <RTooltip content={<BarTip />} />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
                       {chart4.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}

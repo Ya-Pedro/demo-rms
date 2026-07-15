@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { ConfigProvider, App as AntApp, Layout, Menu, Button, Dropdown, Space, Avatar, message, Modal } from 'antd';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ConfigProvider, App as AntApp, Layout, Menu, Button, Dropdown, Space, Avatar, message, Modal, Drawer } from 'antd';
 import {
   TableOutlined,
   UserOutlined,
@@ -12,8 +13,10 @@ import {
   FileTextOutlined,
   SafetyCertificateOutlined,
   BarChartOutlined,
+  CloseOutlined,
 } from '@ant-design/icons';
 import ruRU from 'antd/locale/ru_RU';
+import { useIsMobile } from './hooks/useIsMobile';
 import dayjs from 'dayjs';
 import 'dayjs/locale/ru';
 import axios from 'axios';
@@ -27,6 +30,7 @@ import ReportsPage from './pages/ReportsPage';
 import DashboardsPage from './pages/DashboardsPage';
 import ChangePasswordModal from './pages/ChangePasswordModal';
 import TwoFactorSettings from './components/TwoFactorSettings';
+import ErrorBoundary from './components/ErrorBoundary';
 
 import './App.css';
 
@@ -192,6 +196,8 @@ const MainLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isMobile = useIsMobile();
   const [user, setUser] = useState(null);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [twoFactorOpen, setTwoFactorOpen] = useState(false);
@@ -331,40 +337,65 @@ const MainLayout = ({ children }) => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Sider 
-        trigger={null} 
-        collapsible 
-        collapsed={collapsed}
-        width={220}
-        style={{ 
-          background: '#fff',
-          borderRight: '1px solid #D9D9D9',
-        }}
-      >
-        <div style={{ 
-          height: 64, 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          padding: collapsed ? 0 : '0 24px',
-          borderBottom: '1px solid #D9D9D9',
-        }}>
-          <span style={{ 
-            fontSize: collapsed ? 18 : 24, 
-            fontWeight: 700, 
-            color: '#0050B3',
-            letterSpacing: '-0.5px',
+      {!isMobile && (
+        <Sider 
+          trigger={null} 
+          collapsible 
+          collapsed={collapsed}
+          width={220}
+          style={{ 
+            background: '#fff',
+            borderRight: '1px solid #D9D9D9',
+          }}
+        >
+          <div style={{ 
+            height: 64, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            padding: collapsed ? 0 : '0 24px',
+            borderBottom: '1px solid #D9D9D9',
           }}>
-            {collapsed ? 'R' : 'RMS'}
-          </span>
-        </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[getSelectedKey()]}
-          items={menuItems}
-          style={{ borderRight: 0 }}
-        />
-      </Sider>
+            <span style={{ 
+              fontSize: collapsed ? 18 : 24, 
+              fontWeight: 700, 
+              color: '#0050B3',
+              letterSpacing: '-0.5px',
+            }}>
+              {collapsed ? 'R' : 'RMS'}
+            </span>
+          </div>
+          <Menu
+            mode="inline"
+            selectedKeys={[getSelectedKey()]}
+            items={menuItems}
+            style={{ borderRight: 0 }}
+          />
+        </Sider>
+      )}
+      {isMobile && (
+        <Drawer
+          placement="left"
+          width={260}
+          onClose={() => setMobileMenuOpen(false)}
+          open={mobileMenuOpen}
+          styles={{ body: { padding: 0 }, header: { padding: '0 16px' } }}
+          title={
+            <span style={{ fontSize: 24, fontWeight: 700, color: '#0050B3', letterSpacing: '-0.5px' }}>
+              RMS
+            </span>
+          }
+          closeIcon={<CloseOutlined />}
+        >
+          <Menu
+            mode="inline"
+            selectedKeys={[getSelectedKey()]}
+            items={menuItems}
+            style={{ borderRight: 0 }}
+            onClick={() => setMobileMenuOpen(false)}
+          />
+        </Drawer>
+      )}
       <Layout>
         <Header style={{ 
           padding: '0 16px', 
@@ -374,25 +405,32 @@ const MainLayout = ({ children }) => {
           justifyContent: 'space-between',
           borderBottom: '1px solid #D9D9D9',
         }}>
-          <Button
-            type="text"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={() => setCollapsed(!collapsed)}
-            data-testid="sidebar-toggle"
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Button
+              type="text"
+              icon={isMobile ? <MenuUnfoldOutlined /> : (collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />)}
+              onClick={() => isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed)}
+              data-testid="sidebar-toggle"
+            />
+            {isMobile && (
+              <span style={{ fontSize: 20, fontWeight: 700, color: '#0050B3', letterSpacing: '-0.5px' }}>
+                RMS
+              </span>
+            )}
+          </div>
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Space style={{ cursor: 'pointer' }} data-testid="user-menu">
               <Avatar 
                 style={{ backgroundColor: '#0050B3' }} 
                 icon={<UserOutlined />} 
               />
-              {!collapsed && <span>{user?.full_name}</span>}
+              {!isMobile && !collapsed && <span>{user?.full_name}</span>}
             </Space>
           </Dropdown>
         </Header>
         <Content style={{ 
-          margin: 8, 
-          padding: 12, 
+          margin: isMobile ? 4 : 8, 
+          padding: isMobile ? 8 : 12, 
           background: '#fff',
           minHeight: 280,
           overflow: 'auto',
@@ -434,66 +472,79 @@ const ProtectedRoute = ({ children }) => {
   return <MainLayout>{children}</MainLayout>;
 };
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
 function App() {
   return (
-    <ConfigProvider locale={ruRU} theme={themeConfig}>
-      <AntApp>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dictionary"
-              element={
-                <ProtectedRoute>
-                  <DictionaryPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/users"
-              element={
-                <ProtectedRoute>
-                  <UsersPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <ProtectedRoute>
-                  <ReportsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboards"
-              element={
-                <ProtectedRoute>
-                  <DashboardsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AntApp>
-    </ConfigProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider locale={ruRU} theme={themeConfig}>
+        <AntApp>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard"
+                element={
+                  <ProtectedRoute>
+                    <DashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dictionary"
+                element={
+                  <ProtectedRoute>
+                    <DictionaryPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  <ProtectedRoute>
+                    <UsersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <ProtectedRoute>
+                    <ReportsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboards"
+                element={
+                  <ProtectedRoute>
+                    <DashboardsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AntApp>
+      </ConfigProvider>
+    </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

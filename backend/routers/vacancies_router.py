@@ -10,6 +10,7 @@ from typing import Optional, List
 from io import BytesIO
 import logging
 import pandas as pd
+from fastapi_cache import FastAPICache
 
 from database import get_db
 from models import User, Dictionary, UserRole, Vacancy, WeeklyReport
@@ -92,6 +93,7 @@ async def create_vacancy(
 ):
     service = VacancyService(db)
     vacancy, metrics = await service.create_vacancy(vacancy_data.model_dump(), current_user)
+    await FastAPICache.clear(namespace="dashboards")
     return VacancyResponse(**vacancy_to_dict(vacancy, metrics))
 
 @router.get("/{vacancy_id}", response_model=VacancyResponse)
@@ -116,6 +118,7 @@ async def update_vacancy(
     vacancy, metrics = await service.update_vacancy(
         vacancy_id, vacancy_data.model_dump(exclude_unset=True), current_user
     )
+    await FastAPICache.clear(namespace="dashboards")
     return VacancyResponse(**vacancy_to_dict(vacancy, metrics))
 
 @router.delete("/{vacancy_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -126,6 +129,7 @@ async def delete_vacancy(
 ):
     service = VacancyService(db)
     await service.delete_vacancy(vacancy_id, current_user)
+    await FastAPICache.clear(namespace="dashboards")
 
 @router.post("/import")
 async def import_vacancies(

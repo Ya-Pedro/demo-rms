@@ -15,6 +15,10 @@ from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse
 
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.redis import RedisBackend
+from redis import asyncio as aioredis
+
                             
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -68,6 +72,12 @@ async def lifespan(app: FastAPI):
                                       
     logger.info("Starting RMS application...")
     await _check_redis()
+    
+    # Initialize Redis Cache
+    redis_client = aioredis.from_url(REDIS_URL, encoding="utf8", decode_responses=False)
+    FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache")
+    logger.info("FastAPI cache initialized with Redis")
+    
     await init_db()
     logger.info("Database initialized")
                                    

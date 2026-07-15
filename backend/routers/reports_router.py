@@ -16,6 +16,7 @@ from io import BytesIO
 import logging
 
 import pandas as pd
+from fastapi_cache import FastAPICache
 
 from database import get_db
 from models import User, Vacancy, WeeklyReport, UserRole
@@ -113,6 +114,7 @@ async def create_report(
             user=current_user,
         )
         await db.commit()
+        await FastAPICache.clear(namespace="dashboards")
     except Exception:
         import logging, traceback
         logging.getLogger(__name__).warning(
@@ -918,6 +920,7 @@ async def update_report(
             user=current_user,
         )
         await db.commit()
+        await FastAPICache.clear(namespace="dashboards")
     except Exception:
         import logging, traceback
         logging.getLogger(__name__).warning(
@@ -948,5 +951,8 @@ async def delete_report(
         if not await delegation_svc.has_delegated_access(report.vacancy.id, current_user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
     
-    await db.delete(report)
+    from fastapi_cache import FastAPICache
+    db.delete(report)
     await db.commit()
+    await FastAPICache.clear(namespace="dashboards")
+    return None

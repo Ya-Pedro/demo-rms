@@ -130,5 +130,56 @@
   line-height: 1.2 !important;
 }
 
+/* ======================================================================
+   MOBILE RESPONSIVENESS
+   ====================================================================== */
+@media (max-width: 768px) {
+  /* Reduced header height on mobile */
+  .vacancy-table-container .ant-table-thead > tr > th {
+    font-size: 11px !important;
+    padding: 4px 2px !important;
+    height: 50px !important;
+    line-height: 1.1 !important;
+  }
+
+  /* Smaller body cell font on mobile */
+  .vacancy-table-container .ant-table-tbody > tr > td {
+    padding: 3px 4px !important;
+    font-size: 11px !important;
+  }
+
+  /* Sticky column z-index adjustments for mobile to avoid conflicts */
+  .vacancy-table-container .ant-table-thead > tr > th.ant-table-cell-fix-left,
+  .vacancy-table-container .ant-table-thead > tr > th.ant-table-cell-fix-right {
+    z-index: 3 !important;
+  }
+
+  .vacancy-table-container .ant-table-tbody > tr > td.ant-table-cell-fix-left,
+  .vacancy-table-container .ant-table-tbody > tr > td.ant-table-cell-fix-right {
+    z-index: 1 !important;
+  }
+
+  .vacancy-table-container .ant-table-header {
+    z-index: 2 !important;
+  }
+
+  /* Stack action buttons vertically on mobile */
+  .vacancy-table-container .ant-space {
+    flex-direction: column !important;
+    gap: 2px !important;
+  }
+
+  .vacancy-table-container .ant-space > .ant-space-item {
+    margin-right: 0 !important;
+  }
+
+  /* Smaller tags on mobile */
+  .vacancy-table-container .ant-tag {
+    font-size: 10px !important;
+    padding: 0 4px !important;
+    line-height: 16px !important;
+  }
+}
+
 /* Цвета строк по статусу — общий файл для VacancyTable и ReportsPage */
 @import './statusRows.css';

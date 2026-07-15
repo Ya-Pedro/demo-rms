@@ -25,6 +25,7 @@ from database import get_db
 from models import Vacancy, WeeklyReport, Dictionary, DictionaryType, User, VacancyHistory
 from auth import get_current_user
 from services.working_days_service import calculate_net_working_days
+from fastapi_cache.decorator import cache
 
 router = APIRouter(prefix="/dashboards", tags=["Дашборды"])
 
@@ -44,6 +45,7 @@ def _parse_ids(raw: Optional[str]) -> Optional[list[int]]:
         return None
 
 @router.get("/metrics")
+@cache(expire=300, namespace="dashboards")
 async def get_dashboard_metrics(
     start_date:         Optional[str] = Query(None),
     end_date:           Optional[str] = Query(None),

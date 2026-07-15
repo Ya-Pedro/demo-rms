@@ -1,9 +1,3 @@
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
-COPY . .
-RUN yarn build
 
 FROM alpine:3.19 AS nginx_build
 ENV NGINX_VERSION=1.25.4
@@ -73,7 +67,7 @@ http {\n\
     include /etc/nginx/conf.d/*.conf;\n\
 }\n' > /etc/nginx/nginx.conf
 
-COPY --from=build /app/build /usr/share/nginx/html
+COPY build /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
