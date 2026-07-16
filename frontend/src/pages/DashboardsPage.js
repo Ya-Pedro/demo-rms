@@ -17,17 +17,17 @@ import {
   FileTextOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../App';
+import { api, ThemeContext } from '../App';
 import { tokenStorage } from '../tokenStorage';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
 const T = {
-  bg: '#f0f2f5', border: '#e8eaed',
-  text: '#1a1d23', sub: '#6b7280', muted: '#9ca3af',
-  blue: '#2563eb', green: '#16a34a', red: '#dc2626',
-  amber: '#d97706', purple: '#7c3aed', teal: '#0d9488',
+  bg: 'var(--layout-bg)', border: 'var(--border-color)',
+  text: 'var(--text-color)', sub: '#8b949e', muted: '#8b949e',
+  blue: '#58a6ff', green: '#3fb950', red: '#f85149',
+  amber: '#d29922', purple: '#bc8cff', teal: '#56d364',
 };
 
 const PALETTE = [
@@ -71,7 +71,7 @@ const PieTip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+    <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
       <div style={{ fontWeight: 600, marginBottom: 3 }}>{d.name || d.status}</div>
       <div style={{ color: T.sub }}>Кол-во: <b style={{ color: T.text }}>{d.value}</b></div>
       <div style={{ color: T.sub }}>Доля: <b style={{ color: T.blue }}>{d.pct}%</b></div>
@@ -82,7 +82,7 @@ const PieTip = ({ active, payload }) => {
 const BarTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+    <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
       <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: T.sub }}>{p.name}: <b style={{ color: p.fill || T.blue }}>{p.value}</b></div>
@@ -111,43 +111,47 @@ const renderPieLabel = (props) => {
   );
 };
 
-const DonutCard = ({ title, icon, data, color }) => (
-  <Card style={CS} bodyStyle={{ padding: '16px 24px' }} headStyle={CHS}
-    title={<><span style={{ marginRight: 8, color }}>{icon}</span>{title}</>}>
-    {!data?.length ? <NoData /> : (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-        <div style={{ width: '100%', height: 200 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name"
-                cx="50%" cy="50%" outerRadius={55}
-                labelLine={true} label={renderPieLabel}>
-                {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-              </Pie>
-              <RTooltip content={<PieTip />} />
-            </PieChart>
-          </ResponsiveContainer>
+const DonutCard = ({ title, icon, data, color }) => {
+  const { isDarkMode } = React.useContext(ThemeContext);
+  const strokeColor = isDarkMode ? '#161b22' : '#ffffff';
+  return (
+    <Card style={CS} bodyStyle={{ padding: '16px 24px' }} headStyle={CHS}
+      title={<><span style={{ marginRight: 8, color }}>{icon}</span>{title}</>}>
+      {!data?.length ? <NoData /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: '100%', height: 200 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={data} dataKey="value" nameKey="name"
+                  cx="50%" cy="50%" outerRadius={55}
+                  labelLine={true} label={renderPieLabel}>
+                  {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} stroke={strokeColor} strokeWidth={2} />)}
+                </Pie>
+                <RTooltip content={<PieTip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
+            {data.map((item, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                  background: PALETTE[i % PALETTE.length], flexShrink: 0
+                }} />
+                <span style={{ fontSize: 12, color: T.sub, fontWeight: 500 }}>
+                  {item.name}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
+                  {item.pct}%
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-          {data.map((item, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{
-                display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
-                background: PALETTE[i % PALETTE.length], flexShrink: 0
-              }} />
-              <span style={{ fontSize: 12, color: T.sub, fontWeight: 500 }}>
-                {item.name}
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>
-                {item.pct}%
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    )}
-  </Card>
-);
+      )}
+    </Card>
+  );
+};
 
 export default function DashboardsPage() {
   const isMobile = useIsMobile();
@@ -262,7 +266,7 @@ export default function DashboardsPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
           <FilterOutlined style={{ color: T.sub, fontSize: 14 }} />
-          <Text style={{ fontSize: 13, color: T.sub, marginRight: 4, whiteSpace: 'nowrap' }}>Фильтры:</Text>
+          <Text style={{ fontSize: 13, color: T.text, marginRight: 4, whiteSpace: 'nowrap' }}>Фильтры:</Text>
 
           <RangePicker
             size="small"
@@ -389,7 +393,7 @@ export default function DashboardsPage() {
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
                     <YAxis type="category" dataKey="level" width={isMobile ? 90 : 140} axisLine={false} tickLine={false} style={{ fontSize: 14, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} />
+                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
                       {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
                       <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: 14, fill: T.text }} />
@@ -420,10 +424,11 @@ export default function DashboardsPage() {
                     <YAxis type="category" dataKey="recruiter" width={isMobile ? 100 : 175}
                       axisLine={false} tickLine={false} style={{ fontSize: 14, fill: T.sub }} />
                     <RTooltip
+                      cursor={{ fill: 'rgba(128,128,128,0.15)' }}
                       content={({ active, payload, label }) => {
                         if (!active || !payload?.length) return null;
                         return (
-                          <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                          <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
                             <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
                             <div style={{ color: T.sub }}>Вакансий: <b style={{ color: T.purple }}>{payload[0].value}</b></div>
                           </div>
@@ -453,7 +458,7 @@ export default function DashboardsPage() {
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
                     <YAxis type="category" dataKey="status" width={isMobile ? 100 : 210} axisLine={false} tickLine={false} style={{ fontSize: 15, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} />
+                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
                     <Bar dataKey="value" radius={[0, 6, 6, 0]}>
                       {chart6Details.map((r, i) => (
                         <BCell key={i} fill={STATUS_COLOR[r.status] || PALETTE[i % PALETTE.length]} />
@@ -476,7 +481,7 @@ export default function DashboardsPage() {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.sub }} />
                     <YAxis axisLine={false} tickLine={false} style={{ fontSize: 11, fill: T.muted }} />
-                    <RTooltip content={<BarTip />} />
+                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
                     <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                       {bar2data.map((b, i) => <BCell key={i} fill={b.fill} />)}
                       <LabelList dataKey="value" position="top" style={{ fontWeight: 700, fontSize: 13, fill: T.text }} />
@@ -496,7 +501,7 @@ export default function DashboardsPage() {
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 11, fill: T.muted }} />
                     <YAxis type="category" dataKey="stage" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: 13, fill: T.sub, fontWeight: 500 }} />
-                    <RTooltip content={<BarTip />} />
+                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
                       {chart3.map((_, i) => <BCell key={i} fill={PALETTE[i]} />)}
                       <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: 13, fill: T.text }} />
@@ -526,11 +531,12 @@ export default function DashboardsPage() {
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 11, fill: T.muted }} />
                     <YAxis type="category" dataKey="label" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: 13, fill: T.sub }} />
                     <RTooltip
+                      cursor={{ fill: 'rgba(128,128,128,0.15)' }}
                       content={({ active, payload, label }) => {
                         if (!active || !payload?.length) return null;
                         const d = payload[0].payload;
                         return (
-                          <div style={{ background: '#fff', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                          <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
                             <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
                             <div style={{ color: T.sub }}>Средний срок: <b style={{ color: T.amber }}>{d.avg_days} раб. дн.</b></div>
                             <div style={{ color: T.sub }}>Вакансий: <b>{d.count}</b></div>
@@ -559,7 +565,7 @@ export default function DashboardsPage() {
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: 12, fill: T.muted }} />
                     <YAxis type="category" dataKey="company" width={isMobile ? 90 : 150} axisLine={false} tickLine={false} style={{ fontSize: 15, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} />
+                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
                       {chart4.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
                       <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: 15, fill: T.text }} />

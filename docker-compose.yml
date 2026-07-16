@@ -45,6 +45,7 @@ services:
       - rms_network
 
   backend:
+    image: yapedro/rms-backend:latest
     build: ./backend
     container_name: rms_backend
     restart: always
@@ -66,6 +67,7 @@ services:
     build: ./backend
     container_name: rms_bot
     restart: always
+    profiles: ["bot"]
     command: python bot.py
     depends_on:
       postgres:
@@ -76,13 +78,16 @@ services:
       - rms_network
 
   frontend:
+    image: yapedro/rms-frontend:latest
     build: ./frontend
     container_name: rms_frontend
     restart: always
+    user: "root"
     depends_on:
       - backend
     ports:
       - "80:8080"
+      - "443:8443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
@@ -92,6 +97,7 @@ services:
     build: ./backup
     container_name: rms_db_backup
     restart: always
+    profiles: ["backup"]
     depends_on:
       postgres:
         condition: service_healthy

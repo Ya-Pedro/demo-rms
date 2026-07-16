@@ -1,109 +1,69 @@
 /* ======================================================================
-   STATUS ROW COLORS — общие стили для таблиц Вакансий и Отчётов.
-   Импортируется в VacancyTable.css и ReportsPage.js.
-
-   Паттерн для каждого статуса:
-     1. > td                          — обычные ячейки
-     2. > td.ant-table-cell-fix-*     — sticky-ячейки (fixed: left/right)
-     3. :hover > td                   — hover (чуть темнее базового)
-     4. :hover > td.ant-table-cell-fix-* — hover sticky
-
-   !important нужен, чтобы перебить AntD-defaults
-   (в т.ч. background: #fff на sticky-ячейках).
+   STATUS ROW COLORS
    ====================================================================== */
 
-/* ── Открыта: белый ──────────────────────────────────────────────────── */
-.vt-row--open > td {
-  background: #ffffff !important;
-}
+.vt-row--open > td,
 .vt-row--open > td.ant-table-cell-fix-left,
 .vt-row--open > td.ant-table-cell-fix-right {
-  background: #ffffff !important;
+  background: var(--row-open) !important;
 }
-.vt-row--open:hover > td {
-  background: #f5f5f5 !important;
-}
+.vt-row--open:hover > td,
 .vt-row--open:hover > td.ant-table-cell-fix-left,
 .vt-row--open:hover > td.ant-table-cell-fix-right {
-  background: #f5f5f5 !important;
+  background: var(--row-open-hover) !important;
 }
 
-/* ── Согласование фин условий / Проверка СБ: бледно-бежевый ─────────── */
-.vt-row--beige > td {
-  background: #FAF0E6 !important;
-}
+.vt-row--beige > td,
 .vt-row--beige > td.ant-table-cell-fix-left,
 .vt-row--beige > td.ant-table-cell-fix-right {
-  background: #FAF0E6 !important;
+  background: var(--row-beige) !important;
 }
-.vt-row--beige:hover > td {
-  background: #f0e2cc !important;
-}
+.vt-row--beige:hover > td,
 .vt-row--beige:hover > td.ant-table-cell-fix-left,
 .vt-row--beige:hover > td.ant-table-cell-fix-right {
-  background: #f0e2cc !important;
+  background: var(--row-beige-hover) !important;
 }
 
-/* ── Оффер / Подготовка документов / Выход: бледно-зелёный ──────────── */
-.vt-row--light-green > td {
-  background: #E8F5E9 !important;
-}
+.vt-row--light-green > td,
 .vt-row--light-green > td.ant-table-cell-fix-left,
 .vt-row--light-green > td.ant-table-cell-fix-right {
-  background: #E8F5E9 !important;
+  background: var(--row-lgreen) !important;
 }
-.vt-row--light-green:hover > td {
-  background: #d0ecd2 !important;
-}
+.vt-row--light-green:hover > td,
 .vt-row--light-green:hover > td.ant-table-cell-fix-left,
 .vt-row--light-green:hover > td.ant-table-cell-fix-right {
-  background: #d0ecd2 !important;
+  background: var(--row-lgreen-hover) !important;
 }
 
-/* ── Закрыта: зелёный ────────────────────────────────────────────────── */
-.vt-row--green > td {
-  background: #A5D6A7 !important;
-}
+.vt-row--green > td,
 .vt-row--green > td.ant-table-cell-fix-left,
 .vt-row--green > td.ant-table-cell-fix-right {
-  background: #A5D6A7 !important;
+  background: var(--row-green) !important;
 }
-.vt-row--green:hover > td {
-  background: #88c98b !important;
-}
+.vt-row--green:hover > td,
 .vt-row--green:hover > td.ant-table-cell-fix-left,
 .vt-row--green:hover > td.ant-table-cell-fix-right {
-  background: #88c98b !important;
+  background: var(--row-green-hover) !important;
 }
 
-/* ── Hold: светло-синий ──────────────────────────────────────────────── */
-.vt-row--blue > td {
-  background: #BBDEFB !important;
-}
+.vt-row--blue > td,
 .vt-row--blue > td.ant-table-cell-fix-left,
 .vt-row--blue > td.ant-table-cell-fix-right {
-  background: #BBDEFB !important;
+  background: var(--row-blue) !important;
 }
-.vt-row--blue:hover > td {
-  background: #9ecef8 !important;
-}
+.vt-row--blue:hover > td,
 .vt-row--blue:hover > td.ant-table-cell-fix-left,
 .vt-row--blue:hover > td.ant-table-cell-fix-right {
-  background: #9ecef8 !important;
+  background: var(--row-blue-hover) !important;
 }
 
-/* ── Отмена: розово-красный ──────────────────────────────────────────── */
-.vt-row--red > td {
-  background: #FFCDD2 !important;
-}
+.vt-row--red > td,
 .vt-row--red > td.ant-table-cell-fix-left,
 .vt-row--red > td.ant-table-cell-fix-right {
-  background: #FFCDD2 !important;
+  background: var(--row-red) !important;
 }
-.vt-row--red:hover > td {
-  background: #ffb3bb !important;
-}
+.vt-row--red:hover > td,
 .vt-row--red:hover > td.ant-table-cell-fix-left,
 .vt-row--red:hover > td.ant-table-cell-fix-right {
-  background: #ffb3bb !important;
+  background: var(--row-red-hover) !important;
 }

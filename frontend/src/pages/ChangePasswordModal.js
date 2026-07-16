@@ -55,8 +55,9 @@ const ChangePasswordModal = ({ open, onSuccess, forced }) => {
         <div style={{
           marginBottom: 16,
           padding: 12,
-          background: '#FFF7E6',
-          border: '1px solid #FFD591',
+          background: 'var(--layout-bg)',
+          border: '1px solid var(--border-color)',
+          color: 'var(--text-color)',
           borderRadius: 4,
           fontSize: 13,
         }}>
@@ -127,11 +128,11 @@ const ChangePasswordModal = ({ open, onSuccess, forced }) => {
 
         <div style={{
           padding: '8px 12px',
-          background: '#F0F8FF',
-          border: '1px solid #91D5FF',
+          background: 'var(--layout-bg)',
+          border: '1px solid var(--border-color)',
+          color: 'var(--text-color)',
           borderRadius: 4,
           fontSize: 12,
-          color: '#555',
           lineHeight: 1.8,
         }}>
           <strong>Требования к паролю:</strong><br />

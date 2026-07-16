@@ -302,8 +302,9 @@ const UsersPage = () => {
           <div style={{ 
             marginTop: 16, 
             padding: 12, 
-            background: '#E6F7FF', 
-            border: '1px solid #91D5FF',
+            background: 'var(--layout-bg)', 
+            border: '1px solid var(--border-color)',
+            color: 'var(--text-color)',
             borderRadius: 2,
             fontSize: 12,
           }}>

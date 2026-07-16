@@ -6,12 +6,106 @@
   box-sizing: border-box;
 }
 
+:root {
+  --bg-color: #f8fafc;
+  --text-color: #0f172a;
+  --card-bg: #ffffff;
+  --border-color: rgba(226, 232, 240, 0.8);
+  --header-bg: #ffffff;
+  --header-text: #1e293b;
+  --table-header-bg: #FAFAFA;
+  --layout-bg: #f4f7fe;
+  --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #ec4899 100%);
+  --shadow-color: rgba(0, 0, 0, 0.05);
+
+  --row-open: #ffffff;
+  --row-open-hover: #f5f5f5;
+  --row-beige: #FAF0E6;
+  --row-beige-hover: #f0e2cc;
+  --row-lgreen: #E8F5E9;
+  --row-lgreen-hover: #d0ecd2;
+  --row-green: #A5D6A7;
+  --row-green-hover: #88c98b;
+  --row-blue: #BBDEFB;
+  --row-blue-hover: #9ecef8;
+  --row-red: #FFCDD2;
+  --row-red-hover: #fbb3b9;
+}
+
+[data-theme='dark'] {
+  --bg-color: #0d1117;
+  --text-color: #c9d1d9;
+  --card-bg: #161b22;
+  --border-color: #30363d;
+  --header-bg: #161b22;
+  --header-text: #c9d1d9;
+  --table-header-bg: #161b22;
+  --layout-bg: #0d1117;
+  --accent-gradient: linear-gradient(135deg, #58a6ff 0%, #bc8cff 100%);
+  --shadow-color: rgba(0, 0, 0, 0.5);
+
+  --row-open: var(--card-bg);
+  --row-open-hover: #1f252e;
+  --row-beige: #2a241b;
+  --row-beige-hover: #362e22;
+  --row-lgreen: #1c2b1f;
+  --row-lgreen-hover: #253b2a;
+  --row-green: #1c3222;
+  --row-green-hover: #25452e;
+  --row-blue: #1c2635;
+  --row-blue-hover: #253347;
+  --row-red: #321c1d;
+  --row-red-hover: #452426;
+}
+
+[data-theme='dark'] .ant-btn-primary {
+  background-color: #1f6feb !important;
+  border-color: #1f6feb !important;
+  color: #ffffff !important;
+}
+[data-theme='dark'] .ant-btn-primary:not(:disabled):hover {
+  background-color: #388bfd !important;
+  border-color: #388bfd !important;
+}
+
+/* Ensure table text color is correct in dark mode */
+[data-theme='dark'] .ant-table-tbody > tr > td {
+  color: var(--text-color) !important;
+}
+
+[data-theme='dark'] .ant-message-notice-content {
+  background-color: #161b22 !important;
+  color: #c9d1d9 !important;
+  border: 1px solid #30363d !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+[data-theme='dark'] .ant-message-notice-content .ant-message-custom-content > span:not(.anticon) {
+  color: #c9d1d9 !important;
+}
+[data-theme='dark'] .ant-message-custom-content svg {
+  fill: var(--text-color);
+}
+
+.table-toolbar {
+  background: var(--card-bg) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.ant-dropdown-menu-item-disabled {
+  cursor: default !important;
+  opacity: 1 !important;
+}
+.ant-dropdown-menu-item-disabled .ant-dropdown-menu-title-content {
+  color: inherit !important;
+  opacity: 1 !important;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--bg-color);
+  color: var(--text-color);
 }
 
 /* Ant Design overrides for modern clean look */
@@ -56,37 +150,74 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at top right, #e0e7ff 0%, #f8fafc 100%);
+  background: linear-gradient(-45deg, #4f46e5, #ec4899, #8b5cf6, #3b82f6);
+  background-size: 400% 400%;
+  animation: gradientBG 15s ease infinite;
+}
+
+@keyframes gradientBG {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .login-card {
   width: 100%;
-  max-width: 420px;
-  padding: 48px 40px;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  max-width: 440px;
+  padding: 56px 48px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.login-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.3);
 }
 
 .login-logo {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 48px;
 }
 
 .login-logo h1 {
-  font-size: 32px;
-  font-weight: 700;
-  color: #2563eb;
+  font-size: 56px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #4f46e5 0%, #ec4899 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
   margin: 0;
-  letter-spacing: -0.5px;
+  letter-spacing: -2px;
 }
 
 .login-logo p {
-  color: #64748b;
-  margin-top: 8px;
-  font-size: 15px;
+  color: #475569;
+  margin-top: 12px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* Ensure login inputs are always light regardless of theme */
+.login-container .ant-input,
+.login-container .ant-input-password,
+.login-container .ant-input-password input,
+.login-container .ant-input-affix-wrapper,
+.login-container .ant-input-number {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border-color: #d9d9d9 !important;
+}
+.login-container .ant-input::placeholder,
+.login-container .ant-input-password input::placeholder {
+  color: #8c8c8c !important;
+}
+.login-container .ant-input-password-icon,
+.login-container .anticon {
+  color: #555555 !important;
 }
 
 /* Page header styles */
@@ -96,13 +227,13 @@ body {
   align-items: center;
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .page-header h1 {
   font-size: 22px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--text-color);
   margin: 0;
 }
 
@@ -553,7 +684,8 @@ body {
 .ant-table-thead > tr > th,
 .ant-table-thead > tr > th .ant-table-column-title {
   font-weight: 700 !important;
-  color: #0f172a !important;
+  color: var(--text-color) !important;
+  background: var(--table-header-bg) !important;
   white-space: normal !important;
   word-wrap: break-word !important;
   overflow: visible !important;
@@ -567,4 +699,8 @@ th.ant-table-cell-ellipsis .ant-table-column-title {
   white-space: normal !important;
   text-overflow: clip !important;
   word-break: break-word !important;
+}
+
+.no-page-scroll {
+  overflow: hidden !important;
 }

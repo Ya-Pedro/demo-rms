@@ -240,6 +240,11 @@ const ReportsPage = () => {
     loadDictionaries();
   }, []);
 
+  useEffect(() => {
+    document.body.classList.add('no-page-scroll');
+    return () => document.body.classList.remove('no-page-scroll');
+  }, []);
+
   const [total,       setTotal]       = useState(0);
   const [loading,     setLoading]     = useState(false);
   const [pageSize,    setPageSize]    = useState(loadPS());
@@ -747,8 +752,8 @@ const ReportsPage = () => {
     <div style={{ display:'flex', flexDirection:'column', height:'100%', gap:10 }}>
 
       {/* ── Верхняя панель фильтров ── */}
-      <div style={{
-        background:'#fff', padding:'10px 14px', borderRadius:6,
+      <div className="table-toolbar" style={{
+        padding:'10px 14px', borderRadius:6,
         display:'flex', flexWrap:'wrap', alignItems:'center', gap:8,
         boxShadow:'0 1px 3px rgba(0,0,0,0.06)', flexShrink:0,
       }}>
@@ -820,18 +825,18 @@ const ReportsPage = () => {
       </div>
 
       {/* ── Таблица ── */}
-      <div data-tour-reports="table" style={{ flex:1, overflow:'hidden', background:'#fff', borderRadius:6 }}>
+      <div data-tour-reports="table" style={{ flex:1, overflow:'hidden', background:'var(--card-bg)', borderRadius:6 }}>
         {/* Строка активных фильтров столбцов */}
         {activeTableFiltersCount > 0 && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '5px 12px',
-            background: '#e6f4ff',
-            borderBottom: '1px solid #91caff',
+            background: 'var(--layout-bg)',
+            borderBottom: '1px solid var(--border-color)',
             borderRadius: '6px 6px 0 0',
           }}>
-            <FilterOutlined style={{ color: '#1677ff', fontSize: 13 }} />
-            <span style={{ fontSize: 12, color: '#1677ff', fontWeight: 500 }}>
+            <FilterOutlined style={{ color: 'var(--text-color)', fontSize: 13 }} />
+            <span style={{ fontSize: 12, color: 'var(--text-color)', fontWeight: 500 }}>
               Активных фильтров по столбцам: {activeTableFiltersCount}
             </span>
             <Button
@@ -868,7 +873,7 @@ const ReportsPage = () => {
             showTotal: t => `Всего: ${t}`,
           }}
           onChange={handleTableChange}
-          scroll={{ x: tableWidth, y: 'calc(100vh - 260px)' }}
+          scroll={{ x: tableWidth, y: 'calc(100vh - 350px)' }}
         />
       </div>
 

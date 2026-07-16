@@ -21,6 +21,20 @@ const LoginPage = () => {
   const [totpCode, setTotpCode] = useState('');
   const [twoFaLoading, setTwoFaLoading] = useState(false);
 
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.classList.remove('dark');
+    return () => {
+      const userTheme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', userTheme);
+      if (userTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+  }, []);
+
   const onFinish = async (values) => {
     setLoading(true);
     setLoginError('');
@@ -136,7 +150,6 @@ const LoginPage = () => {
       <div className="login-card">
         <div className="login-logo">
           <h1>RMS</h1>
-          <p>Recruitment Management System</p>
         </div>
 
         {}
@@ -153,7 +166,7 @@ const LoginPage = () => {
         )}
 
         {}
-        {!requires2fa && (
+        {!requires2fa && !forgotModalOpen && (
           <Spin spinning={loading}>
             <Form
               form={form}
@@ -245,11 +258,11 @@ const LoginPage = () => {
           </div>
         )}
 
-        {!requires2fa && (
+        {!requires2fa && !forgotModalOpen && (
           <div style={{ textAlign: 'center' }}>
             <Button
               type="link"
-              onClick={() => setForgotModalOpen(true)}
+              onClick={() => { setForgotModalOpen(true); setLoginError(''); }}
               style={{ padding: 0, fontSize: 13 }}
               data-testid="forgot-password-link"
             >
@@ -258,41 +271,47 @@ const LoginPage = () => {
           </div>
         )}
 
-        <div style={{ textAlign: 'center', marginTop: 16, color: '#8c8c8c', fontSize: 12 }}>
-          Внутренняя система управления вакансиями
-        </div>
+        {forgotModalOpen && (
+          <div>
+            <p style={{ marginBottom: 16, color: '#595959', fontSize: 13, textAlign: 'center' }}>
+              Введите email вашей учётной записи. Новый временный пароль будет отправлен на указанный адрес.
+            </p>
+            <Form form={forgotForm} layout="vertical" onFinish={handleForgotPassword}>
+              <Form.Item
+                name="forgot_email"
+                rules={[
+                  { required: true, message: 'Введите email' },
+                  { type: 'email', message: 'Неверный формат email' },
+                ]}
+              >
+                <Input
+                  prefix={<MailOutlined />}
+                  placeholder="Email"
+                  data-testid="forgot-email-input"
+                  size="large"
+                />
+              </Form.Item>
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                size="large"
+                loading={forgotLoading}
+              >
+                Отправить
+              </Button>
+            </Form>
+            <Button
+              type="link"
+              block
+              style={{ marginTop: 8 }}
+              onClick={() => { setForgotModalOpen(false); forgotForm.resetFields(); }}
+            >
+              ← Назад
+            </Button>
+          </div>
+        )}
       </div>
-
-      {}
-      <Modal
-        title="Восстановление пароля"
-        open={forgotModalOpen}
-        onCancel={() => { setForgotModalOpen(false); forgotForm.resetFields(); }}
-        onOk={handleForgotPassword}
-        okText="Отправить"
-        cancelText="Отмена"
-        confirmLoading={forgotLoading}
-        width={420}
-      >
-        <p style={{ marginBottom: 16, color: '#595959', fontSize: 13 }}>
-          Введите email вашей учётной записи. Новый временный пароль будет отправлен на указанный адрес.
-        </p>
-        <Form form={forgotForm} layout="vertical">
-          <Form.Item
-            name="forgot_email"
-            rules={[
-              { required: true, message: 'Введите email' },
-              { type: 'email', message: 'Неверный формат email' },
-            ]}
-          >
-            <Input
-              prefix={<MailOutlined />}
-              placeholder="Email"
-              data-testid="forgot-email-input"
-            />
-          </Form.Item>
-        </Form>
-      </Modal>
 
       {}
       <ChangePasswordModal

@@ -485,6 +485,11 @@ const VacancyTable = ({
     }
   }, [actionRef, fetchData]);
 
+  useEffect(() => {
+    document.body.classList.add('no-page-scroll');
+    return () => document.body.classList.remove('no-page-scroll');
+  }, []);
+
   const handleTableChange = useCallback((pagination, filters, sorter) => {
     const newPage = pagination.current  || 1;
     const newPs   = pagination.pageSize || pageSize;
@@ -653,7 +658,7 @@ const VacancyTable = ({
         title: 'Статус вакансии', dataIndex: 'status_id', key: 'status_id', width: 140, ellipsis: true,
         render: (_, r) => {
           const s = r.status_name || r.status?.value;
-          return s ? <span style={{ fontSize: 11 }}>{s}</span> : '-';
+          return s ? <span>{s}</span> : '-';
         },
         filteredValue: fi.status_id || null,
         ...dictFilter(dictionaries.vacancy_status, excludeStatusIds),
@@ -804,7 +809,7 @@ const VacancyTable = ({
           return (
             <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
               {ownerName}
-              <Tag color="orange" style={{ margin: 0, fontSize: 11, padding: '0 4px', lineHeight: '18px' }}>
+              <Tag color="orange" style={{ margin: 0 }}>
                 врем. {shortTemp}
               </Tag>
             </span>
@@ -969,12 +974,11 @@ const VacancyTable = ({
     <div ref={containerRef} className="vacancy-table-container"
       style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-      <div style={{
+      <div className="table-toolbar" style={{
         display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-        padding: '8px 12px', background: '#fff',
-        borderBottom: '1px solid #f0f0f0', flexShrink: 0,
+        padding: '8px 12px', flexShrink: 0,
       }}>
-        <span style={{ fontWeight: 600, fontSize: 14, color: '#262626' }}>Вакансии</span>
+        <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-color)' }}>Вакансии</span>
         <div style={{ flex: 1 }} />
         {isSuperAdmin && (
           <Button icon={<UploadOutlined />} size="small"
@@ -1033,7 +1037,7 @@ const VacancyTable = ({
           bordered
           loading={loading}
           rowClassName={getRowClassName}
-          scroll={{ x: tableWidth, y: 'calc(100vh - 235px)' }}
+          scroll={{ x: tableWidth, y: 'calc(100vh - 340px)' }}
           pagination={{
             current:         curPage,
             pageSize,

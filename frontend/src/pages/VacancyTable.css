@@ -20,15 +20,12 @@
 
 /* Обычные заголовки — БЕЗ z-index, чтобы не конфликтовать со sticky */
 .vacancy-table-container .ant-table-thead > tr > th {
-  font-size: 12px !important;
   white-space: normal !important;
   word-wrap: break-word !important;
   line-height: 1.2 !important;
-  padding: 8px 4px !important;
   vertical-align: middle !important;
   text-align: center !important;
-  background: #FAFAFA !important;
-  height: 70px !important;
+  background: var(--table-header-bg) !important;
   overflow: visible !important;
 }
 
@@ -36,20 +33,20 @@
 .vacancy-table-container .ant-table-thead > tr > th.ant-table-cell-fix-left,
 .vacancy-table-container .ant-table-thead > tr > th.ant-table-cell-fix-right {
   z-index: 4 !important;
-  background: #FAFAFA !important;
+  background: var(--table-header-bg) !important;
 }
 
 /* Sticky-ячейки тела — перекрывают обычные при горизонтальном скролле */
 .vacancy-table-container .ant-table-tbody > tr > td.ant-table-cell-fix-left,
 .vacancy-table-container .ant-table-tbody > tr > td.ant-table-cell-fix-right {
   z-index: 2 !important;
-  background: #fff !important;
+  background: var(--card-bg) !important;
 }
 
 /* Hover-состояние sticky-ячеек (дефолт — для строк без статус-класса) */
 .vacancy-table-container .ant-table-tbody > tr:not([class*="vt-row--"]):hover > td.ant-table-cell-fix-left,
 .vacancy-table-container .ant-table-tbody > tr:not([class*="vt-row--"]):hover > td.ant-table-cell-fix-right {
-  background: #fafafa !important;
+  background: var(--table-header-bg) !important;
 }
 
 /* Вся шапка поверх тела (но ниже dropdown-ов) */
@@ -94,8 +91,6 @@
    BODY & GENERAL
    ====================================================================== */
 .vacancy-table-container .ant-table-tbody > tr > td {
-  padding: 4px 6px !important;
-  font-size: 12px !important;
 }
 
 .vacancy-table-container .ant-table-body {
@@ -112,11 +107,17 @@
   justify-content: center !important;
 }
 
+.vacancy-table-container {
+  background: var(--card-bg);
+  border-radius: 20px;
+  box-shadow: 0 10px 40px -10px rgba(0,0,0,0.05);
+  overflow: hidden;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+}
+
 .vacancy-table-container .ant-tag {
   margin: 0 !important;
-  font-size: 11px !important;
-  line-height: 18px !important;
-  padding: 0 6px !important;
 }
 
 /* Номер строки */
