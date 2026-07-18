@@ -42,11 +42,11 @@ COPY --from=nginx_build /usr/sbin/nginx /usr/sbin/nginx
 COPY --from=nginx_build /etc/nginx /etc/nginx
 COPY --from=nginx_build /usr/lib/nginx/modules /usr/lib/nginx/modules
 
-RUN mkdir -p /var/cache/nginx /usr/share/nginx/html /etc/nginx/conf.d /var/log/nginx && \
+RUN mkdir -p /var/cache/nginx /usr/share/nginx/html /etc/nginx/conf.d /var/log/nginx /etc/nginx/ssl && \
     ln -sf /dev/stdout /var/log/nginx/access.log && \
     ln -sf /dev/stderr /var/log/nginx/error.log && \
-    chown -R 1001:0 /var/cache/nginx /var/log/nginx /etc/nginx /usr/share/nginx/html && \
-    chmod -R g=u /var/cache/nginx /var/log/nginx /etc/nginx /usr/share/nginx/html
+    chown -R 1001:0 /var/cache/nginx /var/log/nginx /etc/nginx /usr/share/nginx/html /etc/nginx/ssl && \
+    chmod -R g=u /var/cache/nginx /var/log/nginx /etc/nginx /usr/share/nginx/html /etc/nginx/ssl
 
 RUN printf '\
 load_module /usr/lib/nginx/modules/ngx_http_vhost_traffic_status_module.so;\n\
@@ -72,6 +72,10 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 8080
 
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 USER 1001
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

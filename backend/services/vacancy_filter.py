@@ -50,6 +50,8 @@ def apply_vacancy_filters(
     replacement_type_id: Optional[List[int]] = None,
     internal_transfer_id: Optional[List[int]] = None,
     recruiter_id: Optional[List[int]] = None,
+    city_id: Optional[List[int]] = None,
+    team_lead_id: Optional[List[int]] = None,
                                 
     search: Optional[str] = None,
     search_vacancy_id: Optional[str] = None,
@@ -123,6 +125,8 @@ def apply_vacancy_filters(
         "replacement_type_id": (Vacancy.replacement_type_id, replacement_type_id),
         "internal_transfer_id": (Vacancy.internal_transfer_id, internal_transfer_id),
         "recruiter_id": (Vacancy.recruiter_id, recruiter_id),
+        "city_id": (Vacancy.city_id, city_id),
+        "team_lead_id": (Vacancy.team_lead_id, team_lead_id),
     }
     for _name, (col, values) in _dict_filters.items():
         if values:

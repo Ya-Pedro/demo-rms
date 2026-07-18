@@ -89,7 +89,10 @@ services:
       - "80:8080"
       - "443:8443"
     volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /etc/letsencrypt/live/pedro.ittori.ru/fullchain.pem:/etc/nginx/ssl/pedro_fullchain.pem:ro
+      - /etc/letsencrypt/live/pedro.ittori.ru/privkey.pem:/etc/nginx/ssl/pedro_privkey.pem:ro
+      - /etc/letsencrypt/live/rms.ittori.ru/fullchain.pem:/etc/nginx/ssl/rms_fullchain.pem:ro
+      - /etc/letsencrypt/live/rms.ittori.ru/privkey.pem:/etc/nginx/ssl/rms_privkey.pem:ro
     networks:
       - rms_network
 
