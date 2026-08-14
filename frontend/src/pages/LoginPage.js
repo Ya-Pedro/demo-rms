@@ -318,6 +318,7 @@ const LoginPage = () => {
         open={forceChangeOpen}
         onSuccess={handleForceChangeSuccess}
         forced={true}
+        loginContext={true}
       />
     </div>
   );

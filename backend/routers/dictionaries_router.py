@@ -59,6 +59,36 @@ async def get_dictionaries_by_type(
     result = await db.execute(query)
     return result.scalars().all()
 
+@router.post("/add-value", response_model=DictionaryResponse, status_code=status.HTTP_200_OK)
+async def add_dictionary_value(
+    data: DictionaryCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Создать новое значение в словаре (доступно любому авторизованному пользователю).
+    Если значение уже существует — возвращает существующую запись."""
+    # Проверить дубликат (без учёта регистра)
+    existing = await db.execute(
+        select(Dictionary).where(
+            Dictionary.type == data.type,
+            func.lower(Dictionary.value) == func.lower(data.value),
+        )
+    )
+    existing_item = existing.scalar_one_or_none()
+    if existing_item:
+        return existing_item
+
+    item = Dictionary(
+        type=data.type,
+        value=data.value,
+        description=data.description,
+        sort_order=data.sort_order,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
 @router.post("", response_model=DictionaryResponse, status_code=status.HTTP_201_CREATED)
 async def create_dictionary(
     data: DictionaryCreate,
@@ -117,11 +147,18 @@ async def delete_dictionary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_admin),
 ):
-                                                 
+    from sqlalchemy.exc import IntegrityError
     result = await db.execute(select(Dictionary).where(Dictionary.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404, detail="Элемент справочника не найден")
 
-    item.is_active = False
-    await db.commit()
+    await db.delete(item)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Невозможно удалить: это значение используется в одной или нескольких вакансиях. Сначала снимите его с вакансий или деактивируйте элемент через редактирование."
+        )

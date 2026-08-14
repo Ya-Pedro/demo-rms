@@ -23,7 +23,7 @@ import RecruiterTour from '../components/RecruiterTour';
 import VacancyHistoryDrawer from '../components/VacancyHistoryDrawer';
 import {
   Table, Button, Space, Tag, Tooltip,
-  Input, message, Upload, Modal, Checkbox,
+  Input, message, Upload, Modal, Checkbox, DatePicker,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
@@ -103,13 +103,14 @@ const TEXT_FILTER_DROPDOWN = {
 const DATE_FILTER_DROPDOWN = {
   filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
     <div style={{ padding: 8 }}>
-      <Input
+      <DatePicker
         autoFocus
-        placeholder="дд.мм.гг"
-        value={selectedKeys[0]}
-        onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-        onPressEnter={() => confirm()}
-        style={{ width: 150, marginBottom: 8, display: 'block' }}
+        format="DD.MM.YY"
+        placeholder="Выберите дату"
+        value={selectedKeys[0] ? dayjs(selectedKeys[0], 'DD.MM.YY', true).isValid() ? dayjs(selectedKeys[0], 'DD.MM.YY') : null : null}
+        onChange={(date) => setSelectedKeys(date ? [date.format('DD.MM.YY')] : [])}
+        style={{ width: 160, marginBottom: 8, display: 'block' }}
+        getPopupContainer={getPopupContainer}
       />
       <Space>
         <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 70 }}>Найти</Button>

@@ -1,6 +1,6 @@
 import { tokenStorage } from '../tokenStorage';
-import React, { useState, useRef } from 'react';
-import { Table, Button, Select, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Alert } from 'antd';
+import React, { useState } from 'react';
+import { Table, Button, Select, Space, Tag, Modal, Form, Input, InputNumber, message, Popconfirm, Alert, Checkbox, App } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined } from '@ant-design/icons';
 import { api } from '../App';
 import useIsMobile from '../hooks/useIsMobile';
@@ -22,6 +22,7 @@ const DICTIONARY_TYPES = [
 const DictionaryPage = () => {
   const [form] = Form.useForm();
   const isMobile = useIsMobile();
+  const { modal } = App.useApp();
   
   const [selectedType, setSelectedType] = useState('specialist_level');
   const [modalVisible, setModalVisible] = useState(false);
@@ -107,10 +108,12 @@ const DictionaryPage = () => {
             data-testid={`edit-dict-${record.id}`}
           />
           <Popconfirm
-            title="Деактивировать элемент?"
+            title="Удалить элемент навсегда?"
+            description="Если значение используется в вакансиях — удаление будет запрещено."
             onConfirm={() => handleDelete(record.id)}
-            okText="Да"
-            cancelText="Нет"
+            okText="Удалить"
+            okType="danger"
+            cancelText="Отмена"
           >
             <Button
               type="text"
@@ -157,13 +160,64 @@ const DictionaryPage = () => {
       setLoading(true);
 
       if (editingItem) {
+        // При редактировании: проверяем дубликат среди других элементов (не считая себя)
+        const trimmed = values.value.trim().toLowerCase();
+        const duplicate = data.find(
+          item => item.id !== editingItem.id && item.value.trim().toLowerCase() === trimmed
+        );
+        if (duplicate) {
+          setLoading(false);
+          modal.warning({
+            title: 'Такое значение уже существует',
+            content: `Элемент «${duplicate.value}» (ID: ${duplicate.id}) уже есть в этом справочнике. Измените значение на уникальное.`,
+            okText: 'Понятно',
+          });
+          return;
+        }
         await api.patch(`/dictionaries/${editingItem.id}`, {
           value: values.value,
           description: values.description,
           sort_order: values.sort_order,
+          is_active: values.is_active,
         });
         message.success('Элемент обновлен');
       } else {
+        // При создании: проверяем дубликат среди всех существующих элементов
+        const trimmed = values.value.trim().toLowerCase();
+        const duplicate = data.find(
+          item => item.value.trim().toLowerCase() === trimmed
+        );
+        if (duplicate) {
+          setLoading(false);
+          modal.confirm({
+            title: 'Такое значение уже существует',
+            content: (
+              <span>
+                Элемент <b>«{duplicate.value}»</b> (ID: {duplicate.id}, активен: {duplicate.is_active ? 'да' : 'нет'}) уже есть в этом справочнике.
+                <br /><br />
+                Добавить дубликат всё равно?
+              </span>
+            ),
+            okText: 'Нет, отменить',
+            cancelText: 'Да, добавить',
+            okType: 'primary',
+            onOk() {},
+            async onCancel() {
+              setLoading(true);
+              try {
+                await api.post('/dictionaries', values);
+                message.success('Элемент создан');
+                setModalVisible(false);
+                loadData();
+              } catch (err) {
+                message.error(err.response?.data?.detail || 'Ошибка сохранения');
+              } finally {
+                setLoading(false);
+              }
+            },
+          });
+          return;
+        }
         await api.post('/dictionaries', values);
         message.success('Элемент создан');
       }
@@ -190,11 +244,13 @@ const DictionaryPage = () => {
     
     try {
       await api.delete(`/dictionaries/${id}`);
-      message.success('Элемент деактивирован');
+      message.success('Элемент удалён');
       loadData();
     } catch (error) {
       if (error.response?.status === 403) {
         message.error('Недостаточно прав для выполнения операции');
+      } else if (error.response?.status === 409) {
+        message.error(error.response.data.detail || 'Элемент используется в вакансиях — удаление невозможно');
       } else {
         message.error('Ошибка удаления');
       }
@@ -287,6 +343,11 @@ const DictionaryPage = () => {
           <Form.Item name="sort_order" label="Порядок сортировки" initialValue={0}>
             <InputNumber min={0} style={{ width: '100%' }} />
           </Form.Item>
+          {editingItem && (
+            <Form.Item name="is_active" valuePropName="checked" label="Статус">
+              <Checkbox>Активен</Checkbox>
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>

@@ -2,7 +2,7 @@ import { tokenStorage } from '../tokenStorage';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Button, Select, Space, Modal, Form, Input,
-  InputNumber, DatePicker, message, Drawer, Divider, Checkbox, Row, Col
+  InputNumber, DatePicker, message, Drawer, Divider, Checkbox, Row, Col, Spin
 } from 'antd';
 import { PlusOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -44,6 +44,99 @@ const generateWeekOptions = () => {
   return options;
 };
 
+
+/**
+ * CreatableDictSelect — Select с возможностью добавить новое значение в словарь.
+ * При вводе текста, которого нет в списке, показывает кнопку «Добавить».
+ * После создания нового значения через API — добавляет его в локальный список и выбирает.
+ *
+ * Props:
+ *  - options: [{ value: id, label: string }]
+ *  - dictType: строка типа словаря (напр. 'feasibility')
+ *  - onNewOption: fn(newOption: { value: id, label: string }) — callback после создания
+ *  - value, onChange — стандартные props от Form.Item
+ *  - ...rest — остальные props передаются в Select
+ */
+const CreatableDictSelect = ({ options = [], dictType, onNewOption, value, onChange, ...rest }) => {
+  const [searchText, setSearchText] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const exactMatch = options.some(
+    o => o.label.toLowerCase() === searchText.trim().toLowerCase()
+  );
+  const showAddBtn = searchText.trim().length > 0 && !exactMatch;
+
+  const handleAdd = async () => {
+    if (!searchText.trim()) return;
+    setAdding(true);
+    try {
+      const res = await api.post('/dictionaries/add-value', {
+        type: dictType,
+        value: searchText.trim(),
+      });
+      const newOpt = { value: res.data.id, label: res.data.value };
+      if (onNewOption) onNewOption(newOpt);
+      onChange?.(res.data.id);
+      setSearchText('');
+      message.success(`Значение «${res.data.value}» добавлено в справочник`);
+    } catch (e) {
+      message.error('Не удалось добавить значение: ' + (e.response?.data?.detail || e.message));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const dropdownRender = (menu) => (
+    <>
+      {menu}
+      {showAddBtn && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '4px 8px',
+            borderTop: '1px solid #f0f0f0',
+            gap: 8,
+          }}
+        >
+          {adding ? (
+            <Spin size="small" />
+          ) : (
+            <Button
+              type="link"
+              size="small"
+              icon={<PlusOutlined />}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleAdd}
+              style={{ padding: 0 }}
+            >
+              Добавить «{searchText.trim()}»
+            </Button>
+          )}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <Select
+      {...rest}
+      value={value}
+      onChange={(val) => {
+        onChange?.(val);
+        setSearchText('');
+      }}
+      showSearch
+      allowClear
+      onSearch={setSearchText}
+      filterOption={(input, option) =>
+        (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+      }
+      options={options}
+      dropdownRender={dropdownRender}
+    />
+  );
+};
 
 const HighlightFormItem = (props) => {
   return (
@@ -691,7 +784,16 @@ const DashboardPage = () => {
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="feasibility_id" label="ТЭО">
-                  <Select options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <CreatableDictSelect
+                    options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))}
+                    dictType="feasibility"
+                    onNewOption={(newOpt) => {
+                      setDictionaries(prev => ({
+                        ...prev,
+                        feasibility: [...(prev.feasibility || []), { id: newOpt.value, value: newOpt.label }],
+                      }));
+                    }}
+                  />
                 </HighlightFormItem>
               </Col>
             </Row>

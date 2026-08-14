@@ -3,7 +3,8 @@ import { Modal, Form, Input, message } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { api } from '../App';
 
-const ChangePasswordModal = ({ open, onSuccess, forced }) => {
+const ChangePasswordModal = ({ open, onSuccess, forced, loginContext }) => {
+  const isLogin = !!loginContext;
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
@@ -49,15 +50,16 @@ const ChangePasswordModal = ({ open, onSuccess, forced }) => {
       keyboard={false}
       confirmLoading={loading}
       cancelButtonProps={forced ? { style: { display: 'none' } } : undefined}
+      wrapClassName={isLogin ? 'change-password-login' : undefined}
       data-testid="change-password-modal"
     >
       {forced && (
         <div style={{
           marginBottom: 16,
           padding: 12,
-          background: 'var(--layout-bg)',
-          border: '1px solid var(--border-color)',
-          color: 'var(--text-color)',
+          background: isLogin ? '#f4f7fe' : 'var(--layout-bg)',
+          border: isLogin ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid var(--border-color)',
+          color: isLogin ? '#0f172a' : 'var(--text-color)',
           borderRadius: 4,
           fontSize: 13,
         }}>
@@ -128,9 +130,9 @@ const ChangePasswordModal = ({ open, onSuccess, forced }) => {
 
         <div style={{
           padding: '8px 12px',
-          background: 'var(--layout-bg)',
-          border: '1px solid var(--border-color)',
-          color: 'var(--text-color)',
+          background: isLogin ? '#f4f7fe' : 'var(--layout-bg)',
+          border: isLogin ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid var(--border-color)',
+          color: isLogin ? '#0f172a' : 'var(--text-color)',
           borderRadius: 4,
           fontSize: 12,
           lineHeight: 1.8,

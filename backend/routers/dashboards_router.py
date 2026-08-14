@@ -139,16 +139,20 @@ async def get_dashboard_metrics(
     vacs = [v for v in all_vacs if passes(v)]
 
                                                                                 
-    all_reports = (await db.execute(
-        select(
-            WeeklyReport.vacancy_id,
-            WeeklyReport.resumes_sent,
-            WeeklyReport.candidates_agreed,
-            WeeklyReport.interviews_planned,
-            WeeklyReport.interviews_conducted,
-            WeeklyReport.offer_made,
-        )
-    )).all()
+    report_query = select(
+        WeeklyReport.vacancy_id,
+        WeeklyReport.resumes_sent,
+        WeeklyReport.candidates_agreed,
+        WeeklyReport.interviews_planned,
+        WeeklyReport.interviews_conducted,
+        WeeklyReport.offer_made,
+    )
+    if dt_start:
+        report_query = report_query.where(WeeklyReport.week_start >= dt_start)
+    if dt_end:
+        report_query = report_query.where(WeeklyReport.week_start <= dt_end)
+
+    all_reports = (await db.execute(report_query)).all()
 
     reports_by_vac: dict = defaultdict(list)
     for r in all_reports:

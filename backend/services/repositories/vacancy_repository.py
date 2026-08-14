@@ -47,6 +47,15 @@ class VacancyRepository:
         )
         return result.scalar_one_or_none()
 
+    # Mapping from vacancy sort field names to WeeklyReport aggregate columns
+    FUNNEL_SORT_MAP = {
+        'resume_at_customer': WeeklyReport.resumes_sent,
+        'resume_approved': WeeklyReport.candidates_agreed,
+        'interviews_fact': WeeklyReport.interviews_conducted,
+        'interviews_plan': WeeklyReport.interviews_planned,
+        'offer_made': WeeklyReport.offer_made,
+    }
+
     async def get_list(
         self,
         base_query,
@@ -54,15 +63,56 @@ class VacancyRepository:
         limit: int = 100,
         sort_field: Optional[str] = None,
         sort_order: str = "desc",
+        period_conditions: Optional[list] = None,
     ) -> List[Vacancy]:
         if sort_field:
             fields = sort_field.split(',')
             orders = sort_order.split(',') if sort_order else []
+
+            # Check if any of the sort fields require WeeklyReport aggregation
+            needs_funnel_join = any(
+                f.strip() in self.FUNNEL_SORT_MAP for f in fields
+            )
+
+            # If sorting by funnel fields, join with a WeeklyReport subquery
+            if needs_funnel_join:
+                metrics_subq = (
+                    select(
+                        WeeklyReport.vacancy_id.label('_mv_id'),
+                        func.coalesce(func.sum(WeeklyReport.resumes_sent), 0).label('_mv_resumes_sent'),
+                        func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0).label('_mv_candidates_agreed'),
+                        func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0).label('_mv_interviews_conducted'),
+                        func.coalesce(func.sum(WeeklyReport.interviews_planned), 0).label('_mv_interviews_planned'),
+                        func.coalesce(func.sum(WeeklyReport.offer_made), 0).label('_mv_offer_made'),
+                    )
+                )
+                if period_conditions:
+                    metrics_subq = metrics_subq.where(and_(*period_conditions))
+                metrics_subq = metrics_subq.group_by(WeeklyReport.vacancy_id).subquery()
+
+                base_query = base_query.outerjoin(
+                    metrics_subq, Vacancy.id == metrics_subq.c._mv_id
+                )
+
+                funnel_col_map = {
+                    'resume_at_customer': metrics_subq.c._mv_resumes_sent,
+                    'resume_approved': metrics_subq.c._mv_candidates_agreed,
+                    'interviews_fact': metrics_subq.c._mv_interviews_conducted,
+                    'interviews_plan': metrics_subq.c._mv_interviews_planned,
+                    'offer_made': metrics_subq.c._mv_offer_made,
+                }
+
             for i, f in enumerate(fields):
                 field_name = f.strip()
                 order_dir = orders[i].strip() if i < len(orders) else 'desc'
                 if field_name == 'work_duration_days':
                     sort_col = func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)
+                    if order_dir == 'asc':
+                        base_query = base_query.order_by(sort_col.asc().nulls_last())
+                    else:
+                        base_query = base_query.order_by(sort_col.desc().nulls_last())
+                elif needs_funnel_join and field_name in funnel_col_map:
+                    sort_col = funnel_col_map[field_name]
                     if order_dir == 'asc':
                         base_query = base_query.order_by(sort_col.asc().nulls_last())
                     else:

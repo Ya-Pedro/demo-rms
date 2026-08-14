@@ -177,12 +177,14 @@ class VacancyService:
         data_q = select(Vacancy)
         data_q, _ = apply_vacancy_filters(data_q, current_user, **clean_params)
 
+        period_conditions = self._build_period_conditions(week_number, year, start_date, end_date)
+
         vacancies = await self.repo.get_list(data_q, skip=skip, limit=limit,
-                                              sort_field=sort_field, sort_order=sort_order)
+                                              sort_field=sort_field, sort_order=sort_order,
+                                              period_conditions=period_conditions)
 
         metrics_map = {}
         if vacancies:
-            period_conditions = self._build_period_conditions(week_number, year, start_date, end_date)
             metrics_map = await self.repo.get_weekly_metrics(
                 [v.id for v in vacancies], period_conditions
             )

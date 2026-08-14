@@ -704,3 +704,48 @@ th.ant-table-cell-ellipsis .ant-table-column-title {
 .no-page-scroll {
   overflow: hidden !important;
 }
+
+/* =============================================
+   Force white/light style for ChangePasswordModal
+   when shown on the Login page (any theme)
+   ============================================= */
+.change-password-login .ant-modal-content {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+.change-password-login .ant-modal-header {
+  background: #ffffff !important;
+}
+.change-password-login .ant-modal-title {
+  color: #0f172a !important;
+}
+.change-password-login .ant-modal-close-icon {
+  color: #0f172a !important;
+}
+.change-password-login .ant-form-item-label > label {
+  color: #0f172a !important;
+}
+.change-password-login .ant-input,
+.change-password-login .ant-input-password,
+.change-password-login .ant-input-password input,
+.change-password-login .ant-input-affix-wrapper {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #d9d9d9 !important;
+}
+.change-password-login .ant-input::placeholder,
+.change-password-login .ant-input-password input::placeholder {
+  color: #8c8c8c !important;
+}
+.change-password-login .ant-input-password-icon,
+.change-password-login .anticon {
+  color: #555555 !important;
+}
+.change-password-login .ant-form-item-explain-error {
+  color: #ff4d4f !important;
+}
+.change-password-login .ant-modal-footer .ant-btn-primary {
+  background-color: #4f46e5 !important;
+  border-color: #4f46e5 !important;
+  color: #ffffff !important;
+}

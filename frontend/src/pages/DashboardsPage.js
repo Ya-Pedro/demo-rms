@@ -332,25 +332,28 @@ export default function DashboardsPage() {
                   prefix={<TeamOutlined style={{ fontSize: 18, marginRight: 4 }} />}
                 />
                 {!isMobile && <Divider type="vertical" style={{ height: 72, margin: '0' }} />}
-                <div style={{ display: 'flex', gap: 24, paddingLeft: 16 }}>
-                  <Statistic
-                    title={<Text style={{ fontSize: 12, color: T.muted }}>Медианная ЗП (Gross)</Text>}
-                    value={chartSalaries.p50}
-                    valueStyle={{ fontSize: isMobile ? 20 : 28, fontWeight: 700, color: T.purple }}
-                    suffix="₽"
-                  />
-                  <Statistic
-                    title={<Text style={{ fontSize: 12, color: T.muted }}>Q1 (25%)</Text>}
-                    value={chartSalaries.p25}
-                    valueStyle={{ fontSize: 20, fontWeight: 600, color: T.sub }}
-                    suffix="₽"
-                  />
-                  <Statistic
-                    title={<Text style={{ fontSize: 12, color: T.muted }}>Q3 (75%)</Text>}
-                    value={chartSalaries.p75}
-                    valueStyle={{ fontSize: 20, fontWeight: 600, color: T.sub }}
-                    suffix="₽"
-                  />
+                <div style={{ display: 'flex', flexDirection: 'column', paddingLeft: 16 }}>
+                  <div style={{ display: 'flex', gap: 24 }}>
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: T.muted }}>Медианная ЗП (Gross)</Text>}
+                      value={chartSalaries.p50}
+                      valueStyle={{ fontSize: isMobile ? 20 : 28, fontWeight: 700, color: T.purple }}
+                      suffix="₽"
+                    />
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: T.muted }}>Q1 (25%)</Text>}
+                      value={chartSalaries.p25}
+                      valueStyle={{ fontSize: 20, fontWeight: 600, color: T.sub }}
+                      suffix="₽"
+                    />
+                    <Statistic
+                      title={<Text style={{ fontSize: 12, color: T.muted }}>Q3 (75%)</Text>}
+                      value={chartSalaries.p75}
+                      valueStyle={{ fontSize: 20, fontWeight: 600, color: T.sub }}
+                      suffix="₽"
+                    />
+                  </div>
+                  <Text style={{ fontSize: 10, color: T.muted, marginTop: 4 }}>* Данные на основе сделанных офферов</Text>
                 </div>
               </div>
             </Card>
