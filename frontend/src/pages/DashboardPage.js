@@ -2,7 +2,7 @@ import { tokenStorage } from '../tokenStorage';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Button, Select, Space, Modal, Form, Input,
-  InputNumber, DatePicker, message, Drawer, Divider, Checkbox, Row, Col, Spin
+  InputNumber, DatePicker, message, Drawer, Divider, Checkbox, Row, Col, Spin, theme
 } from 'antd';
 import { PlusOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -158,7 +158,7 @@ const HighlightFormItem = (props) => {
 };
 
 const DashboardPage = () => {
-
+  const { token } = theme.useToken();
   const isMobile = useIsMobile();
   const actionRef = useRef();
   const [form] = Form.useForm();
@@ -585,9 +585,9 @@ const DashboardPage = () => {
 
         <div style={{
           padding: 16,
-          border: '1px solid #91D5FF',
+          border: `1px solid ${token.colorPrimaryBorder}`,
           borderRadius: 6,
-          background: '#F0F8FF',
+          background: token.colorPrimaryBg,
           marginBottom: 16,
         }}>
           <Checkbox
@@ -598,19 +598,19 @@ const DashboardPage = () => {
             <span style={{ fontWeight: 500 }}>Выгрузить с учетом текущих фильтров</span>
           </Checkbox>
           {hasActiveFilters && exportWithFilters && (
-            <div style={{ marginTop: 8, fontSize: 13, color: '#0050B3' }}>
+            <div style={{ marginTop: 8, fontSize: 13, color: token.colorPrimary }}>
               <CheckCircleOutlined style={{ marginRight: 4 }} />
               Обнаружены активные фильтры в таблице. При включенной опции в Excel попадут только отфильтрованные записи.
             </div>
           )}
           {!hasActiveFilters && exportWithFilters && (
-            <div style={{ marginTop: 8, fontSize: 13, color: '#8C8C8C' }}>
+            <div style={{ marginTop: 8, fontSize: 13, color: token.colorTextSecondary }}>
               Активных фильтров нет. Будут экспортированы все записи за период.
             </div>
           )}
         </div>
 
-        <p style={{ color: '#8c8c8c', fontSize: 12 }}>
+        <p style={{ color: token.colorTextSecondary, fontSize: 12 }}>
           Вакансии фильтруются по дате открытия в указанном периоде.
         </p>
       </Modal>
@@ -629,9 +629,9 @@ const DashboardPage = () => {
       >
         {reportVacancy && (
           <>
-            <div style={{ marginBottom: 16, padding: 12, background: '#f5f5f5', borderRadius: 4 }}>
+            <div style={{ marginBottom: 16, padding: 12, background: token.colorFillAlter, borderRadius: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 4 }}>{reportVacancy.position_name}</div>
-              <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+              <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
                 Заказчик: {reportVacancy.admin_manager?.value || reportVacancy.project?.value || '-'}
               </div>
             </div>
@@ -653,7 +653,7 @@ const DashboardPage = () => {
               </Form.Item>
               
               {editingReportId && (
-                <div style={{ marginBottom: 12, padding: '6px 10px', background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 4, fontSize: 13, color: '#ad6800' }}>
+                <div style={{ marginBottom: 12, padding: '6px 10px', background: token.colorWarningBg, border: `1px solid ${token.colorWarningBorder}`, borderRadius: 4, fontSize: 13, color: token.colorWarning }}>
                   ✏️ Редактирование существующего отчёта за эту неделю
                 </div>
               )}

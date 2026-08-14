@@ -112,11 +112,11 @@ class VacancyRepository:
                     else:
                         base_query = base_query.order_by(sort_col.desc().nulls_last())
                 elif needs_funnel_join and field_name in funnel_col_map:
-                    sort_col = funnel_col_map[field_name]
+                    sort_col = func.coalesce(funnel_col_map[field_name], 0)
                     if order_dir == 'asc':
-                        base_query = base_query.order_by(sort_col.asc().nulls_last())
+                        base_query = base_query.order_by(sort_col.asc())
                     else:
-                        base_query = base_query.order_by(sort_col.desc().nulls_last())
+                        base_query = base_query.order_by(sort_col.desc())
                 else:
                     sort_col = getattr(Vacancy, field_name, None)
                     from sqlalchemy.orm.attributes import InstrumentedAttribute

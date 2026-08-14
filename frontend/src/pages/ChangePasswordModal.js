@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, message } from 'antd';
+import { Modal, Form, Input, message, ConfigProvider, theme } from 'antd';
 import { LockOutlined } from '@ant-design/icons';
 import { api } from '../App';
 
@@ -38,112 +38,114 @@ const ChangePasswordModal = ({ open, onSuccess, forced, loginContext }) => {
   };
 
   return (
-    <Modal
-      title={forced ? 'Создание нового пароля' : 'Смена пароля'}
-      open={open}
-      onOk={handleSubmit}
-      okText="Сохранить"
-      cancelText={forced ? undefined : 'Отмена'}
-      onCancel={forced ? undefined : onSuccess}
-      closable={!forced}
-      maskClosable={false}
-      keyboard={false}
-      confirmLoading={loading}
-      cancelButtonProps={forced ? { style: { display: 'none' } } : undefined}
-      wrapClassName={isLogin ? 'change-password-login' : undefined}
-      data-testid="change-password-modal"
-    >
-      {forced && (
-        <div style={{
-          marginBottom: 16,
-          padding: 12,
-          background: isLogin ? '#f4f7fe' : 'var(--layout-bg)',
-          border: isLogin ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid var(--border-color)',
-          color: isLogin ? '#0f172a' : 'var(--text-color)',
-          borderRadius: 4,
-          fontSize: 13,
-        }}>
-          Вы вошли с временным паролем. Для продолжения работы необходимо создать новый пароль.
-        </div>
-      )}
+    <ConfigProvider theme={{ algorithm: theme.defaultAlgorithm }}>
+      <Modal
+        title={forced ? 'Создание нового пароля' : 'Смена пароля'}
+        open={open}
+        onOk={handleSubmit}
+        okText="Сохранить"
+        cancelText={forced ? undefined : 'Отмена'}
+        onCancel={forced ? undefined : onSuccess}
+        closable={!forced}
+        maskClosable={false}
+        keyboard={false}
+        confirmLoading={loading}
+        cancelButtonProps={forced ? { style: { display: 'none' } } : undefined}
+        wrapClassName={isLogin ? 'change-password-login' : undefined}
+        data-testid="change-password-modal"
+      >
+        {forced && (
+          <div style={{
+            marginBottom: 16,
+            padding: 12,
+            background: isLogin ? '#f4f7fe' : 'var(--layout-bg)',
+            border: isLogin ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid var(--border-color)',
+            color: isLogin ? '#0f172a' : 'var(--text-color)',
+            borderRadius: 4,
+            fontSize: 13,
+          }}>
+            Вы вошли с временным паролем. Для продолжения работы необходимо создать новый пароль.
+          </div>
+        )}
 
-      <Form form={form} layout="vertical">
-        {!forced && (
+        <Form form={form} layout="vertical">
+          {!forced && (
+            <Form.Item
+              name="current_password"
+              label="Текущий пароль"
+              rules={[{ required: true, message: 'Введите текущий пароль' }]}
+            >
+              <Input.Password
+                prefix={<LockOutlined />}
+                placeholder="Текущий пароль"
+                data-testid="current-password-input"
+              />
+            </Form.Item>
+          )}
+
           <Form.Item
-            name="current_password"
-            label="Текущий пароль"
-            rules={[{ required: true, message: 'Введите текущий пароль' }]}
+            name="new_password"
+            label="Новый пароль"
+            rules={[
+              { required: true, message: 'Введите новый пароль' },
+              { min: 8, message: 'Минимум 8 символов' },
+              {
+                pattern: /^(?=.*[A-ZА-ЯЁ])/,
+                message: 'Пароль должен содержать хотя бы одну заглавную букву',
+              },
+              {
+                pattern: /[!@#$%^&*()\-_=+\[\]{}|;:'",.<>?/\\`~]/,
+                message: 'Пароль должен содержать хотя бы один спецсимвол (!@#$% и др.)',
+              },
+            ]}
           >
             <Input.Password
               prefix={<LockOutlined />}
-              placeholder="Текущий пароль"
-              data-testid="current-password-input"
+              placeholder="Минимум 8 символов, заглавная буква и спецсимвол"
+              data-testid="new-password-input"
             />
           </Form.Item>
-        )}
 
-        <Form.Item
-          name="new_password"
-          label="Новый пароль"
-          rules={[
-            { required: true, message: 'Введите новый пароль' },
-            { min: 8, message: 'Минимум 8 символов' },
-            {
-              pattern: /^(?=.*[A-ZА-ЯЁ])/,
-              message: 'Пароль должен содержать хотя бы одну заглавную букву',
-            },
-            {
-              pattern: /[!@#$%^&*()\-_=+\[\]{}|;:'",.<>?/\\`~]/,
-              message: 'Пароль должен содержать хотя бы один спецсимвол (!@#$% и др.)',
-            },
-          ]}
-        >
-          <Input.Password
-            prefix={<LockOutlined />}
-            placeholder="Минимум 8 символов, заглавная буква и спецсимвол"
-            data-testid="new-password-input"
-          />
-        </Form.Item>
+          <Form.Item
+            name="confirm_password"
+            label="Повторите пароль"
+            dependencies={['new_password']}
+            rules={[
+              { required: true, message: 'Повторите пароль' },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue('new_password') === value) {
+                    return Promise.resolve();
+                  }
+                  return Promise.reject(new Error('Пароли не совпадают'));
+                },
+              }),
+            ]}
+          >
+            <Input.Password
+              prefix={<LockOutlined />}
+              placeholder="Повторите новый пароль"
+              data-testid="confirm-password-input"
+            />
+          </Form.Item>
 
-        <Form.Item
-          name="confirm_password"
-          label="Повторите пароль"
-          dependencies={['new_password']}
-          rules={[
-            { required: true, message: 'Повторите пароль' },
-            ({ getFieldValue }) => ({
-              validator(_, value) {
-                if (!value || getFieldValue('new_password') === value) {
-                  return Promise.resolve();
-                }
-                return Promise.reject(new Error('Пароли не совпадают'));
-              },
-            }),
-          ]}
-        >
-          <Input.Password
-            prefix={<LockOutlined />}
-            placeholder="Повторите новый пароль"
-            data-testid="confirm-password-input"
-          />
-        </Form.Item>
-
-        <div style={{
-          padding: '8px 12px',
-          background: isLogin ? '#f4f7fe' : 'var(--layout-bg)',
-          border: isLogin ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid var(--border-color)',
-          color: isLogin ? '#0f172a' : 'var(--text-color)',
-          borderRadius: 4,
-          fontSize: 12,
-          lineHeight: 1.8,
-        }}>
-          <strong>Требования к паролю:</strong><br />
-          • Минимум 8 символов<br />
-          • Хотя бы одна заглавная буква (A–Z)<br />
-          • Хотя бы один спецсимвол (!@#$%^&* и др.)
-        </div>
-      </Form>
-    </Modal>
+          <div style={{
+            padding: '8px 12px',
+            background: isLogin ? '#f4f7fe' : 'var(--layout-bg)',
+            border: isLogin ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid var(--border-color)',
+            color: isLogin ? '#0f172a' : 'var(--text-color)',
+            borderRadius: 4,
+            fontSize: 12,
+            lineHeight: 1.8,
+          }}>
+            <strong>Требования к паролю:</strong><br />
+            • Минимум 8 символов<br />
+            • Хотя бы одна заглавная буква (A–Z)<br />
+            • Хотя бы один спецсимвол (!@#$%^&* и др.)
+          </div>
+        </Form>
+      </Modal>
+    </ConfigProvider>
   );
 };
 

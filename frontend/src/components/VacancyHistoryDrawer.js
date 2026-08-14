@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Drawer, Tag, Space, DatePicker, Spin,
-  Empty, Typography, Button, Tooltip, Collapse,
+  Empty, Typography, Button, Tooltip, Collapse, theme,
 } from 'antd';
 import {
   EditOutlined, PlusCircleOutlined, DeleteOutlined,
@@ -32,29 +32,31 @@ const ACTION_CONFIG = {
 const getCfg = (t) => ACTION_CONFIG[t] || ACTION_CONFIG.UPDATE;
 
 const DiffRow = ({ fieldName, change }) => {
+  const { token } = theme.useToken();
   const empty = (v) => !v || v === '—';
   return (
     <div style={{
       display: 'flex', alignItems: 'baseline', gap: 6,
-      padding: '3px 0', borderBottom: '1px solid #f5f5f5', fontSize: 12,
+      padding: '3px 0', borderBottom: `1px solid ${token.colorBorderSecondary}`, fontSize: 12,
     }}>
       <Text type="secondary" style={{ minWidth: 150, flexShrink: 0, fontSize: 11 }}>
         {fieldName}
       </Text>
       {empty(change.old)
         ? <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 11 }}>пусто</Text>
-        : <span style={{ background: '#fff1f0', color: '#cf1322', padding: '0 5px', borderRadius: 3, textDecoration: 'line-through' }}>{change.old}</span>
+        : <span style={{ background: token.colorErrorBg, color: token.colorError, padding: '0 5px', borderRadius: 3, textDecoration: 'line-through' }}>{change.old}</span>
       }
       <Text type="secondary">→</Text>
       {empty(change.new)
         ? <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 11 }}>очищено</Text>
-        : <span style={{ background: '#f6ffed', color: '#389e0d', padding: '0 5px', borderRadius: 3 }}>{change.new}</span>
+        : <span style={{ background: token.colorSuccessBg, color: token.colorSuccess, padding: '0 5px', borderRadius: 3 }}>{change.new}</span>
       }
     </div>
   );
 };
 
 const HistoryItem = ({ record }) => {
+  const { token } = theme.useToken();
   const cfg = getCfg(record.action_type);
   const entries = Object.entries(record.changes || {});
   const user = record.user;
@@ -75,7 +77,7 @@ const HistoryItem = ({ record }) => {
       </Tag>
 
       <Text style={{ fontSize: 12, flexShrink: 0 }}>
-        <UserOutlined style={{ marginRight: 3, color: '#8c8c8c' }} />
+        <UserOutlined style={{ marginRight: 3, color: token.colorTextSecondary }} />
         {userName}<Text type="secondary">{roleLabel}</Text>
       </Text>
 
@@ -99,7 +101,7 @@ const HistoryItem = ({ record }) => {
         padding: '5px 8px',
         borderLeft: `3px solid ${cfg.color}`,
         borderRadius: 4,
-        background: '#fafafa',
+        background: token.colorFillAlter,
         marginBottom: 2,
       }}>
         {header}
@@ -112,7 +114,7 @@ const HistoryItem = ({ record }) => {
       ghost
       size="small"
       expandIcon={({ isActive }) => (
-        <RightOutlined style={{ fontSize: 10, color: '#8c8c8c', transform: isActive ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }} />
+        <RightOutlined style={{ fontSize: 10, color: token.colorTextSecondary, transform: isActive ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }} />
       )}
       style={{ marginBottom: 2 }}
     >
@@ -122,14 +124,14 @@ const HistoryItem = ({ record }) => {
         style={{
           borderLeft: `3px solid ${cfg.color}`,
           borderRadius: '4px !important',
-          background: '#fafafa',
+          background: token.colorFillAlter,
           padding: 0,
         }}
       >
         <div style={{ padding: '4px 0 0 0' }}>
           {}
           {['UPDATE', 'CREATE'].includes(record.action_type) && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 3, fontSize: 10, color: '#8c8c8c', fontWeight: 600 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 3, fontSize: 10, color: token.colorTextSecondary, fontWeight: 600 }}>
               <span style={{ minWidth: 150 }}>Поле</span>
               <span style={{ flex: 1 }}>Было</span>
               <span style={{ width: 14 }} />
@@ -145,22 +147,25 @@ const HistoryItem = ({ record }) => {
   );
 };
 
-const VacancyHistoryDrawer = ({ open, vacancy, onClose }) => {
-  const [records, setRecords]     = useState([]);
-  const [loading, setLoading]     = useState(false);
+const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
+  const { token } = theme.useToken();
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState(null);
 
   const fetchHistory = useCallback(async (range) => {
     if (!vacancy?.id) return;
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (range?.[0]) params.append('start_date', range[0].format('YYYY-MM-DD'));
-      if (range?.[1]) params.append('end_date',   range[1].format('YYYY-MM-DD'));
-      const res = await api.get(`/vacancies/${vacancy.id}/history?${params}`);
+      const sp = new URLSearchParams();
+      if (range && range[0] && range[1]) {
+        sp.append('start_date', range[0].format('YYYY-MM-DD'));
+        sp.append('end_date', range[1].format('YYYY-MM-DD'));
+      }
+      const res = await api.get(`/vacancies/${vacancy.id}/history?${sp.toString()}`);
       setRecords(res.data || []);
-    } catch (e) {
-      console.error('History fetch error', e);
+    } catch (error) {
+      console.error('Failed to load history', error);
       setRecords([]);
     } finally {
       setLoading(false);
@@ -184,7 +189,7 @@ const VacancyHistoryDrawer = ({ open, vacancy, onClose }) => {
     <Drawer
       title={
         <Space>
-          <ClockCircleOutlined style={{ color: '#1677ff' }} />
+          <ClockCircleOutlined style={{ color: token.colorPrimary }} />
           <span>История изменений</span>
           {vacancy && (
             <Text type="secondary" style={{ fontSize: 13, fontWeight: 400 }}>
@@ -204,10 +209,9 @@ const VacancyHistoryDrawer = ({ open, vacancy, onClose }) => {
         </Tooltip>
       }
     >
-      {}
       <div style={{
         marginBottom: 14, padding: '8px 12px',
-        background: '#fafafa', borderRadius: 6, border: '1px solid #f0f0f0',
+        background: token.colorFillAlter, borderRadius: 6, border: `1px solid ${token.colorBorderSecondary}`,
         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
       }}>
         <Text type="secondary" style={{ fontSize: 12 }}>Период:</Text>
@@ -224,7 +228,6 @@ const VacancyHistoryDrawer = ({ open, vacancy, onClose }) => {
         )}
       </div>
 
-      {}
       {!loading && records.length > 0 && (
         <div style={{ marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {Object.entries(records.reduce((a, r) => { a[r.action_type] = (a[r.action_type] || 0) + 1; return a; }, {}))
@@ -239,7 +242,6 @@ const VacancyHistoryDrawer = ({ open, vacancy, onClose }) => {
         </div>
       )}
 
-      {}
       <Spin spinning={loading}>
         {!loading && records.length === 0 ? (
           <Empty
@@ -251,9 +253,9 @@ const VacancyHistoryDrawer = ({ open, vacancy, onClose }) => {
             {Object.entries(grouped).map(([day, items]) => (
               <div key={day}>
                 <div style={{
-                  fontSize: 11, fontWeight: 600, color: '#8c8c8c',
+                  fontSize: 11, fontWeight: 600, color: token.colorTextSecondary,
                   padding: '6px 0 4px', letterSpacing: 0.3,
-                  borderBottom: '1px solid #f0f0f0', marginBottom: 4,
+                  borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 4,
                 }}>
                   {day}
                 </div>
