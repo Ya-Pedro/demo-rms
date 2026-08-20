@@ -147,7 +147,7 @@ const HighlightFormItem = (props) => {
         return (
           <Form.Item 
             {...props} 
-            className={`${props.className || ''} ${props.editing && isEmpty ? 'highlight-empty-field' : ''}`}
+            className={`${props.className || ''} ${isEmpty ? 'highlight-empty-field' : ''}`}
           >
             {props.children}
           </Form.Item>

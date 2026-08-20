@@ -71,6 +71,12 @@ def apply_vacancy_filters(
     search_open_date: Optional[str] = None,
     search_close_date: Optional[str] = None,
     search_status_changed_at: Optional[str] = None,
+    search_open_date_from: Optional[str] = None,
+    search_open_date_to: Optional[str] = None,
+    search_close_date_from: Optional[str] = None,
+    search_close_date_to: Optional[str] = None,
+    search_status_changed_at_from: Optional[str] = None,
+    search_status_changed_at_to: Optional[str] = None,
                                                             
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
@@ -198,6 +204,22 @@ def apply_vacancy_filters(
         parsed = _parse_date(val)
         if parsed:
             conditions.append(col == parsed)
+
+                                                                               
+    _date_range_filters = [
+        (Vacancy.open_date,         search_open_date_from,         search_open_date_to),
+        (Vacancy.close_date,        search_close_date_from,        search_close_date_to),
+        (Vacancy.status_changed_at, search_status_changed_at_from, search_status_changed_at_to),
+    ]
+    for col, val_from, val_to in _date_range_filters:
+        if val_from:
+            parsed_from = _parse_date(val_from)
+            if parsed_from:
+                conditions.append(col >= parsed_from)
+        if val_to:
+            parsed_to = _parse_date(val_to)
+            if parsed_to:
+                conditions.append(col <= parsed_to)
 
                                                                                
     if date_from or date_to:

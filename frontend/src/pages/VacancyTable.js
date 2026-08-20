@@ -100,24 +100,44 @@ const TEXT_FILTER_DROPDOWN = {
   filterDropdownProps: { getPopupContainer },
 };
 
-const DATE_FILTER_DROPDOWN = {
-  filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
-    <div style={{ padding: 8 }}>
-      <DatePicker
-        autoFocus
-        format="DD.MM.YY"
-        placeholder="Выберите дату"
-        value={selectedKeys[0] ? dayjs(selectedKeys[0], 'DD.MM.YY', true).isValid() ? dayjs(selectedKeys[0], 'DD.MM.YY') : null : null}
-        onChange={(date) => setSelectedKeys(date ? [date.format('DD.MM.YY')] : [])}
-        style={{ width: 160, marginBottom: 8, display: 'block' }}
-        getPopupContainer={getPopupContainer}
+const DateRangeFilterDropdown = ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
+  const containerRef = React.useRef(null);
+  const parseRange = (keys) => {
+    if (!keys || keys.length === 0) return [null, null];
+    const [from, to] = (keys[0] || '').split('|');
+    const d1 = from && dayjs(from, 'DD.MM.YY', true).isValid() ? dayjs(from, 'DD.MM.YY') : null;
+    const d2 = to && dayjs(to, 'DD.MM.YY', true).isValid() ? dayjs(to, 'DD.MM.YY') : null;
+    return [d1, d2];
+  };
+  return (
+    <div ref={containerRef} style={{ padding: '12px 16px' }}>
+      <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13, color: 'var(--text-color)' }}>Выберите период</div>
+      <DatePicker.RangePicker
+        format="DD.MM.YYYY"
+        placeholder={['Дата от', 'Дата до']}
+        value={parseRange(selectedKeys)}
+        getPopupContainer={() => document.body}
+        style={{ width: 280, marginBottom: 10 }}
+        onChange={(dates) => {
+          if (dates && dates[0] && dates[1]) {
+            setSelectedKeys([`${dates[0].format('DD.MM.YY')}|${dates[1].format('DD.MM.YY')}`]);
+          } else {
+            setSelectedKeys([]);
+          }
+        }}
+        allowClear
       />
+      <br />
       <Space>
-        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 70 }}>Найти</Button>
-        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 70 }}>Сброс</Button>
+        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 80 }}>Найти</Button>
+        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 80 }}>Сброс</Button>
       </Space>
     </div>
-  ),
+  );
+};
+
+const DATE_FILTER_DROPDOWN = {
+  filterDropdown: (props) => <DateRangeFilterDropdown {...props} />,
   filterDropdownProps: { getPopupContainer },
 };
 
@@ -456,7 +476,25 @@ const VacancyTable = ({
 
       for (const [key, values] of Object.entries(filter || {})) {
         if (!values || values.length === 0) continue;
-        if (TEXT_FILTER_KEYS.has(key) || DATE_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
+        if (DATE_FILTER_KEYS.has(key)) {
+          const val = Array.isArray(values) ? values[0] : values;
+          if (val != null && val !== '') {
+            // Date range filter: value is stored as "DD.MM.YY|DD.MM.YY"
+            const parts = String(val).split('|');
+            if (parts.length === 2) {
+              const [from, to] = parts;
+              // Convert DD.MM.YY to YYYY-MM-DD for backend
+              const parseDate = (s) => {
+                const d = dayjs(s, 'DD.MM.YY', true);
+                return d.isValid() ? d.format('YYYY-MM-DD') : s;
+              };
+              if (from) sp.append(`search_${key}_from`, parseDate(from));
+              if (to)   sp.append(`search_${key}_to`,   parseDate(to));
+            } else {
+              sp.append(`search_${key}`, String(val));
+            }
+          }
+        } else if (TEXT_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
           const val = Array.isArray(values) ? values[0] : values;
           if (val != null && val !== '') sp.append(`search_${key}`, String(val));
         } else {
