@@ -23,7 +23,7 @@ import RecruiterTour from '../components/RecruiterTour';
 import VacancyHistoryDrawer from '../components/VacancyHistoryDrawer';
 import {
   Table, Button, Space, Tag, Tooltip,
-  Input, message, Upload, Modal, Checkbox, DatePicker,
+  Input, message, Upload, Modal, Checkbox, DatePicker, App,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
@@ -355,6 +355,7 @@ const VacancyTable = ({
   onTourComplete,
   excludeStatusIds = [],
 }) => {
+  const { modal } = App.useApp();
   const userId       = user?.id;
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdmin      = user?.role === 'admin' || user?.role === 'superadmin';
@@ -410,8 +411,11 @@ const VacancyTable = ({
   const [importLoading, setImportLoading] = useState(false);
   const [importResult,  setImportResult]  = useState(null);
 
-  const saveTimeoutRef  = useRef(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [selectAllSystem, setSelectAllSystem] = useState(false);
   const containerRef    = useRef(null);
+
+  const saveTimeoutRef  = useRef(null);
 
   const debouncedSave = useCallback((settings) => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -593,6 +597,55 @@ const VacancyTable = ({
       setImportLoading(false);
     }
   }, [importFile, fetchData]);
+
+  const handleBulkDelete = useCallback(() => {
+    if (selectedRowKeys.length === 0) return;
+    
+    if (selectAllSystem) {
+      modal.confirm({
+        title: `Удалить ВСЕ вакансии в системе (${total})?`,
+        content: 'Это действие удалит абсолютно все вакансии, независимо от фильтров. Это нельзя отменить.',
+        okText: 'Удалить всё',
+        okType: 'danger',
+        cancelText: 'Отмена',
+        onOk: async () => {
+          try {
+            const res = await api.post('/vacancies/bulk-delete', { delete_all: true });
+            message.success(`Удалено вакансий: ${res.data.deleted}`);
+            if (res.data.errors?.length > 0) {
+              message.warning(`Ошибки: ${res.data.errors.length}`);
+            }
+            setSelectedRowKeys([]);
+            setSelectAllSystem(false);
+            fetchData();
+          } catch (error) {
+            message.error(error.response?.data?.detail || 'Ошибка удаления');
+          }
+        },
+      });
+    } else {
+      modal.confirm({
+        title: `Удалить выбранные вакансии (${selectedRowKeys.length})?`,
+        content: 'Это действие нельзя отменить.',
+        okText: 'Удалить',
+        okType: 'danger',
+        cancelText: 'Отмена',
+        onOk: async () => {
+          try {
+            const res = await api.post('/vacancies/bulk-delete', { ids: selectedRowKeys });
+            message.success(`Удалено вакансий: ${res.data.deleted}`);
+            if (res.data.errors?.length > 0) {
+              message.warning(`Ошибки: ${res.data.errors.length}`);
+            }
+            setSelectedRowKeys([]);
+            fetchData();
+          } catch (error) {
+            message.error(error.response?.data?.detail || 'Ошибка удаления');
+          }
+        },
+      });
+    }
+  }, [selectedRowKeys, selectAllSystem, total, fetchData]);
 
   const mkSort = (field) => {
     let order = null;
@@ -1025,6 +1078,12 @@ const VacancyTable = ({
             Импорт
           </Button>
         )}
+        {isSuperAdmin && selectedRowKeys.length > 0 && (
+          <Button danger size="small" icon={<DeleteOutlined />}
+            onClick={handleBulkDelete} data-testid="bulk-delete-button">
+            {selectAllSystem ? `Удалить ВСЕ (${total})` : `Удалить выбранные (${selectedRowKeys.length})`}
+          </Button>
+        )}
         <Button
           icon={<ClearOutlined />} size="small"
           disabled={totalActiveCount === 0}
@@ -1076,6 +1135,27 @@ const VacancyTable = ({
           bordered
           loading={loading}
           rowClassName={getRowClassName}
+          rowSelection={isSuperAdmin ? {
+            selectedRowKeys,
+            onChange: (keys) => {
+              setSelectedRowKeys(keys);
+              if (keys.length === 0) setSelectAllSystem(false);
+            },
+            onSelectAll: (selected) => {
+              if (selected && total > data.length) {
+                modal.confirm({
+                  title: 'Выбор вакансий',
+                  content: `Вы выбрали все вакансии на этой странице (${data.length}). Хотите выбрать вообще все вакансии в системе (${total}) для удаления?`,
+                  okText: `Выбрать все (${total})`,
+                  cancelText: `Только на странице (${data.length})`,
+                  onOk: () => setSelectAllSystem(true),
+                  onCancel: () => setSelectAllSystem(false)
+                });
+              } else {
+                setSelectAllSystem(false);
+              }
+            }
+          } : undefined}
           scroll={{ x: tableWidth, y: 'calc(100vh - 340px)' }}
           pagination={{
             current:         curPage,

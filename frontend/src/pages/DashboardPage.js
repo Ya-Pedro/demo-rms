@@ -705,8 +705,8 @@ const DashboardPage = () => {
             <div className="form-section-title">Основная информация</div>
             <Row gutter={16}>
               <Col span={isMobile ? 24 : 6}>
-                <HighlightFormItem editing={!!editingVacancy} name="vacancy_id" label="ID вакансии">
-                  <Input />
+              <HighlightFormItem editing={!!editingVacancy} name="vacancy_id" label="ID вакансии">
+                  <Input disabled placeholder={editingVacancy ? undefined : 'Автоматически'} />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 24 : 8}>

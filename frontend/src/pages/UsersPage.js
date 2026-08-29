@@ -139,8 +139,25 @@ const UsersPage = () => {
     },
   ];
 
+  const [newPasswordResult, setNewPasswordResult] = useState(null);
+
+  const handleGeneratePassword = async () => {
+    if (!editingUser) return;
+    try {
+      setLoading(true);
+      const res = await api.post(`/users/${editingUser.id}/reset-password-admin`);
+      setNewPasswordResult(res.data.new_password);
+      message.success('Новый временный пароль сгенерирован');
+    } catch (error) {
+      message.error(error.response?.data?.detail || 'Ошибка генерации пароля');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreate = () => {
     setEditingUser(null);
+    setNewPasswordResult(null);
     form.resetFields();
     form.setFieldsValue({ role: 'recruiter' });
     setModalVisible(true);
@@ -148,6 +165,7 @@ const UsersPage = () => {
 
   const handleEdit = (record) => {
     setEditingUser(record);
+    setNewPasswordResult(null);
     form.setFieldsValue(record);
     setModalVisible(true);
   };
@@ -278,11 +296,13 @@ const UsersPage = () => {
           {!editingUser && (
             <Form.Item
               name="password"
-              label="Пароль (необязательно)"
-              extra="Если не указан, будет сгенерирован автоматически"
-              rules={[{ min: 6, message: 'Минимум 6 символов' }]}
+              label="Временный пароль"
+              rules={[
+                { required: true, message: 'Введите временный пароль' },
+                { min: 6, message: 'Минимум 6 символов' }
+              ]}
             >
-              <Input.Password placeholder="Оставьте пустым для автогенерации" data-testid="user-password-input" />
+              <Input.Password placeholder="Укажите пароль (минимум 6 символов)" data-testid="user-password-input" />
             </Form.Item>
           )}
           
@@ -297,20 +317,38 @@ const UsersPage = () => {
             </Form.Item>
           )}
         </Form>
-        
-        {!editingUser && (
-          <div style={{ 
-            marginTop: 16, 
-            padding: 12, 
-            background: 'var(--layout-bg)', 
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-color)',
-            borderRadius: 2,
-            fontSize: 12,
-          }}>
-            <strong>Примечание:</strong> После создания пользователю будет отправлено 
-            письмо с учетными данными. Если SMTP не настроен, данные будут выведены 
-            в консоль сервера.
+
+        {editingUser && isSuperadmin && (
+          <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border-color)' }}>
+            <h4>Сброс пароля</h4>
+            <p style={{ fontSize: 13, color: 'var(--text-color-secondary)' }}>
+              Если пользователь забыл пароль, вы можете сгенерировать для него новый временный пароль.
+            </p>
+            <Button 
+              onClick={handleGeneratePassword} 
+              loading={loading}
+              type="default"
+              danger
+            >
+              Сгенерировать новый пароль
+            </Button>
+            
+            {newPasswordResult && (
+              <div style={{ 
+                marginTop: 16, 
+                padding: 12, 
+                background: '#f6ffed', 
+                border: '1px solid #b7eb8f',
+                borderRadius: 4,
+                fontSize: 14,
+              }}>
+                <strong>Новый временный пароль: </strong> 
+                <span style={{ fontSize: 16, letterSpacing: 1, fontFamily: 'monospace' }}>{newPasswordResult}</span>
+                <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12, color: '#595959' }}>
+                  Скопируйте и передайте этот пароль пользователю. При следующем входе система потребует его изменить.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </Modal>

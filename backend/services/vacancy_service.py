@@ -234,7 +234,13 @@ class VacancyService:
         }
         vacancy_data["counters_updated_at"] = datetime.now(timezone.utc)
 
+        # Auto-assign vacancy_id — ignore any user-provided value
+        vacancy_data.pop("vacancy_id", None)
+
         vacancy = await self.repo.create(vacancy_data)
+
+        # Set vacancy_id as sequential number based on DB primary key
+        vacancy.vacancy_id = str(vacancy.id)
 
         week_num, yr = get_current_week_info()
         await self.repo.create_week_report({

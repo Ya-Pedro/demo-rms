@@ -11,8 +11,6 @@ const LoginPage = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
-  const [forgotLoading, setForgotLoading] = useState(false);
-  const [forgotForm] = Form.useForm();
   const [forceChangeOpen, setForceChangeOpen] = useState(false);
   const [loginError, setLoginError] = useState('');
 
@@ -109,26 +107,6 @@ const LoginPage = () => {
     } else {
       const errorMsg = error.response?.data?.detail || 'Ошибка авторизации';
       setLoginError(typeof errorMsg === 'string' ? errorMsg : 'Ошибка авторизации');
-    }
-  };
-
-  const handleForgotPassword = async () => {
-    try {
-      const values = await forgotForm.validateFields();
-      setForgotLoading(true);
-      await api.post('/auth/forgot-password', { email: values.forgot_email });
-      message.success('Если email зарегистрирован, новый пароль отправлен на почту');
-      setForgotModalOpen(false);
-      forgotForm.resetFields();
-    } catch (error) {
-      if (error.response?.status === 429) {
-        message.error('Слишком много запросов. Подождите 15 минут.');
-      } else {
-        const msg = error.response?.data?.detail || 'Ошибка отправки';
-        message.error(msg);
-      }
-    } finally {
-      setForgotLoading(false);
     }
   };
 
@@ -273,41 +251,23 @@ const LoginPage = () => {
 
         {forgotModalOpen && (
           <div>
-            <p style={{ marginBottom: 16, color: '#595959', fontSize: 13, textAlign: 'center' }}>
-              Введите email вашей учётной записи. Новый временный пароль будет отправлен на указанный адрес.
-            </p>
-            <Form form={forgotForm} layout="vertical" onFinish={handleForgotPassword}>
-              <Form.Item
-                name="forgot_email"
-                rules={[
-                  { required: true, message: 'Введите email' },
-                  { type: 'email', message: 'Неверный формат email' },
-                ]}
-              >
-                <Input
-                  prefix={<MailOutlined />}
-                  placeholder="Email"
-                  data-testid="forgot-email-input"
-                  size="large"
-                />
-              </Form.Item>
-              <Button
-                type="primary"
-                htmlType="submit"
-                block
-                size="large"
-                loading={forgotLoading}
-              >
-                Отправить
-              </Button>
-            </Form>
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <SafetyCertificateOutlined style={{ fontSize: 48, color: '#1890ff', marginBottom: 16 }} />
+              <h3 style={{ marginBottom: 16 }}>Восстановление пароля</h3>
+              <p style={{ color: '#595959', fontSize: 14 }}>
+                В целях безопасности автоматический сброс пароля отключен. 
+                <br /><br />
+                Пожалуйста, обратитесь к <strong>Главному администратору</strong> вашей системы для получения нового временного пароля.
+              </p>
+            </div>
             <Button
-              type="link"
+              type="primary"
               block
-              style={{ marginTop: 8 }}
-              onClick={() => { setForgotModalOpen(false); forgotForm.resetFields(); }}
+              size="large"
+              style={{ marginTop: 16 }}
+              onClick={() => { setForgotModalOpen(false); }}
             >
-              ← Назад
+              Понятно, вернуться к входу
             </Button>
           </div>
         )}

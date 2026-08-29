@@ -56,7 +56,7 @@ class UserCreateWithPassword(BaseModel):
     email: EmailStr
     full_name: str
     role: UserRole = UserRole.RECRUITER
-    password: Optional[str] = None
+    password: str
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
@@ -170,7 +170,6 @@ class VacancyCreate(VacancyBase):
     pass
 
 class VacancyUpdate(BaseModel):
-    vacancy_id: Optional[str] = None
     open_date: Optional[date] = None
     quantity: Optional[int] = None
     level_id: Optional[int] = None
@@ -283,6 +282,10 @@ class VacancyResponse(BaseModel):
 class VacancyListResponse(BaseModel):
     items: List[VacancyResponse]
     total: int
+
+class BulkDeleteRequest(BaseModel):
+    ids: List[int] = []
+    delete_all: bool = False
 
                                                  
 class WeeklyReportBase(BaseModel):

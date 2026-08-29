@@ -11,8 +11,7 @@ from typing import Optional
 from database import get_db
 from models import User, UserRole
 from schemas import UserCreate, UserCreateWithPassword, UserUpdate, UserResponse, UserListResponse, CompleteTourRequest
-from auth import get_current_user, get_current_active_admin, get_password_hash, generate_random_password
-from email_service import send_welcome_email
+from auth import get_current_user, get_current_active_admin, get_current_superadmin, get_password_hash, generate_random_password
 
 router = APIRouter(prefix="/users", tags=["Пользователи"])
 
@@ -101,12 +100,13 @@ async def create_user(
             detail="Пользователь с таким email уже существует"
         )
     
-                                                  
-    if user_data.password and len(user_data.password) >= 6:
-        password = user_data.password
-    else:
-        password = generate_random_password()
+    if not user_data.password or len(user_data.password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пароль должен содержать минимум 6 символов"
+        )
     
+    password = user_data.password
     hashed_password = get_password_hash(password)
     
                  
@@ -121,13 +121,6 @@ async def create_user(
     db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
-    
-                                         
-    await send_welcome_email(
-        email=user_data.email,
-        full_name=user_data.full_name,
-        password=password
-    )
     
     return new_user
 
@@ -238,6 +231,37 @@ async def delete_user(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Нельзя удалить пользователя, у которого есть активные вакансии. Сначала передайте их другому рекрутеру."
         )
+
+@router.post("/{user_id}/reset-password-admin")
+async def reset_password_admin(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_superadmin)
+):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+    
+    if current_user.role == UserRole.ADMIN and user.role == UserRole.SUPERADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к этому пользователю"
+        )
+        
+    password = generate_random_password()
+    hashed_password = get_password_hash(password)
+    
+    user.hashed_password = hashed_password
+    user.is_temporary_password = True
+    
+    await db.commit()
+    
+    return {"new_password": password}
 
                                                                                 
 

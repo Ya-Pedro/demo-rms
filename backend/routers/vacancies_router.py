@@ -14,7 +14,7 @@ from fastapi_cache import FastAPICache
 
 from database import get_db
 from models import User, Dictionary, UserRole, Vacancy, WeeklyReport
-from schemas import VacancyCreate, VacancyUpdate, VacancyResponse, VacancyListResponse
+from schemas import VacancyCreate, VacancyUpdate, VacancyResponse, VacancyListResponse, BulkDeleteRequest
 from auth import get_current_user
 from services.vacancy_service import VacancyService, vacancy_to_dict, get_current_week_info, get_current_week_monday
 from datetime import datetime, timezone
@@ -101,6 +101,40 @@ async def create_vacancy(
     vacancy, metrics = await service.create_vacancy(vacancy_data.model_dump(), current_user)
     await FastAPICache.clear(namespace="dashboards")
     return VacancyResponse(**vacancy_to_dict(vacancy, metrics))
+
+@router.post("/bulk-delete", status_code=status.HTTP_200_OK)
+async def bulk_delete_vacancies(
+    body: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Массовое удаление вакансий — только для суперадмина."""
+    if current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Только для суперадмина")
+    
+    if body.delete_all:
+        from sqlalchemy import select
+        from models import Vacancy
+        result = await db.execute(select(Vacancy.id))
+        body.ids = result.scalars().all()
+        
+    if not body.ids:
+        raise HTTPException(status_code=400, detail="Список ID пуст")
+
+    service = VacancyService(db)
+    deleted = 0
+    errors = []
+    for vid in body.ids:
+        try:
+            await service.delete_vacancy(vid, current_user)
+            deleted += 1
+        except HTTPException as e:
+            errors.append(f"ID {vid}: {e.detail}")
+        except Exception as e:
+            errors.append(f"ID {vid}: {str(e)}")
+
+    await FastAPICache.clear(namespace="dashboards")
+    return {"deleted": deleted, "errors": errors}
 
 @router.get("/{vacancy_id}", response_model=VacancyResponse)
 async def get_vacancy(
