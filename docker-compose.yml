@@ -92,7 +92,6 @@ services:
       - "443:8443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - ./frontend/build:/usr/share/nginx/html
     networks:
       - rms_network
 

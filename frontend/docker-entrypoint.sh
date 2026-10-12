@@ -21,5 +21,6 @@ setup_cert() {
 
 setup_cert "pedro.ittori.ru" "pedro"
 setup_cert "rms.ittori.ru" "rms"
+setup_cert "rms.ittori.online" "rms_online"
 
 exec "$@"
