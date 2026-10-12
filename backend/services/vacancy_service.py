@@ -35,6 +35,7 @@ FUNNEL_MAP = {
     "interviews_fact": "interviews_conducted",
     "interviews_plan": "interviews_planned",
     "offer_made": "offer_made",
+    "offer_accepted": "offer_accepted",
 }
 
                                                                                 
@@ -50,8 +51,9 @@ def vacancy_to_dict(vacancy: Vacancy, metrics=None) -> dict:
         interviews_plan = metrics.interviews_planned or 0
         interviews_fact = metrics.interviews_conducted or 0
         offer_made = metrics.offer_made or 0
+        offer_accepted = getattr(metrics, "offer_accepted", 0) or 0
     else:
-        resume_at_customer = resume_approved = interviews_plan = interviews_fact = offer_made = 0
+        resume_at_customer = resume_approved = interviews_plan = interviews_fact = offer_made = offer_accepted = 0
 
     return {
         "id": vacancy.id,
@@ -70,6 +72,10 @@ def vacancy_to_dict(vacancy: Vacancy, metrics=None) -> dict:
         "interviews_fact": interviews_fact,
         "interviews_plan": interviews_plan,
         "offer_made": offer_made,
+        "offer_accepted": offer_accepted,
+        "offer_accepted_cnt": vacancy.offer_accepted_cnt or 0,
+        "offer_rejection_reason": vacancy.offer_rejection_reason,
+        "comment": vacancy.comment,
         "city_id": vacancy.city_id,
         "city_text": vacancy.city_text,
         "source_id": vacancy.source_id,
@@ -83,8 +89,10 @@ def vacancy_to_dict(vacancy: Vacancy, metrics=None) -> dict:
         "unit_id": vacancy.unit_id,
         "employment_type_id": vacancy.employment_type_id,
         "feasibility_id": vacancy.feasibility_id,
+        "feasibility_text": vacancy.feasibility_text,
         "iqhr_link": vacancy.iqhr_link,
         "recruiter_id": vacancy.recruiter_id,
+        "co_recruiter_id": vacancy.co_recruiter_id,
         "block_id": vacancy.block_id,
         "hold_days": vacancy.hold_days,
         "salary_gross": vacancy.salary_gross,
@@ -94,6 +102,7 @@ def vacancy_to_dict(vacancy: Vacancy, metrics=None) -> dict:
         "interviews_conducted_cnt": vacancy.interviews_conducted_cnt,
         "created_at": vacancy.created_at,
         "recruiter": vacancy.recruiter,
+        "co_recruiter": vacancy.co_recruiter,
         "level": vacancy.level,
         "status": vacancy.status,
         "it_role": vacancy.it_role,
@@ -208,7 +217,7 @@ class VacancyService:
                                                                                       
         if current_user.role != UserRole.RECRUITER:
             return
-        if vacancy.recruiter_id == current_user.id:
+        if vacancy.recruiter_id == current_user.id or vacancy.co_recruiter_id == current_user.id:
             return
         from services.delegation_service import DelegationService
         svc = DelegationService(self.db)
@@ -225,44 +234,78 @@ class VacancyService:
 \
            
                                 
+        if current_user and current_user.role == UserRole.RECRUITER:
+            vacancy_data["recruiter_id"] = current_user.id
+            vacancy_data.pop("co_recruiter_id", None)
+
         funnel = {
             "resumes_sent": vacancy_data.pop("resume_at_customer", 0) or 0,
             "candidates_agreed": vacancy_data.pop("resume_approved", 0) or 0,
             "interviews_conducted": vacancy_data.pop("interviews_fact", 0) or 0,
             "interviews_planned": vacancy_data.pop("interviews_plan", 0) or 0,
             "offer_made": vacancy_data.pop("offer_made", 0) or 0,
+            "offer_accepted": vacancy_data.pop("offer_accepted", 0) or 0,
         }
+        if "offer_rejection_reason" in vacancy_data:
+            funnel["offer_rejection_reason"] = vacancy_data["offer_rejection_reason"]
+        if "comment" in vacancy_data:
+            funnel["comment"] = vacancy_data["comment"]
+
         vacancy_data["counters_updated_at"] = datetime.now(timezone.utc)
+        vacancy_data["offer_accepted_cnt"] = funnel["offer_accepted"]
 
         # Auto-assign vacancy_id — ignore any user-provided value
         vacancy_data.pop("vacancy_id", None)
+        if vacancy_data.get("status_id") and not vacancy_data.get("status_changed_at"):
+            vacancy_data["status_changed_at"] = date.today()
 
-        vacancy = await self.repo.create(vacancy_data)
-
-        # Set vacancy_id as sequential number based on DB primary key
-        vacancy.vacancy_id = str(vacancy.id)
-
+        qty = vacancy_data.get("quantity") or 1
+        created_list = []
         week_num, yr = get_current_week_info()
-        await self.repo.create_week_report({
-            "vacancy_id": vacancy.id,
-            "week_number": week_num,
-            "year": yr,
-            "week_start": get_current_week_monday(),
-            "report_date": datetime.now(timezone.utc),
-            **funnel,
-        })
-        await self.repo.commit()
-        await self.repo.refresh(vacancy)
+        monday = get_current_week_monday()
+        now_utc = datetime.now(timezone.utc)
 
-                                    
+        if qty > 1:
+            for _ in range(qty):
+                row_data = dict(vacancy_data)
+                row_data["quantity"] = 1
+                row_data.pop("vacancy_id", None)
+                v = await self.repo.create(row_data)
+                v.vacancy_id = str(v.id)
+                created_list.append(v)
+                await self.repo.create_week_report({
+                    "vacancy_id": v.id,
+                    "week_number": week_num,
+                    "year": yr,
+                    "week_start": monday,
+                    "report_date": now_utc,
+                    **funnel,
+                })
+            await self.repo.commit()
+            vacancy = created_list[0]
+        else:
+            vacancy = await self.repo.create(vacancy_data)
+            vacancy.vacancy_id = str(vacancy.id)
+            created_list.append(vacancy)
+            await self.repo.create_week_report({
+                "vacancy_id": vacancy.id,
+                "week_number": week_num,
+                "year": yr,
+                "week_start": monday,
+                "report_date": now_utc,
+                **funnel,
+            })
+            await self.repo.commit()
+
+        await self.repo.refresh(vacancy)
         vacancy = await self.repo.get_by_id(vacancy.id)
 
-                               
         if current_user is not None:
             try:
                 from services.vacancy_history_service import VacancyHistoryService
                 _h = VacancyHistoryService(self.db)
-                await _h.record_create(vacancy, current_user)
+                for created_v in created_list:
+                    await _h.record_create(created_v, current_user)
                 await self.repo.commit()
             except Exception:
                 import logging, traceback
@@ -276,6 +319,7 @@ class VacancyService:
             "interviews_planned": funnel["interviews_planned"],
             "interviews_conducted": funnel["interviews_conducted"],
             "offer_made": funnel["offer_made"],
+            "offer_accepted": funnel["offer_accepted"],
         })()
 
         return vacancy, metrics_row
@@ -286,6 +330,10 @@ class VacancyService:
                                                                
         vacancy = await self.get_vacancy_or_404(vacancy_id)
         await self.check_recruiter_access(vacancy, current_user)
+
+        if current_user and current_user.role == UserRole.RECRUITER:
+            update_data.pop("recruiter_id", None)
+            update_data.pop("co_recruiter_id", None)
 
                                             
         _hist_before = None
@@ -299,11 +347,34 @@ class VacancyService:
                 "history snapshot failed:\n%s", traceback.format_exc()
             )
 
-                                                
+        # Auto-fill status_changed_at on status change and accumulate Hold days
+        old_status_id = vacancy.status_id
+        new_status_id = update_data.get("status_id")
+        if new_status_id is not None and new_status_id != old_status_id:
+            old_status_val = vacancy.status.value if vacancy.status else None
+            change_date = date.today()
+            update_data["status_changed_at"] = change_date
+
+            if old_status_val == "Hold" and vacancy.status_changed_at:
+                from services.holidays import calculate_working_days
+                hold_wd = calculate_working_days(vacancy.status_changed_at, change_date)
+                vacancy.hold_days = (vacancy.hold_days or 0) + hold_wd
+        else:
+            # Status was not changed: preserve existing status_changed_at
+            update_data.pop("status_changed_at", None)
+
+        if "offer_accepted" in update_data:
+            vacancy.offer_accepted_cnt = update_data["offer_accepted"]
+
         funnel_updates = {}
         for vacancy_field, report_field in FUNNEL_MAP.items():
             if vacancy_field in update_data:
                 funnel_updates[report_field] = update_data.pop(vacancy_field)
+
+        if "comment" in update_data:
+            funnel_updates["comment"] = update_data["comment"]
+        if "offer_rejection_reason" in update_data:
+            funnel_updates["offer_rejection_reason"] = update_data["offer_rejection_reason"]
 
         await self.repo.update(vacancy, update_data)
 

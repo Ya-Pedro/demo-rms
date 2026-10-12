@@ -18,11 +18,21 @@ const { RangePicker } = DatePicker;
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 const API_BASE = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 const EXPORT_PERIODS = [
-  { value: 'current_week', label: 'За текущую неделю' },
-  { value: 'current_month', label: 'За текущий месяц' },
-  { value: 'current_year', label: 'За текущий год' },
   { value: 'all_time', label: 'За всё время' },
+  { value: 'current_year', label: 'За текущий год' },
+  { value: 'current_month', label: 'За текущий месяц' },
+  { value: 'current_week', label: 'За текущую неделю' },
   { value: 'custom', label: 'Произвольный период' },
+];
+
+export const OFFER_REJECTION_REASONS = [
+  { value: 'Контроффер от текущего работодателя', label: 'Контроффер от текущего работодателя' },
+  { value: 'Не устроила заработная плата / условия', label: 'Не устроила заработная плата / условия' },
+  { value: 'Не подошел проект / стек технологий', label: 'Не подошел проект / стек технологий' },
+  { value: 'Личные / семейные обстоятельства', label: 'Личные / семейные обстоятельства' },
+  { value: 'Выбрал другое предложение', label: 'Выбрал другое предложение' },
+  { value: 'Не подошел формат работы (удаленка/офис)', label: 'Не подошел формат работы (удаленка/офис)' },
+  { value: 'Отказ без объяснения причин', label: 'Отказ без объяснения причин' },
 ];
 
 const generateWeekOptions = () => {
@@ -121,6 +131,7 @@ const CreatableDictSelect = ({ options = [], dictType, onNewOption, value, onCha
   return (
     <Select
       {...rest}
+      popupMatchSelectWidth={false}
       value={value}
       onChange={(val) => {
         onChange?.(val);
@@ -186,11 +197,24 @@ const DashboardPage = () => {
   const [reportVacancy, setReportVacancy] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [weekOptions] = useState(generateWeekOptions());
+  const [isReportWeekEditable, setIsReportWeekEditable] = useState(true);
+  const [customReason, setCustomReason] = useState('');
 
   const [editingReportId, setEditingReportId] = useState(null);
 
   const [user, setUser] = useState(() => tokenStorage.getUser() || {});
   const isRecruiter = user?.role === 'recruiter';
+
+  const checkWeekEditable = useCallback((weekPeriod) => {
+    if (!isRecruiter || !weekPeriod) return true;
+    const currentWeek = dayjs().isoWeek();
+    const currentYear = dayjs().year();
+    const [year, week] = weekPeriod.split('-').map(Number);
+    const selectedStart = dayjs().year(year).isoWeek(week).startOf('isoWeek');
+    const currentStart = dayjs().year(currentYear).isoWeek(currentWeek).startOf('isoWeek');
+    const diffDays = currentStart.diff(selectedStart, 'day');
+    return diffDays <= 7;
+  }, [isRecruiter]);
 
   const excludedStatuses = isRecruiter ? (dictionaries.vacancy_status || [])
     .filter(d => d.value === 'Закрыта' || d.value === 'Отмена')
@@ -244,7 +268,7 @@ const DashboardPage = () => {
 
   const loadUsers = async () => {
     try {
-      const response = await api.get('/users?limit=100');
+      const response = await api.get('/users?limit=1000');
       setUsers(response.data.items || []);
     } catch (error) {
       console.error('Failed to load users:', error);
@@ -260,6 +284,12 @@ const DashboardPage = () => {
     setDrawerVisible(true);
   };
 
+  const handleStatusChange = (val) => {
+    form.setFieldsValue({
+      status_id: val,
+    });
+  };
+
   const handleEdit = (record) => {
     setEditingVacancy(record);
 
@@ -267,13 +297,16 @@ const DashboardPage = () => {
       ...record,
       open_date: record.open_date ? dayjs(record.open_date) : null,
       close_date: record.close_date ? dayjs(record.close_date) : null,
-      status_changed_at: record.status_changed_at ? dayjs(record.status_changed_at) : null,
 
       resume_at_customer: record.resume_at_customer || 0,
       resume_approved:    record.resume_approved    || 0,
       interviews_fact:    record.interviews_fact    || 0,
       interviews_plan:    record.interviews_plan    || 0,
       offer_made:         record.offer_made         || 0,
+      offer_accepted:     record.offer_accepted     || record.offer_accepted_cnt || 0,
+      offer_rejection_reason: record.offer_rejection_reason || null,
+      comment:            record.comment || '',
+      feasibility_id:     record.feasibility_id || record.feasibility?.id || null,
     });
     setDrawerVisible(true);
   };
@@ -286,8 +319,16 @@ const DashboardPage = () => {
         ...values,
         open_date: values.open_date?.format('YYYY-MM-DD'),
         close_date: values.close_date?.format('YYYY-MM-DD'),
-        status_changed_at: values.status_changed_at?.format('YYYY-MM-DD'),
       };
+      if (isRecruiter) {
+        if (editingVacancy) {
+          delete payload.recruiter_id;
+          delete payload.co_recruiter_id;
+        } else {
+          payload.recruiter_id = user?.id;
+          delete payload.co_recruiter_id;
+        }
+      }
       if (editingVacancy) {
         await api.patch(`/vacancies/${editingVacancy.id}`, payload);
         message.success('Вакансия обновлена');
@@ -353,7 +394,7 @@ const DashboardPage = () => {
       if (exportWithFilters && hasActiveFilters) {
         const filters = tableState.filters;
         const filterKeys = [
-          'status_id', 'project_id', 'recruiter_id', 'it_role_id',
+          'status_id', 'project_id', 'recruiter_id', 'co_recruiter_id', 'it_role_id',
           'level_id', 'source_id', 'block_id',
           'employment_type_id', 'feasibility_id', 'replacement_type_id',
           'admin_manager_id', 'internal_transfer_id',
@@ -368,7 +409,7 @@ const DashboardPage = () => {
         const textKeys = [
           'vacancy_id', 'position_name', 'candidate_name', 'candidate_company',
           'ex_employee_name', 'unit_id', 'salary_gross', 'iqhr_link',
-          'city_text', 'team_lead_text',
+          'city_text', 'team_lead_text', 'feasibility_text',
         ];
         for (const key of textKeys) {
           if (filters[key]?.[0]) {
@@ -418,6 +459,7 @@ const DashboardPage = () => {
     const currentWeek = dayjs().isoWeek();
     const currentYear = dayjs().year();
     const weekPeriod = `${currentYear}-${currentWeek}`;
+    setIsReportWeekEditable(checkWeekEditable(weekPeriod));
 
     reportForm.resetFields();
     reportForm.setFieldsValue({
@@ -427,6 +469,8 @@ const DashboardPage = () => {
       interviews_planned: 0,
       interviews_conducted: 0,
       offer_made: 0,
+      offer_accepted: 0,
+      offer_rejection_reason: null,
     });
     setReportModalVisible(true);
 
@@ -442,6 +486,8 @@ const DashboardPage = () => {
           interviews_planned: existing.interviews_planned || 0,
           interviews_conducted: existing.interviews_conducted || 0,
           offer_made: existing.offer_made || 0,
+          offer_accepted: existing.offer_accepted || 0,
+          offer_rejection_reason: existing.offer_rejection_reason || null,
         });
       }
     } catch {
@@ -451,6 +497,7 @@ const DashboardPage = () => {
 
   const handleWeekPeriodChange = async (value) => {
     if (!reportVacancy || !value) return;
+    setIsReportWeekEditable(checkWeekEditable(value));
     try {
       const [year, week] = value.split('-').map(Number);
       const res = await api.get(`/reports/vacancy/${reportVacancy.id}`);
@@ -464,6 +511,8 @@ const DashboardPage = () => {
           interviews_planned: existing.interviews_planned || 0,
           interviews_conducted: existing.interviews_conducted || 0,
           offer_made: existing.offer_made || 0,
+          offer_accepted: existing.offer_accepted || 0,
+          offer_rejection_reason: existing.offer_rejection_reason || null,
         });
         message.info('Найден существующий отчёт за эту неделю — данные загружены для редактирования');
       } else {
@@ -474,6 +523,8 @@ const DashboardPage = () => {
           interviews_planned: 0,
           interviews_conducted: 0,
           offer_made: 0,
+          offer_accepted: 0,
+          offer_rejection_reason: null,
         });
       }
     } catch {
@@ -483,6 +534,10 @@ const DashboardPage = () => {
 
   const handleReportSave = async () => {
     try {
+      if (!isReportWeekEditable) {
+        message.warning('Рекрутер может редактировать отчеты только за текущую и предыдущую неделю');
+        return;
+      }
       const values = await reportForm.validateFields();
       setReportLoading(true);
       
@@ -494,6 +549,8 @@ const DashboardPage = () => {
         interviews_planned: values.interviews_planned || 0,
         interviews_conducted: values.interviews_conducted || 0,
         offer_made: values.offer_made || 0,
+        offer_accepted: values.offer_accepted || 0,
+        offer_rejection_reason: values.offer_rejection_reason || null,
       };
 
       if (editingReportId) {
@@ -583,36 +640,27 @@ const DashboardPage = () => {
           </div>
         )}
 
-        <div style={{
-          padding: 16,
-          border: `1px solid ${token.colorPrimaryBorder}`,
-          borderRadius: 6,
-          background: token.colorPrimaryBg,
-          marginBottom: 16,
-        }}>
-          <Checkbox
-            checked={exportWithFilters}
-            onChange={e => setExportWithFilters(e.target.checked)}
-            data-testid="export-with-filters-checkbox"
-          >
-            <span style={{ fontWeight: 500 }}>Выгрузить с учетом текущих фильтров</span>
-          </Checkbox>
-          {hasActiveFilters && exportWithFilters && (
-            <div style={{ marginTop: 8, fontSize: 13, color: token.colorPrimary }}>
+        {hasActiveFilters && (
+          <div style={{
+            padding: 14,
+            border: `1px solid ${token.colorPrimaryBorder}`,
+            borderRadius: 6,
+            background: token.colorPrimaryBg,
+            marginBottom: 16,
+          }}>
+            <Checkbox
+              checked={exportWithFilters}
+              onChange={e => setExportWithFilters(e.target.checked)}
+              data-testid="export-with-filters-checkbox"
+            >
+              <span style={{ fontWeight: 500 }}>Выгрузить с учетом фильтров таблицы</span>
+            </Checkbox>
+            <div style={{ marginTop: 6, fontSize: 13, color: token.colorPrimary }}>
               <CheckCircleOutlined style={{ marginRight: 4 }} />
-              Обнаружены активные фильтры в таблице. При включенной опции в Excel попадут только отфильтрованные записи.
+              В таблице применены фильтры. При включенной опции в Excel попадут только отфильтрованные записи.
             </div>
-          )}
-          {!hasActiveFilters && exportWithFilters && (
-            <div style={{ marginTop: 8, fontSize: 13, color: token.colorTextSecondary }}>
-              Активных фильтров нет. Будут экспортированы все записи за период.
-            </div>
-          )}
-        </div>
-
-        <p style={{ color: token.colorTextSecondary, fontSize: 12 }}>
-          Вакансии фильтруются по дате открытия в указанном периоде.
-        </p>
+          </div>
+        )}
       </Modal>
 
       {}
@@ -624,7 +672,8 @@ const DashboardPage = () => {
         okText="Сохранить"
         cancelText="Отмена"
         confirmLoading={reportLoading}
-        width={isMobile ? '95vw' : 480}
+        okButtonProps={{ disabled: !isReportWeekEditable }}
+        width={isMobile ? '95vw' : 520}
         data-testid="report-modal"
       >
         {reportVacancy && (
@@ -632,7 +681,7 @@ const DashboardPage = () => {
             <div style={{ marginBottom: 16, padding: 12, background: token.colorFillAlter, borderRadius: 4 }}>
               <div style={{ fontWeight: 500, marginBottom: 4 }}>{reportVacancy.position_name}</div>
               <div style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                Заказчик: {reportVacancy.admin_manager?.value || reportVacancy.project?.value || '-'}
+                Адм. руководитель: {reportVacancy.admin_manager?.value || '-'}
               </div>
             </div>
             
@@ -651,8 +700,14 @@ const DashboardPage = () => {
                   onChange={handleWeekPeriodChange}
                 />
               </Form.Item>
+
+              {!isReportWeekEditable && (
+                <div style={{ marginBottom: 12, padding: '6px 10px', background: token.colorErrorBg, border: `1px solid ${token.colorErrorBorder}`, borderRadius: 4, fontSize: 13, color: token.colorErrorText }}>
+                  🔒 В роли Рекрутера отчёты старше предыдущей недели доступны только для просмотра.
+                </div>
+              )}
               
-              {editingReportId && (
+              {editingReportId && isReportWeekEditable && (
                 <div style={{ marginBottom: 12, padding: '6px 10px', background: token.colorWarningBg, border: `1px solid ${token.colorWarningBorder}`, borderRadius: 4, fontSize: 13, color: token.colorWarning }}>
                   ✏️ Редактирование существующего отчёта за эту неделю
                 </div>
@@ -660,25 +715,66 @@ const DashboardPage = () => {
               
               <Space style={{ display: 'flex', flexWrap: 'wrap' }} size={[16, 8]}>
                 <Form.Item name="resumes_sent" label="Передано заказчику" style={{ width: 160 }}>
-                  <InputNumber min={0} style={{ width: '100%' }} data-testid="report-resumes-sent" />
+                  <InputNumber min={0} disabled={!isReportWeekEditable} style={{ width: '100%' }} data-testid="report-resumes-sent" />
                 </Form.Item>
                 <Form.Item name="candidates_agreed" label="Резюме одобрено" style={{ width: 160 }}>
-                  <InputNumber min={0} style={{ width: '100%' }} data-testid="report-candidates-agreed" />
+                  <InputNumber min={0} disabled={!isReportWeekEditable} style={{ width: '100%' }} data-testid="report-candidates-agreed" />
                 </Form.Item>
               </Space>
 
               <Space style={{ display: 'flex', flexWrap: 'wrap' }} size={[16, 8]}>
-                <Form.Item name="interviews_conducted" label="Собеседования факт (эта неделя)" style={{ width: 200 }}>
-                  <InputNumber min={0} style={{ width: '100%' }} data-testid="report-interviews-conducted" />
+                <Form.Item name="interviews_conducted" label="Собеседования факт (эта неделя)" style={{ width: 220 }}>
+                  <InputNumber min={0} disabled={!isReportWeekEditable} style={{ width: '100%' }} data-testid="report-interviews-conducted" />
                 </Form.Item>
-                <Form.Item name="interviews_planned" label="Собеседования план (след. неделя)" style={{ width: 210 }}>
-                  <InputNumber min={0} style={{ width: '100%' }} data-testid="report-interviews-planned" />
+                <Form.Item name="interviews_planned" label="Собеседования план (след. неделя)" style={{ width: 220 }}>
+                  <InputNumber min={0} disabled={!isReportWeekEditable} style={{ width: '100%' }} data-testid="report-interviews-planned" />
                 </Form.Item>
               </Space>
               
-              {}
-              <Form.Item name="offer_made" label="Сделан оффер" style={{ width: 140 }}>
-                <InputNumber min={0} style={{ width: '100%' }} data-testid="report-offer-made" />
+              <Space style={{ display: 'flex', flexWrap: 'wrap' }} size={[16, 8]}>
+                <Form.Item name="offer_made" label="Оффер сделан" style={{ width: 160 }}>
+                  <InputNumber min={0} disabled={!isReportWeekEditable} style={{ width: '100%' }} data-testid="report-offer-made" />
+                </Form.Item>
+                <Form.Item name="offer_accepted" label="Оффер принят" style={{ width: 160 }}>
+                  <InputNumber min={0} disabled={!isReportWeekEditable} style={{ width: '100%' }} data-testid="report-offer-accepted" />
+                </Form.Item>
+              </Space>
+
+              <Form.Item name="offer_rejection_reason" label="Причина отказа от Оффера">
+                <Select
+                  disabled={!isReportWeekEditable}
+                  allowClear
+                  showSearch
+                  popupMatchSelectWidth={false}
+                  placeholder="Выберите причину или укажите свою"
+                  options={OFFER_REJECTION_REASONS}
+                  dropdownRender={(menu) => (
+                    <>
+                      {menu}
+                      <Divider style={{ margin: '8px 0' }} />
+                      <Space style={{ padding: '0 8px 4px' }}>
+                        <Input
+                          placeholder="Своя причина..."
+                          value={customReason}
+                          onChange={(e) => setCustomReason(e.target.value)}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
+                        <Button
+                          type="text"
+                          icon={<PlusOutlined />}
+                          onClick={() => {
+                            if (customReason.trim()) {
+                              reportForm.setFieldsValue({ offer_rejection_reason: customReason.trim() });
+                              setCustomReason('');
+                            }
+                          }}
+                        >
+                          Выбрать
+                        </Button>
+                      </Space>
+                    </>
+                  )}
+                />
               </Form.Item>
             </Form>
           </>
@@ -690,7 +786,7 @@ const DashboardPage = () => {
         title={editingVacancy ? 'Редактирование вакансии' : 'Новая вакансия'}
         open={drawerVisible}
         onClose={() => setDrawerVisible(false)}
-        width={isMobile ? '100%' : 800}
+        width={isMobile ? '100%' : 980}
         extra={
           <Space>
             <Button onClick={() => setDrawerVisible(false)}>Отмена</Button>
@@ -730,29 +826,29 @@ const DashboardPage = () => {
             <Row gutter={16}>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="level_id" label="Уровень">
-                  <Select options={(dictionaries.specialist_level || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.specialist_level || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="status_id" label="Статус">
-                  <Select options={(dictionaries.vacancy_status || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <Select popupMatchSelectWidth={false} onChange={handleStatusChange} options={(dictionaries.vacancy_status || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="it_role_id" label="ИТ Роль">
-                  <Select options={(dictionaries.it_role || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.it_role || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="project_id" label="Проект">
-                  <Select options={(dictionaries.project || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.project || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="source_id" label="Источник">
-                  <Select options={(dictionaries.source || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.source || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
@@ -762,28 +858,28 @@ const DashboardPage = () => {
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="employment_type_id" label="Вид занятости">
-                  <Select options={(dictionaries.employment_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.employment_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="replacement_type_id" label="Новая/Замена">
-                  <Select options={(dictionaries.replacement_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.replacement_type || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
             </Row>
             <Row gutter={16}>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="internal_transfer_id" label="Внутр. перевод">
-                  <Select options={(dictionaries.internal_transfer || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.internal_transfer || []).map(d => ({ value: d.id, label: d.value }))} allowClear />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="block_id" label="Блок">
-                  <Select options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
-                <HighlightFormItem editing={!!editingVacancy} name="feasibility_id" label="ТЭО">
+                <HighlightFormItem editing={!!editingVacancy} name="feasibility_id" label="ТЭО проекта">
                   <CreatableDictSelect
                     options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))}
                     dictType="feasibility"
@@ -804,25 +900,39 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Люди</div>
             <Row gutter={16}>
-              <Col span={isMobile ? 24 : 8}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="admin_manager_id" label="Адм. руководитель">
-                  <Select options={(dictionaries.admin_manager || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
+                  <Select popupMatchSelectWidth={false} options={(dictionaries.admin_manager || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 24 : 8}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="team_lead_text" label="Тимлид">
                   <Input allowClear />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 24 : 8}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="recruiter_id" label="Рекрутер">
                   <Select 
+                    popupMatchSelectWidth={false}
                     options={users.map(u => ({ value: u.id, label: u.full_name }))} 
                     allowClear={!isRecruiter}
                     showSearch 
                     optionFilterProp="label"
-                    disabled={isRecruiter && !editingVacancy}
-                    placeholder={isRecruiter ? user?.full_name : 'Выберите рекрутера'}
+                    disabled={isRecruiter}
+                    placeholder={isRecruiter ? (user?.full_name || 'Рекрутер') : 'Выберите рекрутера'}
+                  />
+                </HighlightFormItem>
+              </Col>
+              <Col span={isMobile ? 24 : 6}>
+                <HighlightFormItem editing={!!editingVacancy} name="co_recruiter_id" label={<span style={{ whiteSpace: 'nowrap' }} title="Дополнительный рекрутер">Дополнительный рекрутер</span>}>
+                  <Select 
+                    popupMatchSelectWidth={false}
+                    options={users.map(u => ({ value: u.id, label: u.full_name }))} 
+                    allowClear={!isRecruiter}
+                    showSearch 
+                    optionFilterProp="label"
+                    disabled={isRecruiter}
+                    placeholder={isRecruiter ? 'Не назначен' : 'Выберите доп. рекрутера'}
                   />
                 </HighlightFormItem>
               </Col>
@@ -844,6 +954,24 @@ const DashboardPage = () => {
                 </HighlightFormItem>
               </Col>
             </Row>
+            <Row gutter={16}>
+              <Col span={isMobile ? 24 : 12}>
+                <HighlightFormItem editing={!!editingVacancy} name="comment" label="Комментарий">
+                  <Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} placeholder="Комментарий по кандидату / вакансии" />
+                </HighlightFormItem>
+              </Col>
+              <Col span={isMobile ? 24 : 12}>
+                <HighlightFormItem editing={!!editingVacancy} name="offer_rejection_reason" label="Причина отказа от Оффера">
+                  <Select
+                    allowClear
+                    showSearch
+                    popupMatchSelectWidth={false}
+                    placeholder="Выберите причину"
+                    options={OFFER_REJECTION_REASONS}
+                  />
+                </HighlightFormItem>
+              </Col>
+            </Row>
           </div>
 
           <Divider />
@@ -851,24 +979,14 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Даты</div>
             <Row gutter={16}>
-              <Col span={isMobile ? 12 : 6}>
+              <Col span={isMobile ? 24 : 12}>
                 <HighlightFormItem editing={!!editingVacancy} name="open_date" label="Дата открытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 12 : 6}>
+              <Col span={isMobile ? 24 : 12}>
                 <HighlightFormItem editing={!!editingVacancy} name="close_date" label="Дата закрытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
-                </HighlightFormItem>
-              </Col>
-              <Col span={isMobile ? 12 : 6}>
-                <HighlightFormItem editing={!!editingVacancy} name="status_changed_at" label="Дата изм. статуса">
-                  <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
-                </HighlightFormItem>
-              </Col>
-              <Col span={isMobile ? 12 : 6}>
-                <HighlightFormItem editing={!!editingVacancy} name="hold_days" label="Дни в холде" initialValue={0}>
-                  <InputNumber min={0} style={{ width: '100%' }} data-testid="vacancy-hold-days" />
                 </HighlightFormItem>
               </Col>
             </Row>

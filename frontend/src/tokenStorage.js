@@ -6,7 +6,7 @@ const KEYS = {
   USER:    'rms_user',
 };
 
-const storage = sessionStorage;
+const storage = localStorage;
 
 export const tokenStorage = {
 

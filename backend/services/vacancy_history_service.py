@@ -48,6 +48,7 @@ FIELD_LABELS: dict[str, str] = {
     "feasibility_id":       "ТЭО проекта",
     "block_id":             "Блок",
     "recruiter_id":         "Рекрутер",
+    "co_recruiter_id":      "Дополнительный рекрутер",
 }
 
 SKIP_FIELDS = {
@@ -71,6 +72,7 @@ FK_RELATION_MAP: dict[str, tuple[str, str]] = {
     "feasibility_id":       ("feasibility",       "value"),
     "block_id":             ("block",             "value"),
     "recruiter_id":         ("recruiter",         "full_name"),
+    "co_recruiter_id":      ("co_recruiter",      "full_name"),
 }
 
 REPORT_FIELD_LABELS = {

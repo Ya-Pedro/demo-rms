@@ -44,7 +44,7 @@ if SECRET_KEY == _DEFAULT_SECRET and not _allow_default:
 ALGORITHM = "HS256"
                                                                   
                                                        
-ACCESS_TOKEN_EXPIRE_MINUTES = max(5, int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 15)))
+ACCESS_TOKEN_EXPIRE_MINUTES = max(5, int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 720)))
 
                                                                                 
                                                                          
@@ -60,23 +60,25 @@ def _get_redis() -> "_redis_sync.Redis":
 REDIS_SESSION_KEY = "active_session:{user_id}"
                                                                   
                                                                       
-SESSION_TTL_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
+SESSION_TTL_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 3600
 
 def set_active_session(user_id: int, session_id: str) -> None:
-                                                                             
     try:
         r = _get_redis()
         key = REDIS_SESSION_KEY.format(user_id=user_id)
         r.set(key, session_id, ex=SESSION_TTL_SECONDS)
     except Exception:
-                                                         
         import logging
         logging.getLogger(__name__).warning(
             "Redis недоступен: set_active_session user_id=%s", user_id
         )
+    try:
+        with _session_cache_lock:
+            _session_cache[user_id] = (session_id, _time.monotonic())
+    except Exception:
+        pass
 
 def get_active_session(user_id: int) -> str | None:
-                                                                   
     try:
         r = _get_redis()
         key = REDIS_SESSION_KEY.format(user_id=user_id)
@@ -86,61 +88,36 @@ def get_active_session(user_id: int) -> str | None:
         logging.getLogger(__name__).warning(
             "Redis недоступен: get_active_session user_id=%s", user_id
         )
-                                                                    
-                                                                                  
         return None
-
-                                                                                
-                                                         
-                                                                      
- 
-                                                                                              
-                                                                              
-                                                                               
- 
-                                                                
-                                                                                            
 
 import time as _time
 from threading import Lock as _Lock
 
-SESSION_CACHE_TTL = 30                                          
+SESSION_CACHE_TTL = 30
 _session_cache: dict[int, tuple[str, float]] = {}
 _session_cache_lock = _Lock()
 
 def _check_session_cached(user_id: int, token_session_id: str) -> bool:
-\
-\
-\
-\
-\
-       
     now = _time.monotonic()
 
     with _session_cache_lock:
         cached = _session_cache.get(user_id)
         if cached is not None:
             cached_sid, checked_at = cached
-            if now - checked_at < SESSION_CACHE_TTL:
-                                                               
-                return cached_sid == token_session_id
+            if now - checked_at < SESSION_CACHE_TTL and cached_sid == token_session_id:
+                return True
 
-                                                
     active_sid = get_active_session(user_id)
 
     if active_sid is None:
-                                                                        
-                                                                          
         return True
 
-                   
     with _session_cache_lock:
         _session_cache[user_id] = (active_sid, now)
 
     return active_sid == token_session_id
 
 def _invalidate_session_cache(user_id: int) -> None:
-                                                                                
     with _session_cache_lock:
         _session_cache.pop(user_id, None)
 

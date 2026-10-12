@@ -20,7 +20,7 @@ async def get_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(1000, ge=1, le=10000),
     search: Optional[str] = None,
     role: Optional[UserRole] = None
 ):
@@ -56,7 +56,7 @@ async def get_users(
     total = total_result.scalar()
     
                
-    query = query.order_by(User.id).offset(skip).limit(limit)
+    query = query.order_by(User.full_name.asc(), User.id.asc()).offset(skip).limit(limit)
     result = await db.execute(query)
     users = result.scalars().all()
     

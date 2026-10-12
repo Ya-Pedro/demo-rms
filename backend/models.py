@@ -143,16 +143,16 @@ class Vacancy(Base):
     close_date = Column(Date, nullable=True, index=True, comment="Дата закрытия вакансии")
     
                                 
-    candidate_name = Column(String(255), nullable=True, comment="ФИО кандидата")
+    candidate_name = Column(Text, nullable=True, comment="ФИО кандидата")
     
                                                             
-    candidate_company = Column(String(255), nullable=True, comment="Компания кандидата")
+    candidate_company = Column(Text, nullable=True, comment="Компания кандидата")
     
                                    
     replacement_type_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
     
                                                           
-    ex_employee_name = Column(String(255), nullable=True, comment="ФИО бывшего сотрудника")
+    ex_employee_name = Column(Text, nullable=True, comment="ФИО бывшего сотрудника")
     
                         
     unit_id = Column(String(50), nullable=True, comment="ID ШЕ")
@@ -162,12 +162,14 @@ class Vacancy(Base):
     
                                   
     feasibility_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
+    feasibility_text = Column(String(255), nullable=True, comment="ТЭО проекта (текст)")
     
                                             
     iqhr_link = Column(String(500), nullable=True, comment="Ссылка на заявку IQHR")
     
                          
     recruiter_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    co_recruiter_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     
                            
     block_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
@@ -183,6 +185,9 @@ class Vacancy(Base):
     candidates_agreed_cnt = Column(Integer, default=0, comment="Кол-во согласованных кандидатов")
     interviews_planned_cnt = Column(Integer, default=0, comment="Кол-во запланированных интервью")
     interviews_conducted_cnt = Column(Integer, default=0, comment="Кол-во проведенных интервью")
+    offer_accepted_cnt = Column(Integer, default=0, comment="Кол-во принятых офферов")
+    offer_rejection_reason = Column(String(255), nullable=True, comment="Причина отказа от оффера")
+    comment = Column(Text, nullable=True, comment="Комментарий")
     
                                                                            
     counters_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Когда последний раз обновлялись еженедельные счётчики")
@@ -193,6 +198,7 @@ class Vacancy(Base):
     
                    
     recruiter = relationship("User", back_populates="vacancies", foreign_keys=[recruiter_id])
+    co_recruiter = relationship("User", foreign_keys=[co_recruiter_id])
     level = relationship("Dictionary", foreign_keys=[level_id])
     status = relationship("Dictionary", foreign_keys=[status_id])
     it_role = relationship("Dictionary", foreign_keys=[it_role_id])
@@ -216,13 +222,24 @@ class Vacancy(Base):
     
     @property
     def work_duration_days(self):
-                                                                                         
         start = self.open_date
         if not start:
             return None
         end = self.close_date or _date.today()
         wd = calculate_working_days(start, end)
-        return max(0, wd - (self.hold_days or 0))
+        total_hold = self.hold_days or 0
+        if self.status and getattr(self.status, 'value', None) == "Hold" and self.status_changed_at:
+            current_hold = calculate_working_days(self.status_changed_at, _date.today())
+            total_hold += current_hold
+        return max(0, wd - total_hold)
+
+    @property
+    def feasibility_name(self):
+        if self.feasibility_text:
+            return self.feasibility_text
+        if self.feasibility:
+            return self.feasibility.value
+        return None
 
 class WeeklyReport(Base):
                                                                
@@ -243,6 +260,9 @@ class WeeklyReport(Base):
     interviews_planned = Column(Integer, default=0, comment="Собеседования план")
     interviews_conducted = Column(Integer, default=0, comment="Собеседования факт")
     offer_made = Column(Integer, default=0, comment="Оффер сделан")
+    offer_accepted = Column(Integer, default=0, comment="Оффер принят")
+    offer_rejection_reason = Column(String(255), nullable=True, comment="Причина отказа от оффера")
+    comment = Column(Text, nullable=True, comment="Комментарий")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

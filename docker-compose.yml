@@ -60,6 +60,8 @@ services:
       - TZ=Europe/Moscow
     expose:
       - "8000"
+    volumes:
+      - ./backend:/app
     networks:
       - rms_network
 
@@ -90,6 +92,7 @@ services:
       - "443:8443"
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./frontend/build:/usr/share/nginx/html
     networks:
       - rms_network
 

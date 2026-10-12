@@ -217,6 +217,7 @@ async def _issue_tokens(db: AsyncSession, user: User, request: Request) -> dict:
         "token_type": "bearer",
         "is_temporary_password": bool(user.is_temporary_password),
         "requires_2fa": False,
+        "user": UserResponse.model_validate(user).model_dump(),
     }
 
                                                                               
@@ -481,8 +482,11 @@ async def refresh_access_token(
     await revoke_refresh_token(db, data.refresh_token)
 
                                
+    new_session_id = secrets.token_hex(16)
+    set_active_session(user.id, new_session_id)
+    _invalidate_session_cache(user.id)
     new_access_token = create_access_token(
-        data={"sub": user.email, "role": user.role.value},
+        data={"sub": user.email, "role": user.role.value, "sid": new_session_id},
         expires_delta=timedelta(minutes=RT_ACCESS_EXPIRE),
     )
 

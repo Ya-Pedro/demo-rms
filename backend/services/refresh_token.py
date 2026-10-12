@@ -17,7 +17,7 @@ from database import Base
 REFRESH_TOKEN_EXPIRE_DAYS = max(1, int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", 7)))
 
                                                                                    
-from auth import ACCESS_TOKEN_EXPIRE_MINUTES                                                       
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 720))
 
 class RefreshToken(Base):
                                                       
@@ -66,7 +66,10 @@ async def validate_refresh_token(
         return None
     if token.revoked:
         return None
-    if token.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+    exp = token.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    if exp < datetime.now(timezone.utc):
         return None
     return token
 

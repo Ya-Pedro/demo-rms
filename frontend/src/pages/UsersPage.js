@@ -49,7 +49,7 @@ const UsersPage = () => {
       const response = await api.get('/users', {
         params: {
           skip: 0,
-          limit: 100,
+          limit: 1000,
         },
       });
       setData(response.data.items || []);

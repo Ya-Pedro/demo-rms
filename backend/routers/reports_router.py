@@ -8,7 +8,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, or_, case, Integer
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime, date, timedelta
@@ -19,7 +19,7 @@ import pandas as pd
 from fastapi_cache import FastAPICache
 
 from database import get_db
-from models import User, Vacancy, WeeklyReport, UserRole
+from models import User, Vacancy, WeeklyReport, UserRole, Dictionary, DictionaryType
 from schemas import (
     WeeklyReportCreate, WeeklyReportUpdate, WeeklyReportResponse, WeeklyReportListResponse
 )
@@ -44,8 +44,25 @@ def _get_week_start(year: int, week: int) -> date:
     return start_of_week1 + timedelta(weeks=week - 1)
 
 def _get_week_end(year: int, week: int) -> date:
-                                                   
     return _get_week_start(year, week) + timedelta(days=6)
+
+def is_week_editable_for_recruiter(week_number: int, year: int) -> bool:
+    """Recruiter can only edit/create reports for current week and previous week."""
+    now = datetime.now()
+    cur_year, cur_week, _ = now.isocalendar()
+    week_start = _get_week_start(year, week_number)
+    cur_week_start = _get_week_start(cur_year, cur_week)
+    diff_days = (cur_week_start - week_start).days
+    return diff_days <= 7
+
+async def _get_inactive_status_ids(db: AsyncSession) -> list[int]:
+    result = await db.execute(
+        select(Dictionary.id).where(
+            Dictionary.type == DictionaryType.VACANCY_STATUS,
+            Dictionary.value.in_(["Закрыта", "Отмена", "Hold"]),
+        )
+    )
+    return list(result.scalars().all())
 
 @router.post("", response_model=WeeklyReportResponse, status_code=status.HTTP_201_CREATED)
 async def create_report(
@@ -53,7 +70,12 @@ async def create_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-                                                                    
+    if current_user.role == UserRole.RECRUITER and not is_week_editable_for_recruiter(report_data.week_number, report_data.year):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Рекрутер может редактировать отчеты только за текущую и предыдущую недели"
+        )
+
     result = await db.execute(
         select(Vacancy).where(Vacancy.id == report_data.vacancy_id)
     )
@@ -62,7 +84,7 @@ async def create_report(
     if not vacancy:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вакансия не найдена")
     
-    if current_user.role == UserRole.RECRUITER and vacancy.recruiter_id != current_user.id:
+    if current_user.role == UserRole.RECRUITER and vacancy.recruiter_id != current_user.id and vacancy.co_recruiter_id != current_user.id:
         delegation_svc = DelegationService(db)
         if not await delegation_svc.has_delegated_access(vacancy.id, current_user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этой вакансии")
@@ -110,6 +132,7 @@ async def create_report(
                 "interviews_planned":   report_data.interviews_planned,
                 "interviews_conducted": report_data.interviews_conducted,
                 "offer_made":           report_data.offer_made,
+                "offer_accepted":       getattr(report_data, 'offer_accepted', 0),
             },
             user=current_user,
         )
@@ -138,7 +161,7 @@ async def get_vacancy_reports(
     if not vacancy:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вакансия не найдена")
     
-    if current_user.role == UserRole.RECRUITER and vacancy.recruiter_id != current_user.id:
+    if current_user.role == UserRole.RECRUITER and vacancy.recruiter_id != current_user.id and vacancy.co_recruiter_id != current_user.id:
         delegation_svc = DelegationService(db)
         if not await delegation_svc.has_delegated_access(vacancy.id, current_user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этой вакансии")
@@ -217,21 +240,32 @@ async def get_all_reports(
         v = qp.get(key)
         return v if v else None
         
+    rec_vals = qp.getlist('recruiter_name')
+    rec_ids = [int(v) for v in rec_vals if v.lstrip('-').isdigit()] or None
+    rec_str = next((v for v in rec_vals if not v.lstrip('-').isdigit() and v.strip()), None) or get_str('search_recruiter')
+
+    co_rec_vals = qp.getlist('co_recruiter_name')
+    co_rec_ids = [int(v) for v in co_rec_vals if v.lstrip('-').isdigit()] or None
+    co_rec_str = next((v for v in co_rec_vals if not v.lstrip('-').isdigit() and v.strip()), None) or get_str('search_co_recruiter')
+
     _, vacancy_conditions = apply_vacancy_filters(
         query=select(Vacancy),
         current_user=current_user,
-        status_id=get_list('status_name'),
-        level_id=get_list('level_name'),
-        it_role_id=get_list('it_role_name'),
-        project_id=get_list('project_name'),
-        admin_manager_id=get_list('customer'),
-        source_id=get_list('source_name'),
-        block_id=get_list('block_name'),
-        employment_type_id=get_list('employment_type_name'),
-        feasibility_id=get_list('feasibility_name'),
-        replacement_type_id=get_list('replacement_type_name'),
-        internal_transfer_id=get_list('internal_transfer_name'),
-        recruiter_id=get_list('recruiter_name'),
+        status_id=get_list('status_name') or get_list('status_id'),
+        level_id=get_list('level_name') or get_list('level_id'),
+        it_role_id=get_list('it_role_name') or get_list('it_role_id'),
+        project_id=get_list('project_name') or get_list('project_id'),
+        admin_manager_id=get_list('customer') or get_list('admin_manager_id'),
+        source_id=get_list('source_name') or get_list('source_id'),
+        block_id=get_list('block_name') or get_list('block_id'),
+        employment_type_id=get_list('employment_type_name') or get_list('employment_type_id'),
+        search_feasibility_text=get_str('feasibility_name') or get_str('feasibility_text'),
+        replacement_type_id=get_list('replacement_type_name') or get_list('replacement_type_id'),
+        internal_transfer_id=get_list('internal_transfer_name') or get_list('internal_transfer_id'),
+        recruiter_id=rec_ids,
+        co_recruiter_id=co_rec_ids,
+        search_recruiter=rec_str,
+        search_co_recruiter=co_rec_str,
         
         search_vacancy_id=get_str('vacancy_ext_id'),
         search_position_name=get_str('vacancy_name'),
@@ -242,16 +276,26 @@ async def get_all_reports(
         search_ex_employee_name=get_str('ex_employee_name'),
         search_unit_id=get_str('unit_id'),
         search_iqhr_link=get_str('iqhr_link'),
+        search_comment=get_str('comment'),
+        search_offer_rejection_reason=get_str('offer_rejection_reason'),
         search_quantity=get_str('quantity'),
         search_salary_gross=get_str('salary_gross'),
         search_work_duration_days=get_str('work_duration_days'),
+        search_open_date=get_str('open_date') or get_str('search_open_date'),
+        search_open_date_from=get_str('open_date_from') or get_str('search_open_date_from'),
+        search_open_date_to=get_str('open_date_to') or get_str('search_open_date_to'),
+        search_close_date=get_str('close_date') or get_str('search_close_date'),
+        search_close_date_from=get_str('close_date_from') or get_str('search_close_date_from'),
+        search_close_date_to=get_str('close_date_to') or get_str('search_close_date_to'),
+        search_status_changed_at=get_str('status_changed_at') or get_str('search_status_changed_at'),
+        search_status_changed_at_from=get_str('status_changed_at_from') or get_str('search_status_changed_at_from'),
+        search_status_changed_at_to=get_str('status_changed_at_to') or get_str('search_status_changed_at_to'),
     )
     print(f"DEBUG: get_all_reports query_params={qp}")
     print(f"DEBUG: vacancy_conditions={vacancy_conditions}")
     conditions.extend(vacancy_conditions)
                                                            
     if current_user.role == UserRole.RECRUITER:
-        from sqlalchemy import or_
         from datetime import date as _date
         from models import VacancyDelegation
         today = _date.today()
@@ -267,54 +311,106 @@ async def get_all_reports(
         conditions.append(
             or_(
                 Vacancy.recruiter_id == current_user.id,
+                Vacancy.co_recruiter_id == current_user.id,
                 Vacancy.id.in_(delegated_subq),
             )
         )
     
-    if year is not None:
-        conditions.append(WeeklyReport.year == year)
+    p_start = None
+    p_end = None
+
     if week_number is not None:
-        conditions.append(WeeklyReport.week_number == week_number)
-    
-                                              
-    if month is not None and year is not None:
-        month_start = date(year, month, 1)
-        if month == 12:
-            month_end = date(year + 1, 1, 1) - timedelta(days=1)
-        else:
-            month_end = date(year, month + 1, 1) - timedelta(days=1)
-        conditions.append(WeeklyReport.week_start >= month_start)
-        conditions.append(WeeklyReport.week_start <= month_end)
+        y = year if year is not None else datetime.now().year
+        p_start = _get_week_start(y, week_number)
+        p_end = _get_week_end(y, week_number)
     elif month is not None:
-                                                 
-        cur_year = datetime.now().year
-        month_start = date(cur_year, month, 1)
+        y = year if year is not None else datetime.now().year
+        p_start = date(y, month, 1)
         if month == 12:
-            month_end = date(cur_year + 1, 1, 1) - timedelta(days=1)
+            p_end = date(y + 1, 1, 1) - timedelta(days=1)
         else:
-            month_end = date(cur_year, month + 1, 1) - timedelta(days=1)
-        conditions.append(WeeklyReport.week_start >= month_start)
-        conditions.append(WeeklyReport.week_start <= month_end)
-    
-                                                                  
+            p_end = date(y, month + 1, 1) - timedelta(days=1)
+    elif year is not None:
+        p_start = date(year, 1, 1)
+        p_end = date(year, 12, 31)
+
     sd_str = start_date or date_from
     ed_str = end_date or date_to
-    if sd_str:
+    if isinstance(sd_str, str):
         try:
-            conditions.append(WeeklyReport.week_start >= date.fromisoformat(sd_str))
-        except ValueError:
+            sd_d = date.fromisoformat(sd_str)
+            p_start = max(p_start, sd_d) if p_start else sd_d
+        except (ValueError, TypeError):
             pass
-    if ed_str:
+    if isinstance(ed_str, str):
         try:
-            conditions.append(WeeklyReport.week_start <= date.fromisoformat(ed_str))
-        except ValueError:
+            ed_d = date.fromisoformat(ed_str)
+            p_end = min(p_end, ed_d) if p_end else ed_d
+        except (ValueError, TypeError):
             pass
+
+    report_join_conditions = [WeeklyReport.vacancy_id == Vacancy.id]
+    if week_number is not None:
+        y = year if year is not None else datetime.now().year
+        report_join_conditions.append(WeeklyReport.week_number == week_number)
+        report_join_conditions.append(WeeklyReport.year == y)
+    elif p_start and p_end:
+        report_join_conditions.append(WeeklyReport.week_start >= p_start)
+        report_join_conditions.append(WeeklyReport.week_start <= p_end)
+    elif p_start:
+        report_join_conditions.append(WeeklyReport.week_start >= p_start)
+    elif p_end:
+        report_join_conditions.append(WeeklyReport.week_start <= p_end)
+
+    explicit_status = get_list('status_name')
+    if not explicit_status:
+        inactive_ids = await _get_inactive_status_ids(db)
+        if inactive_ids and (p_start or p_end):
+            status_or_conditions = []
+            active_cond = Vacancy.status_id.not_in(inactive_ids)
+            if p_end:
+                active_cond = and_(active_cond, or_(Vacancy.open_date <= p_end, Vacancy.open_date.is_(None)))
+            status_or_conditions.append(active_cond)
+
+            if p_start and p_end:
+                status_or_conditions.append(
+                    and_(
+                        Vacancy.status_id.in_(inactive_ids),
+                        or_(
+                            and_(Vacancy.close_date >= p_start, Vacancy.close_date <= p_end),
+                            and_(Vacancy.status_changed_at >= p_start, Vacancy.status_changed_at <= p_end),
+                        )
+                    )
+                )
+            elif p_start:
+                status_or_conditions.append(
+                    and_(
+                        Vacancy.status_id.in_(inactive_ids),
+                        or_(
+                            Vacancy.close_date >= p_start,
+                            Vacancy.status_changed_at >= p_start,
+                        )
+                    )
+                )
+            elif p_end:
+                status_or_conditions.append(
+                    and_(
+                        Vacancy.status_id.in_(inactive_ids),
+                        or_(
+                            Vacancy.close_date <= p_end,
+                            Vacancy.status_changed_at <= p_end,
+                        )
+                    )
+                )
+            conditions.append(or_(*status_or_conditions))
+        elif p_end:
+            conditions.append(or_(Vacancy.open_date <= p_end, Vacancy.open_date.is_(None)))
 
     if recruiter_id:
         conditions.append(Vacancy.recruiter_id.in_(recruiter_id))
     if project_id:
         conditions.append(Vacancy.project_id.in_(project_id))
-                                                                             
+
     if vacancy_search:
         conditions.append(
             (Vacancy.position_name.ilike(f"%{vacancy_search}%")) |
@@ -327,56 +423,74 @@ async def get_all_reports(
     if search_candidate:
         conditions.append(Vacancy.candidate_name.ilike(f"%{search_candidate}%"))
 
-                                                         
     agg_q = (
         select(
             Vacancy.id.label('vacancy_db_id'),
             Vacancy.vacancy_id.label('vacancy_ext_id'),
             Vacancy.position_name.label('vacancy_name'),
-            func.sum(WeeklyReport.resumes_sent).label('total_resumes_sent'),
-            func.sum(WeeklyReport.candidates_agreed).label('total_candidates_agreed'),
-            func.sum(WeeklyReport.interviews_planned).label('total_interviews_planned'),
-            func.sum(WeeklyReport.interviews_conducted).label('total_interviews_conducted'),
-            func.sum(WeeklyReport.offer_made).label('total_offer_made'),
+            func.coalesce(func.sum(WeeklyReport.resumes_sent), 0).label('total_resumes_sent'),
+            func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0).label('total_candidates_agreed'),
+            func.coalesce(func.sum(WeeklyReport.interviews_planned), 0).label('total_interviews_planned'),
+            func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0).label('total_interviews_conducted'),
+            func.coalesce(func.sum(WeeklyReport.offer_made), 0).label('total_offer_made'),
+            func.coalesce(func.sum(WeeklyReport.offer_accepted), 0).label('total_offer_accepted'),
             func.min(WeeklyReport.created_at).label('first_report_date'),
             func.max(WeeklyReport.updated_at).label('last_updated'),
             func.min(WeeklyReport.year).label('min_year'),
             func.max(WeeklyReport.year).label('max_year'),
             func.count(WeeklyReport.id).label('report_count'),
         )
-        .join(Vacancy, WeeklyReport.vacancy_id == Vacancy.id)
+        .select_from(Vacancy)
+        .outerjoin(WeeklyReport, and_(*report_join_conditions))
     )
-    
+
     if conditions:
         agg_q = agg_q.where(and_(*conditions))
-    
+
     agg_q = agg_q.group_by(Vacancy.id, Vacancy.vacancy_id, Vacancy.position_name)
 
     having_conditions = []
-    
+
     search_total_resumes_sent = get_str('total_resumes_sent')
     if search_total_resumes_sent and search_total_resumes_sent.isdigit():
-        having_conditions.append(func.sum(WeeklyReport.resumes_sent) == int(search_total_resumes_sent))
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.resumes_sent), 0) == int(search_total_resumes_sent))
 
     search_total_candidates_agreed = get_str('total_candidates_agreed')
     if search_total_candidates_agreed and search_total_candidates_agreed.isdigit():
-        having_conditions.append(func.sum(WeeklyReport.candidates_agreed) == int(search_total_candidates_agreed))
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0) == int(search_total_candidates_agreed))
 
     search_total_interviews_planned = get_str('total_interviews_planned')
     if search_total_interviews_planned and search_total_interviews_planned.isdigit():
-        having_conditions.append(func.sum(WeeklyReport.interviews_planned) == int(search_total_interviews_planned))
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.interviews_planned), 0) == int(search_total_interviews_planned))
 
     search_total_interviews_conducted = get_str('total_interviews_conducted')
     if search_total_interviews_conducted and search_total_interviews_conducted.isdigit():
-        having_conditions.append(func.sum(WeeklyReport.interviews_conducted) == int(search_total_interviews_conducted))
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0) == int(search_total_interviews_conducted))
 
     search_total_offer_made = get_str('total_offer_made')
     if search_total_offer_made and search_total_offer_made.isdigit():
-        having_conditions.append(func.sum(WeeklyReport.offer_made) == int(search_total_offer_made))
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.offer_made), 0) == int(search_total_offer_made))
+
+    search_total_offer_accepted = get_str('total_offer_accepted')
+    if search_total_offer_accepted and search_total_offer_accepted.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.offer_accepted), 0) == int(search_total_offer_accepted))
 
     search_report_count = get_str('report_count')
     if search_report_count and search_report_count.isdigit():
         having_conditions.append(func.count(WeeklyReport.id) == int(search_report_count))
+
+    search_only_active_work = get_str('only_active_work') or get_str('only_with_movements')
+    if search_only_active_work in ('true', '1', 'True'):
+        having_conditions.append(
+            (
+                func.coalesce(func.sum(WeeklyReport.resumes_sent), 0) +
+                func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0) +
+                func.coalesce(func.sum(WeeklyReport.interviews_planned), 0) +
+                func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0) +
+                func.coalesce(func.sum(WeeklyReport.offer_made), 0) +
+                func.coalesce(func.sum(WeeklyReport.offer_accepted), 0)
+            ) > 0
+        )
 
     if having_conditions:
         agg_q = agg_q.having(and_(*having_conditions))
@@ -389,42 +503,51 @@ async def get_all_reports(
     
                                          
                           
+    num_vacancy_id = func.coalesce(
+        func.cast(func.nullif(func.regexp_replace(Vacancy.vacancy_id, r'\D', '', 'g'), ''), Integer),
+        Vacancy.id
+    )
+
     SORT_MAP = {
-        'vacancy_ext_id':             Vacancy.vacancy_id,
+        'vacancy_ext_id':             num_vacancy_id,
         'vacancy_name':               Vacancy.position_name,
         'open_date':                  Vacancy.open_date,
         'close_date':                 Vacancy.close_date,
         'quantity':                   Vacancy.quantity,
         'salary_gross':               Vacancy.salary_gross,
         'work_duration_days':         func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0),
-        'total_resumes_sent':         func.sum(WeeklyReport.resumes_sent),
-        'total_candidates_agreed':    func.sum(WeeklyReport.candidates_agreed),
-        'total_interviews_conducted': func.sum(WeeklyReport.interviews_conducted),
-        'total_interviews_planned':   func.sum(WeeklyReport.interviews_planned),
-        'total_offer_made':           func.sum(WeeklyReport.offer_made),
+        'total_resumes_sent':         func.coalesce(func.sum(WeeklyReport.resumes_sent), 0),
+        'total_candidates_agreed':    func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0),
+        'total_interviews_conducted': func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0),
+        'total_interviews_planned':   func.coalesce(func.sum(WeeklyReport.interviews_planned), 0),
+        'total_offer_made':           func.coalesce(func.sum(WeeklyReport.offer_made), 0),
+        'total_offer_accepted':       func.coalesce(func.sum(WeeklyReport.offer_accepted), 0),
         'report_count':               func.count(WeeklyReport.id),
         'first_report_date':          func.min(WeeklyReport.created_at),
         'last_updated':               func.max(WeeklyReport.updated_at),
-        'level_name':                 Vacancy.level_id,
-        'status_name':                Vacancy.status_id,
-        'it_role_name':               Vacancy.it_role_id,
-        'customer':                   Vacancy.admin_manager_id,
+        'level_name':                 select(Dictionary.value).where(Dictionary.id == Vacancy.level_id).scalar_subquery(),
+        'status_name':                select(Dictionary.value).where(Dictionary.id == Vacancy.status_id).scalar_subquery(),
+        'it_role_name':               select(Dictionary.value).where(Dictionary.id == Vacancy.it_role_id).scalar_subquery(),
+        'customer':                   select(Dictionary.value).where(Dictionary.id == Vacancy.admin_manager_id).scalar_subquery(),
         'team_lead_name':             Vacancy.team_lead_text,
-        'project_name':               Vacancy.project_id,
+        'project_name':               select(Dictionary.value).where(Dictionary.id == Vacancy.project_id).scalar_subquery(),
         'city_name':                  Vacancy.city_text,
-        'source_name':                Vacancy.source_id,
-        'internal_transfer_name':     Vacancy.internal_transfer_id,
+        'source_name':                select(Dictionary.value).where(Dictionary.id == Vacancy.source_id).scalar_subquery(),
+        'internal_transfer_name':     select(Dictionary.value).where(Dictionary.id == Vacancy.internal_transfer_id).scalar_subquery(),
         'status_changed_at':          Vacancy.status_changed_at,
         'candidate_name':             Vacancy.candidate_name,
+        'comment':                    Vacancy.comment,
         'candidate_company':          Vacancy.candidate_company,
-        'replacement_type_name':      Vacancy.replacement_type_id,
+        'replacement_type_name':      select(Dictionary.value).where(Dictionary.id == Vacancy.replacement_type_id).scalar_subquery(),
         'ex_employee_name':           Vacancy.ex_employee_name,
         'unit_id':                    Vacancy.unit_id,
-        'employment_type_name':       Vacancy.employment_type_id,
-        'feasibility_name':           Vacancy.feasibility_id,
+        'employment_type_name':       select(Dictionary.value).where(Dictionary.id == Vacancy.employment_type_id).scalar_subquery(),
+        'feasibility_name':           Vacancy.feasibility_text,
         'iqhr_link':                  Vacancy.iqhr_link,
-        'recruiter_name':             Vacancy.recruiter_id,
-        'block_name':                 Vacancy.block_id,
+        'offer_rejection_reason':     Vacancy.offer_rejection_reason,
+        'recruiter_name':             select(User.full_name).where(User.id == Vacancy.recruiter_id).scalar_subquery(),
+        'co_recruiter_name':          select(User.full_name).where(User.id == Vacancy.co_recruiter_id).scalar_subquery(),
+        'block_name':                 select(Dictionary.value).where(Dictionary.id == Vacancy.block_id).scalar_subquery(),
     }
     
     if sort_field:
@@ -446,12 +569,13 @@ async def get_all_reports(
     
     rows = (await db.execute(agg_q)).all()
     
-                                           
     vacancy_ids = [r.vacancy_db_id for r in rows]
     _VAC_OPTS = [
         selectinload(Vacancy.recruiter),
+        selectinload(Vacancy.co_recruiter),
         selectinload(Vacancy.project),
         selectinload(Vacancy.admin_manager),
+        selectinload(Vacancy.team_lead),
         selectinload(Vacancy.status),
         selectinload(Vacancy.level),
         selectinload(Vacancy.it_role),
@@ -491,21 +615,25 @@ async def get_all_reports(
             # customer — только admin_manager (без fallback к project)
             "customer": v.admin_manager.value if v and v.admin_manager else None,
             "admin_manager_name": v.admin_manager.value if v and v.admin_manager else None,
-            "team_lead_name": v.team_lead_text if v else None,
+            "team_lead_name": (v.team_lead.value if v.team_lead else (v.team_lead_text or None)) if v else None,
             "recruiter_name": v.recruiter.full_name if v and v.recruiter else None,
+            "co_recruiter_name": v.co_recruiter.full_name if v and v.co_recruiter else None,
+            "co_recruiter_id": v.co_recruiter_id if v else None,
             "project_name": v.project.value if v and v.project else None,
             "city_name": v.city.value if v and v.city else (v.city_text if v else None),
             "source_name": v.source.value if v and v.source else None,
             "internal_transfer_name": v.internal_transfer.value if v and v.internal_transfer else None,
             "status_changed_at": v.status_changed_at.isoformat() if v and v.status_changed_at else None,
             "candidate_name": v.candidate_name if v else None,
+            "comment": v.comment if v else None,
             "candidate_company": v.candidate_company if v else None,
             "replacement_type_name": v.replacement_type.value if v and v.replacement_type else None,
             "ex_employee_name": v.ex_employee_name if v else None,
             "unit_id": v.unit_id if v else None,
             "employment_type_name": v.employment_type.value if v and v.employment_type else None,
-            "feasibility_name": v.feasibility.value if v and v.feasibility else None,
+            "feasibility_name": (v.feasibility_text or (v.feasibility.value if v.feasibility else None)) if v else None,
             "iqhr_link": v.iqhr_link if v else None,
+            "offer_rejection_reason": v.offer_rejection_reason if v else None,
             "block_name": v.block.value if v and v.block else None,
             "work_duration_days": v.work_duration_days if v else None,
             "salary_gross": v.salary_gross if v else None,
@@ -515,6 +643,7 @@ async def get_all_reports(
             "total_interviews_planned": r.total_interviews_planned or 0,
             "total_interviews_conducted": r.total_interviews_conducted or 0,
             "total_offer_made": r.total_offer_made or 0,
+            "total_offer_accepted": r.total_offer_accepted or 0,
             "first_report_date": r.first_report_date.isoformat() if r.first_report_date else None,
             "last_updated": r.last_updated.isoformat() if r.last_updated else (
                 r.first_report_date.isoformat() if r.first_report_date else None
@@ -564,67 +693,32 @@ async def export_all_reports(
         v = qp.get(key)
         return v if v else None
         
-    _, vacancy_conditions = apply_vacancy_filters(
-        query=select(Vacancy),
-        current_user=current_user,
-        status_id=get_list('status_name'),
-        level_id=get_list('level_name'),
-        it_role_id=get_list('it_role_name'),
-        project_id=get_list('project_name'),
-        admin_manager_id=get_list('customer'),
-        source_id=get_list('source_name'),
-        block_id=get_list('block_name'),
-        employment_type_id=get_list('employment_type_name'),
-        feasibility_id=get_list('feasibility_name'),
-        replacement_type_id=get_list('replacement_type_name'),
-        internal_transfer_id=get_list('internal_transfer_name'),
-        recruiter_id=get_list('recruiter_name'),
-        
-        search_vacancy_id=get_str('vacancy_ext_id'),
-        search_position_name=get_str('vacancy_name'),
-        search_candidate_name=get_str('candidate_name'),
-        search_team_lead_text=get_str('team_lead_name'),
-        search_city_text=get_str('city_name'),
-        search_candidate_company=get_str('candidate_company'),
-        search_ex_employee_name=get_str('ex_employee_name'),
-        search_unit_id=get_str('unit_id'),
-        search_iqhr_link=get_str('iqhr_link'),
-    )
-    conditions.extend(vacancy_conditions)
+    rec_vals = qp.getlist('recruiter_name')
+    rec_ids = [int(v) for v in rec_vals if v.lstrip('-').isdigit()] or None
+    rec_str = next((v for v in rec_vals if not v.lstrip('-').isdigit() and v.strip()), None) or get_str('search_recruiter')
 
-    
-    from services.vacancy_filter import apply_vacancy_filters
-    qp = request.query_params
-    
-    def get_list(key: str):
-        vals = qp.getlist(key)
-        if not vals:
-            return None
-        res = []
-        for v in vals:
-            if v.lstrip('-').isdigit():
-                res.append(int(v))
-        return res if res else None
-        
-    def get_str(key: str):
-        v = qp.get(key)
-        return v if v else None
-        
+    co_rec_vals = qp.getlist('co_recruiter_name')
+    co_rec_ids = [int(v) for v in co_rec_vals if v.lstrip('-').isdigit()] or None
+    co_rec_str = next((v for v in co_rec_vals if not v.lstrip('-').isdigit() and v.strip()), None) or get_str('search_co_recruiter')
+
     _, vacancy_conditions = apply_vacancy_filters(
         query=select(Vacancy),
         current_user=current_user,
-        status_id=get_list('status_name'),
-        level_id=get_list('level_name'),
-        it_role_id=get_list('it_role_name'),
-        project_id=get_list('project_name'),
-        admin_manager_id=get_list('customer'),
-        source_id=get_list('source_name'),
-        block_id=get_list('block_name'),
-        employment_type_id=get_list('employment_type_name'),
-        feasibility_id=get_list('feasibility_name'),
-        replacement_type_id=get_list('replacement_type_name'),
-        internal_transfer_id=get_list('internal_transfer_name'),
-        recruiter_id=get_list('recruiter_name'),
+        status_id=get_list('status_name') or get_list('status_id'),
+        level_id=get_list('level_name') or get_list('level_id'),
+        it_role_id=get_list('it_role_name') or get_list('it_role_id'),
+        project_id=get_list('project_name') or get_list('project_id'),
+        admin_manager_id=get_list('customer') or get_list('admin_manager_id'),
+        source_id=get_list('source_name') or get_list('source_id'),
+        block_id=get_list('block_name') or get_list('block_id'),
+        employment_type_id=get_list('employment_type_name') or get_list('employment_type_id'),
+        search_feasibility_text=get_str('feasibility_name') or get_str('feasibility_text'),
+        replacement_type_id=get_list('replacement_type_name') or get_list('replacement_type_id'),
+        internal_transfer_id=get_list('internal_transfer_name') or get_list('internal_transfer_id'),
+        recruiter_id=rec_ids,
+        co_recruiter_id=co_rec_ids,
+        search_recruiter=rec_str,
+        search_co_recruiter=co_rec_str,
         
         search_vacancy_id=get_str('vacancy_ext_id'),
         search_position_name=get_str('vacancy_name'),
@@ -635,11 +729,24 @@ async def export_all_reports(
         search_ex_employee_name=get_str('ex_employee_name'),
         search_unit_id=get_str('unit_id'),
         search_iqhr_link=get_str('iqhr_link'),
+        search_comment=get_str('comment'),
+        search_offer_rejection_reason=get_str('offer_rejection_reason'),
+        search_quantity=get_str('quantity'),
+        search_salary_gross=get_str('salary_gross'),
+        search_work_duration_days=get_str('work_duration_days'),
+        search_open_date=get_str('open_date') or get_str('search_open_date'),
+        search_open_date_from=get_str('open_date_from') or get_str('search_open_date_from'),
+        search_open_date_to=get_str('open_date_to') or get_str('search_open_date_to'),
+        search_close_date=get_str('close_date') or get_str('search_close_date'),
+        search_close_date_from=get_str('close_date_from') or get_str('search_close_date_from'),
+        search_close_date_to=get_str('close_date_to') or get_str('search_close_date_to'),
+        search_status_changed_at=get_str('status_changed_at') or get_str('search_status_changed_at'),
+        search_status_changed_at_from=get_str('status_changed_at_from') or get_str('search_status_changed_at_from'),
+        search_status_changed_at_to=get_str('status_changed_at_to') or get_str('search_status_changed_at_to'),
     )
     conditions.extend(vacancy_conditions)
                                                                 
     if current_user.role == UserRole.RECRUITER:
-        from sqlalchemy import or_
         from datetime import date as _date
         from models import VacancyDelegation
         today = _date.today()
@@ -655,39 +762,107 @@ async def export_all_reports(
         conditions.append(
             or_(
                 Vacancy.recruiter_id == current_user.id,
+                Vacancy.co_recruiter_id == current_user.id,
                 Vacancy.id.in_(delegated_subq),
             )
         )
-    if year is not None:
-        conditions.append(WeeklyReport.year == year)
+    p_start = None
+    p_end = None
+
     if week_number is not None:
-        conditions.append(WeeklyReport.week_number == week_number)
-    if month is not None:
-        y = year if year else datetime.now().year
+        y = year if year is not None else datetime.now().year
+        p_start = _get_week_start(y, week_number)
+        p_end = _get_week_end(y, week_number)
+    elif month is not None:
+        y = year if year is not None else datetime.now().year
         month_start = date(y, month, 1)
         if month == 12:
             month_end = date(y + 1, 1, 1) - timedelta(days=1)
         else:
             month_end = date(y, month + 1, 1) - timedelta(days=1)
-        conditions.append(WeeklyReport.week_start >= month_start)
-        conditions.append(WeeklyReport.week_start <= month_end)
+        p_start = month_start
+        p_end = month_end
+    elif year is not None:
+        p_start = date(year, 1, 1)
+        p_end = date(year, 12, 31)
+
     sd_str = start_date or date_from
     ed_str = end_date or date_to
-    if sd_str:
+    if isinstance(sd_str, str):
         try:
-            conditions.append(WeeklyReport.week_start >= date.fromisoformat(sd_str))
-        except ValueError:
+            sd_d = date.fromisoformat(sd_str)
+            p_start = max(p_start, sd_d) if p_start else sd_d
+        except (ValueError, TypeError):
             pass
-    if ed_str:
+    if isinstance(ed_str, str):
         try:
-            conditions.append(WeeklyReport.week_start <= date.fromisoformat(ed_str))
-        except ValueError:
+            ed_d = date.fromisoformat(ed_str)
+            p_end = min(p_end, ed_d) if p_end else ed_d
+        except (ValueError, TypeError):
             pass
+
+    report_join_conditions = [WeeklyReport.vacancy_id == Vacancy.id]
+    if week_number is not None:
+        y = year if year is not None else datetime.now().year
+        report_join_conditions.append(WeeklyReport.week_number == week_number)
+        report_join_conditions.append(WeeklyReport.year == y)
+    elif p_start and p_end:
+        report_join_conditions.append(WeeklyReport.week_start >= p_start)
+        report_join_conditions.append(WeeklyReport.week_start <= p_end)
+    elif p_start:
+        report_join_conditions.append(WeeklyReport.week_start >= p_start)
+    elif p_end:
+        report_join_conditions.append(WeeklyReport.week_start <= p_end)
+
+    explicit_status = get_list('status_name')
+    if not explicit_status:
+        inactive_ids = await _get_inactive_status_ids(db)
+        if inactive_ids and (p_start or p_end):
+            status_or_conditions = []
+            active_cond = Vacancy.status_id.not_in(inactive_ids)
+            if p_end:
+                active_cond = and_(active_cond, or_(Vacancy.open_date <= p_end, Vacancy.open_date.is_(None)))
+            status_or_conditions.append(active_cond)
+
+            if p_start and p_end:
+                status_or_conditions.append(
+                    and_(
+                        Vacancy.status_id.in_(inactive_ids),
+                        or_(
+                            and_(Vacancy.close_date >= p_start, Vacancy.close_date <= p_end),
+                            and_(Vacancy.status_changed_at >= p_start, Vacancy.status_changed_at <= p_end),
+                        )
+                    )
+                )
+            elif p_start:
+                status_or_conditions.append(
+                    and_(
+                        Vacancy.status_id.in_(inactive_ids),
+                        or_(
+                            Vacancy.close_date >= p_start,
+                            Vacancy.status_changed_at >= p_start,
+                        )
+                    )
+                )
+            elif p_end:
+                status_or_conditions.append(
+                    and_(
+                        Vacancy.status_id.in_(inactive_ids),
+                        or_(
+                            Vacancy.close_date <= p_end,
+                            Vacancy.status_changed_at <= p_end,
+                        )
+                    )
+                )
+            conditions.append(or_(*status_or_conditions))
+        elif p_end:
+            conditions.append(or_(Vacancy.open_date <= p_end, Vacancy.open_date.is_(None)))
+
     if recruiter_id:
         conditions.append(Vacancy.recruiter_id.in_(recruiter_id))
     if project_id:
         conditions.append(Vacancy.project_id.in_(project_id))
-                                                                
+
     if vacancy_search:
         conditions.append(
             (Vacancy.position_name.ilike(f"%{vacancy_search}%")) |
@@ -699,48 +874,139 @@ async def export_all_reports(
             Vacancy.id.label('vacancy_db_id'),
             Vacancy.vacancy_id.label('vacancy_ext_id'),
             Vacancy.position_name.label('vacancy_name'),
-            func.sum(WeeklyReport.resumes_sent).label('total_resumes_sent'),
-            func.sum(WeeklyReport.candidates_agreed).label('total_candidates_agreed'),
-            func.sum(WeeklyReport.interviews_planned).label('total_interviews_planned'),
-            func.sum(WeeklyReport.interviews_conducted).label('total_interviews_conducted'),
-            func.sum(WeeklyReport.offer_made).label('total_offer_made'),
+            func.coalesce(func.sum(WeeklyReport.resumes_sent), 0).label('total_resumes_sent'),
+            func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0).label('total_candidates_agreed'),
+            func.coalesce(func.sum(WeeklyReport.interviews_planned), 0).label('total_interviews_planned'),
+            func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0).label('total_interviews_conducted'),
+            func.coalesce(func.sum(WeeklyReport.offer_made), 0).label('total_offer_made'),
+            func.coalesce(func.sum(WeeklyReport.offer_accepted), 0).label('total_offer_accepted'),
             func.min(WeeklyReport.created_at).label('first_report_date'),
             func.max(WeeklyReport.updated_at).label('last_updated'),
             func.min(WeeklyReport.year).label('min_year'),
             func.max(WeeklyReport.year).label('max_year'),
+            func.count(WeeklyReport.id).label('report_count'),
         )
-        .join(Vacancy, WeeklyReport.vacancy_id == Vacancy.id)
+        .select_from(Vacancy)
+        .outerjoin(WeeklyReport, and_(*report_join_conditions))
     )
     if conditions:
         agg_q = agg_q.where(and_(*conditions))
     agg_q = agg_q.group_by(Vacancy.id, Vacancy.vacancy_id, Vacancy.position_name)
-                           
+
+    having_conditions = []
+    search_total_resumes_sent = get_str('total_resumes_sent')
+    if search_total_resumes_sent and search_total_resumes_sent.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.resumes_sent), 0) == int(search_total_resumes_sent))
+
+    search_total_candidates_agreed = get_str('total_candidates_agreed')
+    if search_total_candidates_agreed and search_total_candidates_agreed.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0) == int(search_total_candidates_agreed))
+
+    search_total_interviews_planned = get_str('total_interviews_planned')
+    if search_total_interviews_planned and search_total_interviews_planned.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.interviews_planned), 0) == int(search_total_interviews_planned))
+
+    search_total_interviews_conducted = get_str('total_interviews_conducted')
+    if search_total_interviews_conducted and search_total_interviews_conducted.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0) == int(search_total_interviews_conducted))
+
+    search_total_offer_made = get_str('total_offer_made')
+    if search_total_offer_made and search_total_offer_made.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.offer_made), 0) == int(search_total_offer_made))
+
+    search_total_offer_accepted = get_str('total_offer_accepted')
+    if search_total_offer_accepted and search_total_offer_accepted.isdigit():
+        having_conditions.append(func.coalesce(func.sum(WeeklyReport.offer_accepted), 0) == int(search_total_offer_accepted))
+
+    search_report_count = get_str('report_count')
+    if search_report_count and search_report_count.isdigit():
+        having_conditions.append(func.count(WeeklyReport.id) == int(search_report_count))
+
+    search_only_active_work = get_str('only_active_work') or get_str('only_with_movements')
+    if search_only_active_work in ('true', '1', 'True'):
+        having_conditions.append(
+            (
+                func.coalesce(func.sum(WeeklyReport.resumes_sent), 0) +
+                func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0) +
+                func.coalesce(func.sum(WeeklyReport.interviews_planned), 0) +
+                func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0) +
+                func.coalesce(func.sum(WeeklyReport.offer_made), 0) +
+                func.coalesce(func.sum(WeeklyReport.offer_accepted), 0)
+            ) > 0
+        )
+
+    if having_conditions:
+        agg_q = agg_q.having(and_(*having_conditions))
+
+    num_vacancy_id_exp = func.coalesce(
+        func.cast(func.nullif(func.regexp_replace(Vacancy.vacancy_id, r'\D', '', 'g'), ''), Integer),
+        Vacancy.id
+    )
+
     SORT_MAP_EXP = {
-        'vacancy_ext_id':             Vacancy.vacancy_id,
+        'vacancy_ext_id':             num_vacancy_id_exp,
         'vacancy_name':               Vacancy.position_name,
         'open_date':                  Vacancy.open_date,
         'close_date':                 Vacancy.close_date,
         'quantity':                   Vacancy.quantity,
         'salary_gross':               Vacancy.salary_gross,
-        'total_resumes_sent':         func.sum(WeeklyReport.resumes_sent),
-        'total_candidates_agreed':    func.sum(WeeklyReport.candidates_agreed),
-        'total_interviews_conducted': func.sum(WeeklyReport.interviews_conducted),
-        'total_interviews_planned':   func.sum(WeeklyReport.interviews_planned),
-        'total_offer_made':           func.sum(WeeklyReport.offer_made),
+        'work_duration_days':         func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0),
+        'total_resumes_sent':         func.coalesce(func.sum(WeeklyReport.resumes_sent), 0),
+        'total_candidates_agreed':    func.coalesce(func.sum(WeeklyReport.candidates_agreed), 0),
+        'total_interviews_conducted': func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0),
+        'total_interviews_planned':   func.coalesce(func.sum(WeeklyReport.interviews_planned), 0),
+        'total_offer_made':           func.coalesce(func.sum(WeeklyReport.offer_made), 0),
+        'total_offer_accepted':       func.coalesce(func.sum(WeeklyReport.offer_accepted), 0),
         'report_count':               func.count(WeeklyReport.id),
+        'first_report_date':          func.min(WeeklyReport.created_at),
+        'last_updated':               func.max(WeeklyReport.updated_at),
+        'level_name':                 select(Dictionary.value).where(Dictionary.id == Vacancy.level_id).scalar_subquery(),
+        'status_name':                select(Dictionary.value).where(Dictionary.id == Vacancy.status_id).scalar_subquery(),
+        'it_role_name':               select(Dictionary.value).where(Dictionary.id == Vacancy.it_role_id).scalar_subquery(),
+        'customer':                   select(Dictionary.value).where(Dictionary.id == Vacancy.admin_manager_id).scalar_subquery(),
+        'team_lead_name':             Vacancy.team_lead_text,
+        'project_name':               select(Dictionary.value).where(Dictionary.id == Vacancy.project_id).scalar_subquery(),
+        'city_name':                  Vacancy.city_text,
+        'source_name':                select(Dictionary.value).where(Dictionary.id == Vacancy.source_id).scalar_subquery(),
+        'internal_transfer_name':     select(Dictionary.value).where(Dictionary.id == Vacancy.internal_transfer_id).scalar_subquery(),
+        'status_changed_at':          Vacancy.status_changed_at,
+        'candidate_name':             Vacancy.candidate_name,
+        'comment':                    Vacancy.comment,
+        'candidate_company':          Vacancy.candidate_company,
+        'replacement_type_name':      select(Dictionary.value).where(Dictionary.id == Vacancy.replacement_type_id).scalar_subquery(),
+        'ex_employee_name':           Vacancy.ex_employee_name,
+        'unit_id':                    Vacancy.unit_id,
+        'employment_type_name':       select(Dictionary.value).where(Dictionary.id == Vacancy.employment_type_id).scalar_subquery(),
+        'feasibility_name':           Vacancy.feasibility_text,
+        'iqhr_link':                  Vacancy.iqhr_link,
+        'offer_rejection_reason':     Vacancy.offer_rejection_reason,
+        'recruiter_name':             select(User.full_name).where(User.id == Vacancy.recruiter_id).scalar_subquery(),
+        'co_recruiter_name':          select(User.full_name).where(User.id == Vacancy.co_recruiter_id).scalar_subquery(),
+        'block_name':                 select(Dictionary.value).where(Dictionary.id == Vacancy.block_id).scalar_subquery(),
     }
-    sort_col_exp = SORT_MAP_EXP.get(sort_field, Vacancy.id)
-    if sort_order == 'asc':
-        agg_q = agg_q.order_by(sort_col_exp.asc())
+    if sort_field:
+        fields = sort_field.split(',')
+        orders = sort_order.split(',') if sort_order else []
+        for i, f in enumerate(fields):
+            sort_col = SORT_MAP_EXP.get(f.strip())
+            if sort_col is not None:
+                order_dir = orders[i].strip() if i < len(orders) else 'desc'
+                if order_dir == 'asc':
+                    agg_q = agg_q.order_by(sort_col.asc().nulls_last())
+                else:
+                    agg_q = agg_q.order_by(sort_col.desc().nulls_last())
+        agg_q = agg_q.order_by(Vacancy.id.desc())
     else:
-        agg_q = agg_q.order_by(sort_col_exp.desc())
+        agg_q = agg_q.order_by(Vacancy.id.desc())
 
     rows = (await db.execute(agg_q)).all()
 
     _VAC_OPTS_EXPORT = [
         selectinload(Vacancy.recruiter),
+        selectinload(Vacancy.co_recruiter),
         selectinload(Vacancy.project),
         selectinload(Vacancy.admin_manager),
+        selectinload(Vacancy.team_lead),
         selectinload(Vacancy.status),
         selectinload(Vacancy.level),
         selectinload(Vacancy.it_role),
@@ -769,36 +1035,42 @@ async def export_all_reports(
         excel_rows.append({
             "ID вакансии": r.vacancy_ext_id or "",
             "Дата открытия": str(v.open_date) if v and v.open_date else "",
-            "Кол-во": v.quantity if v else "",
-            "Уровень": v.level.value if v and v.level else "",
+            "Количество": v.quantity if v else "",
+            "Уровень специалиста": v.level.value if v and v.level else "",
             "Вакансия": r.vacancy_name or "",
-            "Статус": v.status.value if v and v.status else "",
-            "ИТ Роль": v.it_role.value if v and v.it_role else "",
-            "Заказчик": (v.admin_manager.value if v and v.admin_manager else
-                        (v.project.value if v and v.project else "")),
+            "Статус вакансии": v.status.value if v and v.status else "",
+            "ИТ роль": v.it_role.value if v and v.it_role else "",
+            "Адм. руководитель": v.admin_manager.value if v and v.admin_manager else "",
+            "Тимлид": (v.team_lead.value if v.team_lead else (v.team_lead_text or "")) if v else "",
             "Проект": v.project.value if v and v.project else "",
-            "Рекрутер": v.recruiter.full_name if v and v.recruiter else "",
             "Передано заказчику": r.total_resumes_sent or 0,
             "Резюме одобрено": r.total_candidates_agreed or 0,
-            "Соб. факт": r.total_interviews_conducted or 0,
-            "Соб. план": r.total_interviews_planned or 0,
+            "Собеседования факт": r.total_interviews_conducted or 0,
+            "Собеседования план": r.total_interviews_planned or 0,
             "Оффер сделан": r.total_offer_made or 0,
-            "Город": v.city.value if v and v.city else (v.city_text or ""),
+            "Оффер принят": r.total_offer_accepted or 0,
+            "Причина отказа от Оффера": v.offer_rejection_reason or "" if v else "",
+            "Город": (v.city.value if v and v.city else (v.city_text or "")) if v else "",
             "Источник найма": v.source.value if v and v.source else "",
-            "Внутр. перевод": v.internal_transfer.value if v and v.internal_transfer else "",
+            "Внутренний перевод": v.internal_transfer.value if v and v.internal_transfer else "",
             "Дата изм. статуса": str(v.status_changed_at) if v and v.status_changed_at else "",
             "Дата закрытия": str(v.close_date) if v and v.close_date else "",
-            "ФИО кандидата": v.candidate_name or "",
-            "Компания кандидата": v.candidate_company or "",
-            "Новая/Замена": v.replacement_type.value if v and v.replacement_type else "",
-            "ФИО бывшего сотр.": v.ex_employee_name or "",
-            "ID ШЕ": v.unit_id or "",
+            "ФИО кандидата": v.candidate_name or "" if v else "",
+            "Комментарий": v.comment or "" if v else "",
+            "Компания кандидата": v.candidate_company or "" if v else "",
+            "Новая / Замена": v.replacement_type.value if v and v.replacement_type else "",
+            "ФИО бывшего сотр.": v.ex_employee_name or "" if v else "",
+            "ID ШЕ": v.unit_id or "" if v else "",
             "Вид занятости": v.employment_type.value if v and v.employment_type else "",
-            "ТЭО": v.feasibility.value if v and v.feasibility else "",
+            "ТЭО проекта": (v.feasibility_text or (v.feasibility.value if v.feasibility else "")) if v else "",
+            "Ссылка IQHR": (v.iqhr_link or "") if v else "",
+            "Рекрутер": v.recruiter.full_name if v and v.recruiter else "",
+            "Доп. рекрутер": v.co_recruiter.full_name if v and v.co_recruiter else "",
             "Блок": v.block.value if v and v.block else "",
             "Срок работы (дней)": v.work_duration_days if v and v.work_duration_days is not None else "",
-            "Зарплата Gross": v.salary_gross or "",
-            "Год": f"{r.min_year}" if r.min_year == r.max_year else f"{r.min_year}-{r.max_year}",
+            "Зарплата кандидатов Gross": v.salary_gross or "" if v else "",
+            "Год": f"{r.min_year}" if r.min_year == r.max_year else (f"{r.min_year}-{r.max_year}" if r.min_year and r.max_year else ""),
+            "Кол-во отчётов": r.report_count or 0,
             "Дата создания": r.first_report_date.strftime("%d.%m.%Y %H:%M") if r.first_report_date else "",
             "Дата обновления": r.last_updated.strftime("%d.%m.%Y %H:%M") if r.last_updated else "",
         })
@@ -853,7 +1125,7 @@ async def get_report(
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Отчет не найден")
     
-    if current_user.role == UserRole.RECRUITER and report.vacancy.recruiter_id != current_user.id:
+    if current_user.role == UserRole.RECRUITER and report.vacancy.recruiter_id != current_user.id and report.vacancy.co_recruiter_id != current_user.id:
         delegation_svc = DelegationService(db)
         if not await delegation_svc.has_delegated_access(report.vacancy.id, current_user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
@@ -878,10 +1150,16 @@ async def update_report(
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Отчет не найден")
 
-    if current_user.role == UserRole.RECRUITER and report.vacancy.recruiter_id != current_user.id:
-        delegation_svc = DelegationService(db)
-        if not await delegation_svc.has_delegated_access(report.vacancy.id, current_user.id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
+    if current_user.role == UserRole.RECRUITER:
+        if not is_week_editable_for_recruiter(report.week_number, report.year):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Рекрутер может редактировать отчеты только за текущую и предыдущую недели"
+            )
+        if report.vacancy.recruiter_id != current_user.id and report.vacancy.co_recruiter_id != current_user.id:
+            delegation_svc = DelegationService(db)
+            if not await delegation_svc.has_delegated_access(report.vacancy.id, current_user.id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
 
     update_data = report_data.model_dump(exclude_unset=True)
 
@@ -891,6 +1169,7 @@ async def update_report(
         "interviews_planned":   report.interviews_planned,
         "interviews_conducted": report.interviews_conducted,
         "offer_made":           report.offer_made,
+        "offer_accepted":       report.offer_accepted,
     }
 
     for field, value in update_data.items():
@@ -909,6 +1188,7 @@ async def update_report(
             "interviews_planned":   report.interviews_planned,
             "interviews_conducted": report.interviews_conducted,
             "offer_made":           report.offer_made,
+            "offer_accepted":       report.offer_accepted,
         }
         await _hist2.record_report_updated(
             vacancy_id=report.vacancy_id,
@@ -946,10 +1226,16 @@ async def delete_report(
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Отчет не найден")
     
-    if current_user.role == UserRole.RECRUITER and report.vacancy.recruiter_id != current_user.id:
-        delegation_svc = DelegationService(db)
-        if not await delegation_svc.has_delegated_access(report.vacancy.id, current_user.id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
+    if current_user.role == UserRole.RECRUITER:
+        if not is_week_editable_for_recruiter(report.week_number, report.year):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Рекрутер может удалять отчеты только за текущую и предыдущую недели"
+            )
+        if report.vacancy.recruiter_id != current_user.id and report.vacancy.co_recruiter_id != current_user.id:
+            delegation_svc = DelegationService(db)
+            if not await delegation_svc.has_delegated_access(report.vacancy.id, current_user.id):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
     
     from fastapi_cache import FastAPICache
     db.delete(report)

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Form, Input, Button, message, Spin, Modal, Alert } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined, SafetyCertificateOutlined, CloseCircleOutlined } from '@ant-design/icons';
-import { api } from '../App';
+import { api, APP_VERSION } from '../App';
 import { tokenStorage } from '../tokenStorage';
 import ChangePasswordModal from './ChangePasswordModal';
 
@@ -80,13 +80,38 @@ const LoginPage = () => {
   };
 
   const _finalizeLogin = async (data) => {
-    const { access_token, refresh_token, is_temporary_password } = data;
+    const { access_token, refresh_token, is_temporary_password, user } = data;
     tokenStorage.setAccess(access_token);
     if (refresh_token) {
       tokenStorage.setRefresh(refresh_token);
     }
-    const userResponse = await api.get('/auth/me');
-    tokenStorage.setUser(userResponse.data);
+
+    if (user) {
+      tokenStorage.setUser(user);
+    }
+
+    try {
+      let userResponse = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          userResponse = await api.get('/auth/me');
+          break;
+        } catch (err) {
+          if (attempt < 2 && !user) {
+            await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+          } else if (!user) {
+            throw err;
+          }
+        }
+      }
+      if (userResponse?.data) {
+        tokenStorage.setUser(userResponse.data);
+      }
+    } catch (err) {
+      if (!user) {
+        throw err;
+      }
+    }
 
     if (is_temporary_password) {
       setForceChangeOpen(true);
@@ -280,6 +305,21 @@ const LoginPage = () => {
         forced={true}
         loginContext={true}
       />
+
+      <div style={{
+        position: 'fixed',
+        bottom: 12,
+        right: 16,
+        fontSize: 12,
+        color: '#64748b',
+        fontWeight: 500,
+        background: 'rgba(255, 255, 255, 0.85)',
+        padding: '3px 8px',
+        borderRadius: 4,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+      }}>
+        RMS v{APP_VERSION}
+      </div>
     </div>
   );
 };

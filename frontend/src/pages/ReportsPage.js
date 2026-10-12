@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { tokenStorage } from '../tokenStorage';
 import {
-  Button, Select, DatePicker, Input, message, Table, Modal, Tooltip, Space
+  Button, Select, DatePicker, Input, message, Table, Modal, Tooltip, Space, Checkbox
 } from 'antd';
 import {
   DownloadOutlined, ReloadOutlined, ClearOutlined, SearchOutlined,
@@ -111,11 +111,12 @@ const loadPS  = () => { try { const v = parseInt(localStorage.getItem(PS_KEY), 1
 const savePS  = (s) => { try { localStorage.setItem(PS_KEY, String(s)); } catch {} }
 
 const EXPORT_PERIODS = [
-  { value: 'current_week',  label: 'За текущую неделю' },
-  { value: 'current_month', label: 'За текущий месяц' },
-  { value: 'current_year',  label: 'За текущий год' },
-  { value: 'all_time',      label: 'За всё время' },
-  { value: 'custom',        label: 'Произвольный период' },
+  { value: 'current_filter', label: 'Текущий период на странице' },
+  { value: 'current_week',   label: 'За текущую неделю' },
+  { value: 'current_month',  label: 'За текущий месяц' },
+  { value: 'current_year',   label: 'За текущий год' },
+  { value: 'all_time',       label: 'За всё время' },
+  { value: 'custom',         label: 'Произвольный период' },
 ];
 
 const YEAR_OPTIONS = (() => {
@@ -144,15 +145,76 @@ const generateWeekOptions = (year) => {
 const TEXT_FILTER_KEYS = new Set([
   'vacancy_ext_id', 'vacancy_name', 'team_lead_name', 'city_name',
   'candidate_name', 'candidate_company', 'ex_employee_name', 'unit_id',
+  'feasibility_name', 'iqhr_link', 'comment', 'offer_rejection_reason',
 ]);
+
+const REPORTS_FILTERS_KEY = 'rms_reports_filters';
+const loadSavedReportsFilters = () => {
+  try {
+    const s = sessionStorage.getItem(REPORTS_FILTERS_KEY);
+    return s ? JSON.parse(s) : null;
+  } catch { return null; }
+};
+const saveSavedReportsFilters = (data) => {
+  try {
+    if (!data) {
+      sessionStorage.removeItem(REPORTS_FILTERS_KEY);
+    } else {
+      sessionStorage.setItem(REPORTS_FILTERS_KEY, JSON.stringify(data));
+    }
+  } catch {}
+};
 
 const NUMBER_FILTER_KEYS = new Set([
   'quantity', 'total_resumes_sent', 'total_candidates_agreed', 
   'total_interviews_planned', 'total_interviews_conducted', 
-  'total_offer_made', 'work_duration_days', 'salary_gross', 'report_count'
+  'total_offer_made', 'total_offer_accepted', 'work_duration_days', 'salary_gross', 'report_count'
 ]);
 
+const DATE_FILTER_KEYS = new Set(['open_date', 'close_date', 'status_changed_at']);
+
 const getPopupContainer = () => document.body;
+
+const DateRangeFilterDropdown = ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
+  const containerRef = React.useRef(null);
+  const parseRange = (keys) => {
+    if (!keys || keys.length === 0) return [null, null];
+    const [from, to] = (keys[0] || '').split('|');
+    const d1 = from && dayjs(from, 'DD.MM.YY', true).isValid() ? dayjs(from, 'DD.MM.YY') : null;
+    const d2 = to && dayjs(to, 'DD.MM.YY', true).isValid() ? dayjs(to, 'DD.MM.YY') : null;
+    return [d1, d2];
+  };
+  return (
+    <div ref={containerRef} style={{ padding: '12px 16px' }}>
+      <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13, color: 'var(--text-color)' }}>Выберите период</div>
+      <DatePicker.RangePicker
+        format="DD.MM.YYYY"
+        placeholder={['Дата от', 'Дата до']}
+        value={parseRange(selectedKeys)}
+        getPopupContainer={() => document.body}
+        style={{ width: 280, marginBottom: 10 }}
+        onChange={(dates) => {
+          if (dates && dates[0] && dates[1]) {
+            setSelectedKeys([`${dates[0].format('DD.MM.YY')}|${dates[1].format('DD.MM.YY')}`]);
+          } else {
+            setSelectedKeys([]);
+          }
+        }}
+        allowClear
+      />
+      <br />
+      <Space>
+        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 80 }}>Найти</Button>
+        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 80 }}>Сброс</Button>
+      </Space>
+    </div>
+  );
+};
+
+const DATE_FILTER_DROPDOWN = {
+  filterDropdown: (props) => <DateRangeFilterDropdown {...props} />,
+  filterDropdownProps: { getPopupContainer },
+};
 
 const TEXT_FILTER_DROPDOWN = {
   filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
@@ -222,7 +284,7 @@ const ReportsPage = () => {
         const types = [
           'specialist_level', 'vacancy_status', 'it_role', 'admin_manager',
           'project', 'source', 'internal_transfer', 'replacement_type',
-          'employment_type', 'feasibility', 'block', 'recruiter'
+          'employment_type', 'block', 'recruiter'
         ];
         const results = {};
         for (const type of types) {
@@ -230,7 +292,7 @@ const ReportsPage = () => {
           const response = await api.get(`/dictionaries/by-type/${type}`);
           results[type] = response.data;
         }
-        const usersResp = await api.get('/users');
+        const usersResp = await api.get('/users?limit=1000');
         results['recruiter'] = (usersResp.data.items || []).map(u => ({ id: u.id, value: u.full_name }));
         setDictionaries(results);
       } catch (error) {
@@ -248,25 +310,34 @@ const ReportsPage = () => {
   const [total,       setTotal]       = useState(0);
   const [loading,     setLoading]     = useState(false);
   const [pageSize,    setPageSize]    = useState(loadPS());
-  const [curPage,     setCurPage]     = useState(1);
+  const savedReportsFilters = useMemo(() => loadSavedReportsFilters(), []);
+
+  const [curPage,     setCurPage]     = useState(() => savedReportsFilters?.curPage || 1);
 
   // Фильтры столбцов — как в VacancyTable (filteredInfo)
-  const [filteredInfo, setFilteredInfo] = useState({});
+  const [filteredInfo, setFilteredInfo] = useState(() => savedReportsFilters?.filteredInfo || {});
   // Сортировка — ref для синхронного доступа + state для re-render
   const sortedInfoRef = useRef({});
   const [sortedInfo,  setSortedInfo]  = useState({});
 
   // Верхние фильтры по датам/периоду
-  const [selYear,   setSelYear]   = useState(null);
-  const [selMonth,  setSelMonth]  = useState(null);
-  const [selWeek,   setSelWeek]   = useState(null);
-  const [dateRange, setDateRange] = useState(null);
-  const [searchVacancyId, setSearchVacancyId] = useState('');
+  const [selYear,   setSelYear]   = useState(() => savedReportsFilters?.selYear ?? null);
+  const [selMonth,  setSelMonth]  = useState(() => savedReportsFilters?.selMonth ?? null);
+  const [selWeek,   setSelWeek]   = useState(() => savedReportsFilters?.selWeek ?? null);
+  const [dateRange, setDateRange] = useState(() => {
+    if (savedReportsFilters?.dateRange && savedReportsFilters.dateRange.length === 2) {
+      return [dayjs(savedReportsFilters.dateRange[0]), dayjs(savedReportsFilters.dateRange[1])];
+    }
+    return null;
+  });
+  const [searchVacancyId, setSearchVacancyId] = useState(() => savedReportsFilters?.searchVacancyId || '');
+  const [onlyActiveWork,  setOnlyActiveWork]  = useState(() => savedReportsFilters?.onlyActiveWork ?? false);
 
-  const [exportModal,   setExportModal]   = useState(false);
-  const [exportPeriod,  setExportPeriod]  = useState('all_time');
-  const [exportDates,   setExportDates]   = useState(null);
-  const [exportLoading, setExportLoading] = useState(false);
+  const [exportModal,      setExportModal]      = useState(false);
+  const [exportPeriod,     setExportPeriod]     = useState('current_filter');
+  const [exportDates,      setExportDates]      = useState(null);
+  const [exportOnlyActive, setExportOnlyActive] = useState(false);
+  const [exportLoading,    setExportLoading]    = useState(false);
 
   const tourRef = useRef();
 
@@ -307,6 +378,7 @@ const ReportsPage = () => {
     wk    = selWeek,
     dr    = dateRange,
     svid  = searchVacancyId,
+    oaw   = onlyActiveWork,
   } = {}) => {
     const reqId = ++latestReqRef.current;
     setLoading(true);
@@ -317,12 +389,26 @@ const ReportsPage = () => {
       // Бэкенд сам различает через get_str / get_list
       for (const [key, vals] of Object.entries(fi || {})) {
         if (!vals || vals.length === 0) continue;
-        if (TEXT_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
-          // Текстовый/числовой фильтр: берём первое значение, обрезаем пробелы/табы
+        if (DATE_FILTER_KEYS.has(key)) {
+          const val = Array.isArray(vals) ? vals[0] : vals;
+          if (val != null && val !== '') {
+            const parts = String(val).split('|');
+            if (parts.length === 2) {
+              const [from, to] = parts;
+              const parseDate = (s) => {
+                const d = dayjs(s, 'DD.MM.YY', true);
+                return d.isValid() ? d.format('YYYY-MM-DD') : s;
+              };
+              if (from) p.append(`${key}_from`, parseDate(from));
+              if (to)   p.append(`${key}_to`,   parseDate(to));
+            } else {
+              p.append(key, String(val));
+            }
+          }
+        } else if (TEXT_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
           const val = String(Array.isArray(vals) ? vals[0] : vals).trim();
           if (val) p.append(key, val);
         } else {
-          // Словарный фильтр: передаём все ID
           vals.forEach(v => p.append(key, String(v)));
         }
       }
@@ -331,10 +417,11 @@ const ReportsPage = () => {
       p.append('limit', String(ps));
 
       // ── Сортировка ──
-      const sorters = Array.isArray(si) ? si : (si?.field || si?.columnKey ? [si] : []);
-      const sf = sorters.map(s => s.field || s.columnKey).filter(Boolean);
-      const so = sorters.map(s => s.order === 'ascend' ? 'asc' : 'desc');
-      if (sf.length > 0) {
+      const rawSorters = Array.isArray(si) ? si : (si && (si.field || si.columnKey) ? [si] : []);
+      const validSorters = rawSorters.filter(s => s && s.order && (s.field || s.columnKey));
+      if (validSorters.length > 0) {
+        const sf = validSorters.map(s => s.field || s.columnKey);
+        const so = validSorters.map(s => s.order === 'ascend' ? 'asc' : 'desc');
         p.append('sort_field', sf.join(','));
         p.append('sort_order', so.join(','));
       }
@@ -348,6 +435,7 @@ const ReportsPage = () => {
         p.append('end_date',   dr[1].format('YYYY-MM-DD'));
       }
       if (svid?.trim()) p.append('search_vacancy_id', svid.trim());
+      if (oaw) p.append('only_active_work', 'true');
 
       const res = await api.get(`/reports/all?${p.toString()}`);
 
@@ -363,7 +451,20 @@ const ReportsPage = () => {
     } finally {
       if (reqId === latestReqRef.current) setLoading(false);
     }
-  }, [curPage, pageSize, filteredInfo, selYear, selMonth, selWeek, dateRange, searchVacancyId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [curPage, pageSize, filteredInfo, selYear, selMonth, selWeek, dateRange, searchVacancyId, onlyActiveWork]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    saveSavedReportsFilters({
+      filteredInfo,
+      selYear,
+      selMonth,
+      selWeek,
+      dateRange: dateRange && dateRange[0] && dateRange[1] ? [dateRange[0].toISOString(), dateRange[1].toISOString()] : null,
+      searchVacancyId,
+      onlyActiveWork,
+      curPage,
+    });
+  }, [filteredInfo, selYear, selMonth, selWeek, dateRange, searchVacancyId, onlyActiveWork, curPage]);
 
   useEffect(() => { fetchData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -371,7 +472,13 @@ const ReportsPage = () => {
   const handleTableChange = useCallback((pag, filters, sorter) => {
     const newPage = pag.current  || 1;
     const newPs   = pag.pageSize || pageSize;
-    const newSi   = sorter || [];
+    let newSi     = sorter || null;
+    if (Array.isArray(newSi)) {
+      newSi = newSi.filter(s => s && s.order);
+      if (newSi.length === 0) newSi = null;
+    } else if (newSi && !newSi.order) {
+      newSi = null;
+    }
     const newFi   = filters || {};
 
     if (newPs !== pageSize) savePS(newPs);
@@ -388,18 +495,20 @@ const ReportsPage = () => {
 
   // ─── Сброс фильтров столбцов ─────────────────────────────────────────────
   const handleResetTableFilters = useCallback(() => {
-    sortedInfoRef.current = [];
-    setSortedInfo([]);
+    sortedInfoRef.current = null;
+    setSortedInfo(null);
     setFilteredInfo({});
     setCurPage(1);
-    fetchData({ page: 1, si: [], fi: {} });
+    fetchData({ page: 1, si: null, fi: {} });
     message.success('Фильтры столбцов сброшены');
   }, [fetchData]);
 
   // Кол-во активных фильтров столбцов
   const activeTableFiltersCount = useMemo(() => {
     const filtersCount = Object.values(filteredInfo).filter(v => v && v.length > 0).length;
-    const sortsCount = Array.isArray(sortedInfo) ? sortedInfo.length : (sortedInfo?.columnKey ? 1 : 0);
+    const sortsCount = Array.isArray(sortedInfo)
+      ? sortedInfo.filter(s => s && s.order).length
+      : (sortedInfo?.order ? 1 : 0);
     return filtersCount + sortsCount;
   }, [filteredInfo, sortedInfo]);
 
@@ -407,11 +516,13 @@ const ReportsPage = () => {
   const handleReset = useCallback(() => {
     setSelYear(null); setSelMonth(null); setSelWeek(null); setDateRange(null);
     setSearchVacancyId('');
-    sortedInfoRef.current = [];
-    setSortedInfo([]);
+    setOnlyActiveWork(false);
+    sortedInfoRef.current = null;
+    setSortedInfo(null);
     setFilteredInfo({});
     setCurPage(1);
-    fetchData({ page: 1, si: [], fi: {}, yr: null, mo: null, wk: null, dr: null, svid: '' });
+    saveSavedReportsFilters(null);
+    fetchData({ page: 1, si: null, fi: {}, yr: null, mo: null, wk: null, dr: null, svid: '', oaw: false });
   }, [fetchData]);
 
   const handleExport = async () => {
@@ -420,7 +531,15 @@ const ReportsPage = () => {
       const token = tokenStorage.getAccess();
       const p = new URLSearchParams();
 
-      if (exportPeriod === 'current_week') {
+      if (exportPeriod === 'current_filter') {
+        if (selYear) p.append('year', selYear);
+        if (selMonth) p.append('month', selMonth);
+        if (selWeek) p.append('week_number', selWeek);
+        if (dateRange?.length === 2) {
+          p.append('start_date', dateRange[0].format('YYYY-MM-DD'));
+          p.append('end_date',   dateRange[1].format('YYYY-MM-DD'));
+        }
+      } else if (exportPeriod === 'current_week') {
         const mon = dayjs().startOf('isoWeek');
         p.append('start_date', mon.format('YYYY-MM-DD'));
         p.append('end_date',   mon.add(6,'day').format('YYYY-MM-DD'));
@@ -435,18 +554,39 @@ const ReportsPage = () => {
         p.append('end_date',   exportDates[1].format('YYYY-MM-DD'));
       }
 
+      if (exportOnlyActive) {
+        p.append('only_active_work', 'true');
+      }
+
       const si = sortedInfoRef.current;
-      const sorters = Array.isArray(si) ? si : (si?.field || si?.columnKey ? [si] : []);
-      const sf = sorters.map(s => s.field || s.columnKey).filter(Boolean);
-      const so = sorters.map(s => s.order === 'ascend' ? 'asc' : 'desc');
-      if (sf.length > 0) {
+      const rawSorters = Array.isArray(si) ? si : (si && (si.field || si.columnKey) ? [si] : []);
+      const validSorters = rawSorters.filter(s => s && s.order && (s.field || s.columnKey));
+      if (validSorters.length > 0) {
+        const sf = validSorters.map(s => s.field || s.columnKey);
+        const so = validSorters.map(s => s.order === 'ascend' ? 'asc' : 'desc');
         p.append('sort_field', sf.join(','));
         p.append('sort_order', so.join(','));
       }
 
       Object.entries(filteredInfo || {}).forEach(([k, vals]) => {
         if (!vals || vals.length === 0) return;
-        if (TEXT_FILTER_KEYS.has(k) || NUMBER_FILTER_KEYS.has(k)) {
+        if (DATE_FILTER_KEYS.has(k)) {
+          const val = Array.isArray(vals) ? vals[0] : vals;
+          if (val != null && val !== '') {
+            const parts = String(val).split('|');
+            if (parts.length === 2) {
+              const [from, to] = parts;
+              const parseDate = (s) => {
+                const d = dayjs(s, 'DD.MM.YY', true);
+                return d.isValid() ? d.format('YYYY-MM-DD') : s;
+              };
+              if (from) p.append(`${k}_from`, parseDate(from));
+              if (to)   p.append(`${k}_to`,   parseDate(to));
+            } else {
+              p.append(k, String(val));
+            }
+          }
+        } else if (TEXT_FILTER_KEYS.has(k) || NUMBER_FILTER_KEYS.has(k)) {
           const val = String(Array.isArray(vals) ? vals[0] : vals).trim();
           if (val) p.append(k, val);
         } else {
@@ -479,13 +619,13 @@ const ReportsPage = () => {
   const mkSort = (field) => {
     let order = null;
     if (Array.isArray(sortedInfo)) {
-      const match = sortedInfo.find(s => s.field === field || s.columnKey === field);
+      const match = sortedInfo.find(s => (s.field === field || s.columnKey === field) && s.order);
       order = match ? match.order : null;
     } else {
-      order = (sortedInfo?.field === field || sortedInfo?.columnKey === field) ? sortedInfo.order : null;
+      order = (sortedInfo?.field === field || sortedInfo?.columnKey === field) ? (sortedInfo.order || null) : null;
     }
     return {
-      sorter: { multiple: 1 },
+      sorter: true,
       sortOrder: order,
     };
   };
@@ -510,6 +650,7 @@ const ReportsPage = () => {
       },
       {
         title:'ID вакансии', dataIndex:'vacancy_ext_id', key:'vacancy_ext_id', width:130,
+        ...mkSort('vacancy_ext_id'),
         filteredValue: fi['vacancy_ext_id'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
@@ -517,6 +658,8 @@ const ReportsPage = () => {
       {
         title:'Дата открытия', dataIndex:'open_date', key:'open_date', width:120,
         ...mkSort('open_date'),
+        filteredValue: fi['open_date'] || null,
+        ...DATE_FILTER_DROPDOWN,
         render: v => v ? dayjs(v).format('DD.MM.YY') : '-',
       },
       {
@@ -528,42 +671,49 @@ const ReportsPage = () => {
       },
       {
         title:'Уровень специалиста', dataIndex:'level_name', key:'level_name', width:130,
+        ...mkSort('level_name'),
         filteredValue: fi['level_name'] || null,
         ...dictFilter(dictionaries?.specialist_level),
         render: v => v || '-',
       },
       {
         title:'Вакансия', dataIndex:'vacancy_name', key:'vacancy_name', width:170, ellipsis:true,
+        ...mkSort('vacancy_name'),
         filteredValue: fi['vacancy_name'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
         title:'Статус вакансии', dataIndex:'status_name', key:'status_name', width:180,
+        ...mkSort('status_name'),
         filteredValue: fi['status_name'] || null,
         ...dictFilter(dictionaries?.vacancy_status),
         render: v => v ? <span>{v}</span> : '-',
       },
       {
         title:'ИТ роль', dataIndex:'it_role_name', key:'it_role_name', width:140, ellipsis:true,
+        ...mkSort('it_role_name'),
         filteredValue: fi['it_role_name'] || null,
         ...dictFilter(dictionaries?.it_role),
         render: v => v || '-',
       },
       {
         title:'Адм. руководитель', dataIndex:'admin_manager_name', key:'customer', width:180, ellipsis:true,
+        ...mkSort('customer'),
         filteredValue: fi['customer'] || null,
         ...dictFilter(dictionaries?.admin_manager),
         render: v => v || '-',
       },
       {
         title:'Тимлид', dataIndex:'team_lead_name', key:'team_lead_name', width:160, ellipsis:true,
+        ...mkSort('team_lead_name'),
         filteredValue: fi['team_lead_name'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
         title:'Проект', dataIndex:'project_name', key:'project_name', width:150, ellipsis:true,
+        ...mkSort('project_name'),
         filteredValue: fi['project_name'] || null,
         ...dictFilter(dictionaries?.project),
         render: v => v || '-',
@@ -604,19 +754,36 @@ const ReportsPage = () => {
         render: v => <span style={{ fontWeight:500, color:'#EB2F96' }}>{v ?? 0}</span>,
       },
       {
+        title:WH('Оффер принят'), dataIndex:'total_offer_accepted', key:'total_offer_accepted', width: 110, align: 'center',
+        ...mkSort('total_offer_accepted'),
+        filteredValue: fi['total_offer_accepted'] || null,
+        ...NUMBER_FILTER_DROPDOWN,
+        render: v => <span style={{ fontWeight:500, color:'#52C41A' }}>{v ?? 0}</span>,
+      },
+      {
+        title:'Причина отказа от Оффера', dataIndex:'offer_rejection_reason', key:'offer_rejection_reason', width: 170, ellipsis: true,
+        ...mkSort('offer_rejection_reason'),
+        filteredValue: fi['offer_rejection_reason'] || null,
+        ...TEXT_FILTER_DROPDOWN,
+        render: v => v || '-',
+      },
+      {
         title:'Город', dataIndex:'city_name', key:'city_name', width:110,
+        ...mkSort('city_name'),
         filteredValue: fi['city_name'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
         title:'Источник найма', dataIndex:'source_name', key:'source_name', width:140,
+        ...mkSort('source_name'),
         filteredValue: fi['source_name'] || null,
         ...dictFilter(dictionaries?.source),
         render: v => v || '-',
       },
       {
         title:'Внутр. перевод', dataIndex:'internal_transfer_name', key:'internal_transfer_name', width:140,
+        ...mkSort('internal_transfer_name'),
         filteredValue: fi['internal_transfer_name'] || null,
         ...dictFilter(dictionaries?.internal_transfer),
         render: v => v || '-',
@@ -624,72 +791,116 @@ const ReportsPage = () => {
       {
         title:'Дата изм. статуса', dataIndex:'status_changed_at', key:'status_changed_at', width:130,
         ...mkSort('status_changed_at'),
+        filteredValue: fi['status_changed_at'] || null,
+        ...DATE_FILTER_DROPDOWN,
         render: v => v ? dayjs(v).format('DD.MM.YY') : '-',
       },
       {
         title:'Дата закрытия', dataIndex:'close_date', key:'close_date', width:120,
+        ...mkSort('close_date'),
+        filteredValue: fi['close_date'] || null,
+        ...DATE_FILTER_DROPDOWN,
         render: v => v ? dayjs(v).format('DD.MM.YY') : '-',
       },
       {
         title:'ФИО кандидата', dataIndex:'candidate_name', key:'candidate_name', width:180, ellipsis:true,
+        ...mkSort('candidate_name'),
         filteredValue: fi['candidate_name'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
+        title:'Комментарий', dataIndex:'comment', key:'comment', width:180, ellipsis:true,
+        ...mkSort('comment'),
+        filteredValue: fi['comment'] || null,
+        ...TEXT_FILTER_DROPDOWN,
+        render: v => v || '-',
+      },
+      {
         title:'Компания кандидата', dataIndex:'candidate_company', key:'candidate_company', width:160, ellipsis:true,
+        ...mkSort('candidate_company'),
         filteredValue: fi['candidate_company'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
         title:'Новая / Замена', dataIndex:'replacement_type_name', key:'replacement_type_name', width:120,
+        ...mkSort('replacement_type_name'),
         filteredValue: fi['replacement_type_name'] || null,
         ...dictFilter(dictionaries?.replacement_type),
         render: v => v || '-',
       },
       {
         title:'ФИО бывшего сотр.', dataIndex:'ex_employee_name', key:'ex_employee_name', width:170, ellipsis:true,
+        ...mkSort('ex_employee_name'),
         filteredValue: fi['ex_employee_name'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
         title:'ID ШЕ', dataIndex:'unit_id', key:'unit_id', width:110,
+        ...mkSort('unit_id'),
         filteredValue: fi['unit_id'] || null,
         ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
         title:'Вид занятости', dataIndex:'employment_type_name', key:'employment_type_name', width:170,
+        ...mkSort('employment_type_name'),
         filteredValue: fi['employment_type_name'] || null,
         ...dictFilter(dictionaries?.employment_type),
         render: v => v || '-',
       },
       {
         title:'ТЭО проекта', dataIndex:'feasibility_name', key:'feasibility_name', width:150,
+        ...mkSort('feasibility_name'),
         filteredValue: fi['feasibility_name'] || null,
-        ...dictFilter(dictionaries?.feasibility),
+        ...TEXT_FILTER_DROPDOWN,
         render: v => v || '-',
       },
       {
-        title:'IQHR', dataIndex:'iqhr_link', key:'iqhr_link', width:100, align:'center',
-        render: v => v ? <a href={v} target="_blank" rel="noopener noreferrer">Ссылка</a> : '-',
+        title:'Ссылка IQHR', dataIndex:'iqhr_link', key:'iqhr_link', width:140, ellipsis:true,
+        ...mkSort('iqhr_link'),
+        filteredValue: fi['iqhr_link'] || null,
+        ...TEXT_FILTER_DROPDOWN,
+        render: (link) => {
+          if (!link) return '-';
+          const isUrl = String(link).startsWith('http://') || String(link).startsWith('https://');
+          return isUrl ? (
+            <a href={link} target="_blank" rel="noopener noreferrer" title={link}>
+              {link}
+            </a>
+          ) : (
+            <span>{link}</span>
+          );
+        },
       },
       {
         title:'Рекрутер', dataIndex:'recruiter_name', key:'recruiter_name', width:160, ellipsis:true,
+        ...mkSort('recruiter_name'),
         filteredValue: fi['recruiter_name'] || null,
         ...dictFilter(dictionaries?.recruiter),
-        render: v => v || '-',
+        render: (v, r) => v || r.recruiter?.full_name || '-',
+      },
+      {
+        title:'Доп. рекрутер', dataIndex:'co_recruiter_name', key:'co_recruiter_name', width:160, ellipsis:true,
+        ...mkSort('co_recruiter_name'),
+        filteredValue: fi['co_recruiter_name'] || null,
+        ...dictFilter(dictionaries?.recruiter),
+        render: (v, r) => v || r.co_recruiter?.full_name || '-',
       },
       {
         title:'Блок', dataIndex:'block_name', key:'block_name', width:140, ellipsis:true,
+        ...mkSort('block_name'),
         filteredValue: fi['block_name'] || null,
         ...dictFilter(dictionaries?.block),
         render: v => v || '-',
       },
       {
         title:WH('Срок работы (дней)'), dataIndex:'work_duration_days', key:'work_duration_days', width:110, align:'center',
+        ...mkSort('work_duration_days'),
+        filteredValue: fi['work_duration_days'] || null,
+        ...NUMBER_FILTER_DROPDOWN,
         render: v => v !== null && v !== undefined ? v : '-',
       },
       {
@@ -712,10 +923,12 @@ const ReportsPage = () => {
       },
       {
         title:'Дата создания', dataIndex:'first_report_date', key:'first_report_date', width:150,
+        ...mkSort('first_report_date'),
         render: v => v ? dayjs(v).format('DD.MM.YY HH:mm') : '-',
       },
       {
         title:'Дата обновления', dataIndex:'last_updated', key:'last_updated', width:150,
+        ...mkSort('last_updated'),
         render: v => v ? dayjs(v).format('DD.MM.YY HH:mm') : '-',
       },
     ];
@@ -746,7 +959,7 @@ const ReportsPage = () => {
     return columns.reduce((acc, col) => acc + (col.width || 100), 0);
   }, [columns]);
 
-  const hasTopFilters = selYear || selMonth || selWeek || dateRange || searchVacancyId?.trim();
+  const hasTopFilters = selYear || selMonth || selWeek || dateRange || searchVacancyId?.trim() || onlyActiveWork;
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', gap:10 }}>
@@ -794,6 +1007,19 @@ const ReportsPage = () => {
             onClick={() => { setCurPage(1); fetchData({ page:1 }); }}>
             Применить
           </Button>
+
+          <Checkbox
+            checked={onlyActiveWork}
+            onChange={e => {
+              const val = e.target.checked;
+              setOnlyActiveWork(val);
+              setCurPage(1);
+              fetchData({ page: 1, oaw: val });
+            }}
+            style={{ fontSize: 12, whiteSpace: 'nowrap', userSelect: 'none', marginLeft: 4 }}
+          >
+            Только с движениями за период
+          </Checkbox>
         </div>
 
         <Button size="small" icon={<ClearOutlined />} onClick={handleReset}
@@ -819,7 +1045,7 @@ const ReportsPage = () => {
           </Tooltip>
         )}
         <Button type="primary" size="small" icon={<DownloadOutlined />}
-          onClick={() => setExportModal(true)}>
+          onClick={() => { setExportOnlyActive(onlyActiveWork); setExportModal(true); }}>
           Экспорт
         </Button>
       </div>
@@ -908,6 +1134,14 @@ const ReportsPage = () => {
             />
           </div>
         )}
+        <div style={{ marginBottom:16 }}>
+          <Checkbox
+            checked={exportOnlyActive}
+            onChange={e => setExportOnlyActive(e.target.checked)}
+          >
+            Только вакансии с движениями за период
+          </Checkbox>
+        </div>
         <p style={{ color:'#8c8c8c', fontSize:12, margin:0 }}>
           Отчёты фильтруются по дате начала недели в выбранном периоде.
           Сортировка (если применена к колонке) также учитывается.

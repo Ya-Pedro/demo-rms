@@ -1,11 +1,11 @@
 
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Modal, Form, Select, DatePicker, Button, Space, Alert,
-  Tag, Divider, Popconfirm, Typography, message,
+  Tag, Divider, Popconfirm, Typography, message, Table,
 } from 'antd';
-import { UserSwitchOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { UserSwitchOutlined, CloseCircleOutlined, HistoryOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../App';
 
@@ -16,12 +16,32 @@ const DelegationModal = ({ open, vacancy, users, onClose, onSuccess }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [revoking, setRevoking] = useState(false);
+  const [historyList, setHistoryList] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const activeDelegation = vacancy?.delegation;
 
+  const loadHistory = useCallback(async () => {
+    if (!vacancy?.id) return;
+    setHistoryLoading(true);
+    try {
+      const res = await api.get(`/vacancies/${vacancy.id}/delegations`);
+      setHistoryList(res.data || []);
+    } catch (err) {
+      console.error('Failed to load delegation history', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [vacancy?.id]);
+
   useEffect(() => {
-    if (open) form.resetFields();
-  }, [open, form]);
+    if (open) {
+      form.resetFields();
+      loadHistory();
+    } else {
+      setHistoryList([]);
+    }
+  }, [open, form, loadHistory]);
 
   const recruiterOptions = useMemo(() => {
     if (!users || !vacancy) return [];
@@ -57,6 +77,7 @@ const DelegationModal = ({ open, vacancy, users, onClose, onSuccess }) => {
       });
       message.success('Делегирование создано');
       form.resetFields();
+      await loadHistory();
       onSuccess?.();
       onClose();
     } catch (err) {
@@ -73,6 +94,7 @@ const DelegationModal = ({ open, vacancy, users, onClose, onSuccess }) => {
     try {
       await api.delete(`/delegations/${activeDelegation.id}`);
       message.success('Делегирование досрочно завершено');
+      await loadHistory();
       onSuccess?.();
       onClose();
     } catch (err) {
@@ -82,6 +104,35 @@ const DelegationModal = ({ open, vacancy, users, onClose, onSuccess }) => {
       setRevoking(false);
     }
   };
+
+  const historyColumns = [
+    {
+      title: 'Временный рекрутер',
+      key: 'delegated_to',
+      render: (_, r) => r.delegated_to?.full_name || `ID ${r.delegated_to_id}`,
+    },
+    {
+      title: 'Период',
+      key: 'period',
+      render: (_, r) => (
+        <span style={{ fontSize: 12 }}>
+          {dayjs(r.start_date).format('DD.MM.YYYY')} – {dayjs(r.end_date).format('DD.MM.YYYY')}
+        </span>
+      ),
+    },
+    {
+      title: 'Статус',
+      key: 'is_active',
+      align: 'center',
+      width: 100,
+      render: (_, r) =>
+        r.is_active ? (
+          <Tag color="success">Активно</Tag>
+        ) : (
+          <Tag color="default">Завершено</Tag>
+        ),
+    },
+  ];
 
   return (
     <Modal
@@ -94,7 +145,7 @@ const DelegationModal = ({ open, vacancy, users, onClose, onSuccess }) => {
       open={open}
       onCancel={onClose}
       footer={null}
-      width={480}
+      width={560}
       destroyOnClose
     >
       {vacancy && (
@@ -210,6 +261,22 @@ const DelegationModal = ({ open, vacancy, users, onClose, onSuccess }) => {
           </Space>
         </Form.Item>
       </Form>
+
+      <Divider orientation="left" plain style={{ fontSize: 13, marginTop: 24, marginBottom: 12 }}>
+        <Space size={4}>
+          <HistoryOutlined />
+          <span>История делегирований</span>
+        </Space>
+      </Divider>
+      <Table
+        size="small"
+        rowKey="id"
+        columns={historyColumns}
+        dataSource={historyList}
+        loading={historyLoading}
+        pagination={false}
+        locale={{ emptyText: 'Нет истории делегирований' }}
+      />
     </Modal>
   );
 };

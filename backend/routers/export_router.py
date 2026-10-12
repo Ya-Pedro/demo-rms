@@ -101,73 +101,85 @@ def build_vacancy_query_with_filters(
 
     return query
 
-def build_excel_from_vacancies(vacancies: List[Vacancy], period: str) -> tuple[BytesIO, str]:
-\
-\
-\
-\
-       
+def get_report_date(r) -> Optional[date]:
+    if r.week_start:
+        return r.week_start
+    if r.year and r.week_number:
+        try:
+            return date.fromisocalendar(r.year, r.week_number, 1)
+        except Exception:
+            return None
+    return None
+
+def build_excel_from_vacancies(
+    vacancies: List[Vacancy],
+    period: str,
+    filter_start: Optional[date] = None,
+    filter_end: Optional[date] = None,
+) -> tuple[BytesIO, str]:
     data = []
     for v in vacancies:
-                                                                           
-                                                                               
         reports = v.weekly_reports or []
+        if filter_start or filter_end:
+            def rep_matches(r):
+                rd = get_report_date(r)
+                if not rd:
+                    return False
+                if filter_start and rd < filter_start:
+                    return False
+                if filter_end and rd > filter_end:
+                    return False
+                return True
+            reports = [r for r in reports if rep_matches(r)]
+        elif period == "current_week":
+            cur_year, cur_week, _ = datetime.now().isocalendar()
+            reports = [r for r in reports if r.week_number == cur_week and r.year == cur_year]
         resume_at_customer = sum(r.resumes_sent or 0        for r in reports)
         resume_approved    = sum(r.candidates_agreed or 0   for r in reports)
         interviews_fact    = sum(r.interviews_conducted or 0 for r in reports)
         interviews_plan    = sum(r.interviews_planned or 0  for r in reports)
         offer_made         = sum(r.offer_made or 0          for r in reports)
+        offer_accepted     = sum(r.offer_accepted or 0      for r in reports)
 
-                                                                            
-        work_duration = v.work_duration_days                                     
+        work_duration = v.work_duration_days
         if work_duration is None and v.open_date and v.close_date:
             work_duration = (v.close_date - v.open_date).days
 
-                                                                           
         row = {
-                                         
             "ID вакансии":                    v.vacancy_id or "",
             "Дата открытия":                  str(v.open_date) if v.open_date else "",
-                                   
             "Количество":                     v.quantity or 0,
-                                              
             "Уровень специалиста":            v.level.value if v.level else "",
             "Вакансия":                       v.position_name or "",
-                                        
             "Статус вакансии":                v.status.value if v.status else "",
             "ИТ роль":                        v.it_role.value if v.it_role else "",
-                                                
             "Адм. руководитель":              v.admin_manager.value if v.admin_manager else "",
-            "Тимлид":                         v.team_lead.value if v.team_lead else "",
+            "Тимлид":                         v.team_lead.value if v.team_lead else (v.team_lead_text or ""),
             "Проект":                         v.project.value if v.project else "",
-                                                                    
             "Передано заказчику":             resume_at_customer,
             "Резюме одобрено":                resume_approved,
             "Собеседования факт":             interviews_fact,
             "Собеседования план":             interviews_plan,
             "Оффер сделан":                   offer_made,
-                                           
+            "Оффер принят":                   offer_accepted,
+            "Причина отказа от Оффера":       v.offer_rejection_reason or "",
             "Город":                          v.city.value if v.city else (v.city_text or ""),
             "Источник найма":                 v.source.value if v.source else "",
             "Внутренний перевод":             v.internal_transfer.value if v.internal_transfer else "",
-                                 
             "Дата изм. статуса":              str(v.status_changed_at) if v.status_changed_at else "",
             "Дата закрытия":                  str(v.close_date) if v.close_date else "",
-                                     
             "ФИО кандидата":                  v.candidate_name or "",
+            "Комментарий":                    v.comment or "",
             "Компания кандидата":             v.candidate_company or "",
-                                   
             "Новая / Замена":                 v.replacement_type.value if v.replacement_type else "",
             "ФИО бывшего сотр.":              v.ex_employee_name or "",
-                                      
             "ID ШЕ":                          v.unit_id or "",
             "Вид занятости":                  v.employment_type.value if v.employment_type else "",
-            "ТЭО проекта":                    v.feasibility.value if v.feasibility else "",
+            "ТЭО проекта":                    v.feasibility_text or (v.feasibility.value if v.feasibility else ""),
             "Ссылка IQHR":                    v.iqhr_link or "",
-                                            
             "Рекрутер":                       v.recruiter.full_name if v.recruiter else "",
+            "Доп. рекрутер":                  v.co_recruiter.full_name if v.co_recruiter else "",
             "Блок":                           v.block.value if v.block else "",
-                                           
             "Срок работы (дней)":             work_duration if work_duration is not None else "",
             "Зарплата кандидатов Gross":      v.salary_gross or "",
         }
@@ -217,6 +229,9 @@ async def export_vacancies_excel(
     exclude_status_id: Optional[List[int]] = Query(None),
     project_id: Optional[List[int]] = Query(None),
     recruiter_id: Optional[List[int]] = Query(None),
+    co_recruiter_id: Optional[List[int]] = Query(None),
+    search_recruiter: Optional[str] = Query(None),
+    search_co_recruiter: Optional[str] = Query(None),
     it_role_id: Optional[List[int]] = Query(None),
     level_id: Optional[List[int]] = Query(None),
     city_id: Optional[List[int]] = Query(None),
@@ -237,10 +252,11 @@ async def export_vacancies_excel(
     search_unit_id: Optional[str] = Query(None),
     search_salary_gross: Optional[str] = Query(None),
     search_iqhr_link: Optional[str] = Query(None),
+    search_feasibility_text: Optional[str] = Query(None),
 ):
-                                                                         
     query = select(Vacancy).options(
         selectinload(Vacancy.recruiter),
+        selectinload(Vacancy.co_recruiter),
         selectinload(Vacancy.level),
         selectinload(Vacancy.status),
         selectinload(Vacancy.it_role),
@@ -257,7 +273,6 @@ async def export_vacancies_excel(
         selectinload(Vacancy.weekly_reports),
     )
     
-                                                           
     filter_start, filter_end = get_period_dates(period.value, start_date, end_date)
     query, _ = apply_vacancy_filters(
         query,
@@ -266,6 +281,9 @@ async def export_vacancies_excel(
         exclude_status_id=exclude_status_id,
         project_id=project_id,
         recruiter_id=recruiter_id,
+        co_recruiter_id=co_recruiter_id,
+        search_recruiter=search_recruiter,
+        search_co_recruiter=search_co_recruiter,
         it_role_id=it_role_id,
         level_id=level_id,
         city_id=city_id,
@@ -285,14 +303,54 @@ async def export_vacancies_excel(
         search_unit_id=search_unit_id,
         search_salary_gross=search_salary_gross,
         search_iqhr_link=search_iqhr_link,
-        date_from=filter_start,
-        date_to=filter_end,
+        search_feasibility_text=search_feasibility_text,
     )
     query = query.order_by(Vacancy.id)
     result = await db.execute(query)
-    vacancies = result.scalars().all()
-    
-    output, filename = build_excel_from_vacancies(vacancies, period.value)
+    all_vacancies = result.scalars().all()
+
+    def vacancy_matches_period(v: Vacancy) -> bool:
+        if v.quantity == 0.001:
+            return False
+        if period == ExportPeriod.ALL_TIME or (not filter_start and not filter_end):
+            return True
+
+        if filter_end and v.open_date and v.open_date > filter_end:
+            return False
+
+        st_name = v.status.value if v.status else None
+
+        if st_name == "Закрыта":
+            if not v.close_date:
+                return False
+            if filter_start and v.close_date < filter_start:
+                return False
+            if filter_end and v.close_date > filter_end:
+                return False
+            return True
+
+        if st_name == "Отмена":
+            if v.status_changed_at is None:
+                return True
+            if filter_start and v.status_changed_at < filter_start:
+                return False
+            if filter_end and v.status_changed_at > filter_end:
+                return False
+            return True
+
+        if st_name == "Hold":
+            if v.status_changed_at is None:
+                return True
+            filter_year = (filter_end or filter_start).year if (filter_end or filter_start) else None
+            if filter_year and v.status_changed_at.year != filter_year:
+                return False
+            return True
+
+        return True
+
+    vacancies = [v for v in all_vacancies if vacancy_matches_period(v)]
+
+    output, filename = build_excel_from_vacancies(vacancies, period.value, filter_start, filter_end)
     
     return StreamingResponse(
         output,
@@ -331,6 +389,7 @@ async def export_vacancies_smart(
                                     
     query = select(Vacancy).options(
         selectinload(Vacancy.recruiter),
+        selectinload(Vacancy.co_recruiter),
         selectinload(Vacancy.level),
         selectinload(Vacancy.status),
         selectinload(Vacancy.it_role),
@@ -347,14 +406,12 @@ async def export_vacancies_smart(
         selectinload(Vacancy.weekly_reports),
     )
     
-                      
     filter_start, filter_end = get_period_dates(
         export_request.period or "all_time",
         export_request.start_date,
         export_request.end_date
     )
     
-                                     
     filters_to_apply = export_request.filters if export_request.apply_filters else None
     
     query = build_vacancy_query_with_filters(
@@ -371,7 +428,12 @@ async def export_vacancies_smart(
     result = await db.execute(query)
     vacancies = result.scalars().all()
     
-    output, filename = build_excel_from_vacancies(vacancies, export_request.period or "all_time")
+    output, filename = build_excel_from_vacancies(
+        vacancies,
+        export_request.period or "all_time",
+        filter_start,
+        filter_end,
+    )
     
                                                     
     if export_request.apply_filters and export_request.filters:

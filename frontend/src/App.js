@@ -15,6 +15,7 @@ import {
   BarChartOutlined,
   CloseOutlined,
   BulbOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 
 export const ThemeContext = createContext({
@@ -34,6 +35,7 @@ import DictionaryPage from './pages/DictionaryPage';
 import UsersPage from './pages/UsersPage';
 import ReportsPage from './pages/ReportsPage';
 import DashboardsPage from './pages/DashboardsPage';
+import NotesPage from './pages/NotesPage';
 import ChangePasswordModal from './pages/ChangePasswordModal';
 import TwoFactorSettings from './components/TwoFactorSettings';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -44,7 +46,7 @@ dayjs.locale('ru');
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
-const IDLE_TIMEOUT_MS = (Number(process.env.REACT_APP_IDLE_TIMEOUT_MINUTES) || 15) * 60 * 1000;
+const IDLE_TIMEOUT_MS = (Number(process.env.REACT_APP_IDLE_TIMEOUT_MINUTES) || 12 * 60) * 60 * 1000;
 
 const api = axios.create({
   baseURL: BACKEND_URL ? `${BACKEND_URL}/api` : '/api',
@@ -72,7 +74,10 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+export const APP_VERSION = process.env.REACT_APP_VERSION || '0.1.0';
+
 const forceLogout = () => {
+  if (window.location.pathname === '/login') return;
   tokenStorage.clear();
   window.location.href = '/login';
 };
@@ -85,8 +90,7 @@ api.interceptors.response.use(
     const isLoginPage = window.location.pathname === '/login';
     const isRefreshEndpoint = originalRequest?.url?.includes('/auth/refresh');
 
-    const isTokenError = error.response?.status === 401 ||
-      (error.response?.status === 403 && !isLoginPage);
+    const isTokenError = error.response?.status === 401;
 
     if (!isTokenError || isLoginPage || isRefreshEndpoint) {
       return Promise.reject(error);
@@ -288,6 +292,7 @@ const MainLayout = ({ children }) => {
     if (path === '/dictionary') return 'dictionary';
     if (path === '/users') return 'users';
     if (path === '/reports') return 'reports';
+    if (path === '/notes') return 'notes';
     if (path === '/dashboards') return 'dashboards';
     return 'dashboard';
   };
@@ -309,10 +314,19 @@ const MainLayout = ({ children }) => {
   useEffect(() => {
     const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
     events.forEach(e => window.addEventListener(e, resetIdleTimer, { passive: true }));
+    window.addEventListener('focus', resetIdleTimer);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        resetIdleTimer();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     resetIdleTimer();
 
     return () => {
       events.forEach(e => window.removeEventListener(e, resetIdleTimer));
+      window.removeEventListener('focus', resetIdleTimer);
+      document.removeEventListener('visibilitychange', handleVisibility);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, [resetIdleTimer]);
@@ -333,6 +347,13 @@ const MainLayout = ({ children }) => {
     icon: <FileTextOutlined />,
     label: 'Отчеты',
     onClick: () => navigate('/reports'),
+  });
+
+  menuItems.push({
+    key: 'notes',
+    icon: <EditOutlined />,
+    label: 'Заметки',
+    onClick: () => navigate('/notes'),
   });
 
   if (isAdmin) {
@@ -396,6 +417,11 @@ const MainLayout = ({ children }) => {
       onClick: () => setTwoFactorOpen(true),
     },
     {
+      key: 'version',
+      label: <span style={{ fontSize: 12, color: isDarkMode ? '#8b949e' : '#64748b' }}>Версия {APP_VERSION}</span>,
+      disabled: true,
+    },
+    {
       key: 'logout',
       icon: <LogoutOutlined />,
       label: 'Выйти',
@@ -428,17 +454,29 @@ const MainLayout = ({ children }) => {
                 data-testid="sidebar-toggle"
               />
             )}
-            <span style={{ 
-              fontSize: 28, 
-              fontWeight: 800, 
-              background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              letterSpacing: '-1px',
-              marginRight: 24
-            }}>
-              RMS
-            </span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginRight: 24 }}>
+              <span style={{ 
+                fontSize: 28, 
+                fontWeight: 800, 
+                background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-1px'
+              }}>
+                RMS
+              </span>
+              <span style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: isDarkMode ? '#8b949e' : '#64748b',
+                background: isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                padding: '2px 6px',
+                borderRadius: 4,
+                lineHeight: 1.2
+              }}>
+                v{APP_VERSION}
+              </span>
+            </div>
           </div>
           
           {!isMobile && (
@@ -479,9 +517,14 @@ const MainLayout = ({ children }) => {
           open={mobileMenuOpen}
           styles={{ body: { padding: 0 }, header: { padding: '16px 24px', borderBottom: 'none' } }}
           title={
-            <span style={{ fontSize: 28, fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1px' }}>
-              RMS
-            </span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+              <span style={{ fontSize: 28, fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1px' }}>
+                RMS
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: isDarkMode ? '#8b949e' : '#64748b' }}>
+                v{APP_VERSION}
+              </span>
+            </div>
           }
           closeIcon={<CloseOutlined style={{ fontSize: 18 }}/>}
         >
@@ -619,6 +662,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <ReportsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/notes"
+                element={
+                  <ProtectedRoute>
+                    <NotesPage />
                   </ProtectedRoute>
                 }
               />

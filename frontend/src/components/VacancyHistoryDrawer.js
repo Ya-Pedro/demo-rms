@@ -12,9 +12,12 @@ import {
   RightOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek';
 import 'dayjs/locale/ru';
 import { api } from '../App';
+import useIsMobile from '../hooks/useIsMobile';
 
+dayjs.extend(isoWeek);
 dayjs.locale('ru');
 
 const { RangePicker } = DatePicker;
@@ -31,64 +34,87 @@ const ACTION_CONFIG = {
 };
 const getCfg = (t) => ACTION_CONFIG[t] || ACTION_CONFIG.UPDATE;
 
-const DiffRow = ({ fieldName, change }) => {
+const DiffRow = ({ fieldName, change, isMobile }) => {
   const { token } = theme.useToken();
   const empty = (v) => !v || v === '—';
+  const gridCols = isMobile ? '120px minmax(0, 1fr) 24px minmax(0, 1fr)' : '190px minmax(0, 1fr) 32px minmax(0, 1fr)';
   return (
     <div style={{
-      display: 'flex', alignItems: 'baseline', gap: 6,
-      padding: '3px 0', borderBottom: `1px solid ${token.colorBorderSecondary}`, fontSize: 12,
+      display: 'grid',
+      gridTemplateColumns: gridCols,
+      gap: 12,
+      alignItems: 'flex-start',
+      padding: '6px 0',
+      borderBottom: `1px solid ${token.colorBorderSecondary}`,
+      fontSize: 13,
     }}>
-      <Text type="secondary" style={{ minWidth: 150, flexShrink: 0, fontSize: 11 }}>
+      <Text type="secondary" style={{ fontSize: 13, paddingTop: 1, wordBreak: 'break-word', color: token.colorTextSecondary }}>
         {fieldName}
       </Text>
-      {empty(change.old)
-        ? <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 11 }}>пусто</Text>
-        : <span style={{ background: token.colorErrorBg, color: token.colorError, padding: '0 5px', borderRadius: 3, textDecoration: 'line-through' }}>{change.old}</span>
-      }
-      <Text type="secondary">→</Text>
-      {empty(change.new)
-        ? <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 11 }}>очищено</Text>
-        : <span style={{ background: token.colorSuccessBg, color: token.colorSuccess, padding: '0 5px', borderRadius: 3 }}>{change.new}</span>
-      }
+      <div style={{ minWidth: 0, wordBreak: 'break-word', fontSize: 13 }}>
+        {empty(change.old)
+          ? <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>пусто</Text>
+          : <span style={{ background: token.colorErrorBg, color: token.colorError, padding: '2px 7px', borderRadius: 4, textDecoration: 'line-through', wordBreak: 'break-word', whiteSpace: 'pre-wrap', display: 'inline-block', fontSize: 13 }}>{change.old}</span>
+        }
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'flex-start', paddingTop: 1, color: token.colorTextSecondary, fontSize: 15, userSelect: 'none' }}>
+        →
+      </div>
+      <div style={{ minWidth: 0, wordBreak: 'break-word', fontSize: 13 }}>
+        {empty(change.new)
+          ? <Text type="secondary" style={{ fontStyle: 'italic', fontSize: 13 }}>очищено</Text>
+          : <span style={{ background: token.colorSuccessBg, color: token.colorSuccess, padding: '2px 7px', borderRadius: 4, wordBreak: 'break-word', whiteSpace: 'pre-wrap', display: 'inline-block', fontSize: 13 }}>{change.new}</span>
+        }
+      </div>
     </div>
   );
 };
 
 const HistoryItem = ({ record }) => {
   const { token } = theme.useToken();
+  const isMobile = useIsMobile();
   const cfg = getCfg(record.action_type);
   const entries = Object.entries(record.changes || {});
   const user = record.user;
   const userName = user?.full_name || 'Система';
   const roleLabel = user?.role_label ? ` (${user.role_label})` : '';
-  const time = dayjs(record.created_at).format('DD.MM.YYYY HH:mm');
+  const createdDate = dayjs(record.created_at);
+  const time = createdDate.format('DD.MM.YYYY HH:mm');
+  const weekNum = createdDate.isoWeek();
+  const gridCols = isMobile ? '120px minmax(0, 1fr) 24px minmax(0, 1fr)' : '190px minmax(0, 1fr) 32px minmax(0, 1fr)';
 
   const header = (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8,
-      width: '100%', minWidth: 0, lineHeight: '20px',
+      width: '100%', minWidth: 0, lineHeight: '22px',
     }}>
       <Tag
         color={cfg.tagColor}
-        style={{ margin: 0, flexShrink: 0, fontSize: 11, padding: '0 5px', lineHeight: '18px' }}
+        style={{ margin: 0, flexShrink: 0, fontSize: 12, padding: '1px 6px', lineHeight: '20px' }}
       >
         {cfg.icon}&nbsp;{cfg.label}
       </Tag>
 
-      <Text style={{ fontSize: 12, flexShrink: 0 }}>
-        <UserOutlined style={{ marginRight: 3, color: token.colorTextSecondary }} />
-        {userName}<Text type="secondary">{roleLabel}</Text>
+      <Text style={{ fontSize: 13, flexShrink: 0, fontWeight: 500 }}>
+        <UserOutlined style={{ marginRight: 4, color: token.colorTextSecondary }} />
+        {userName}<Text type="secondary" style={{ fontSize: 12 }}>{roleLabel}</Text>
       </Text>
 
       <div style={{ flex: 1 }} />
 
-      <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
-        <ClockCircleOutlined style={{ marginRight: 3 }} />{time}
+      <Tag
+        color="default"
+        style={{ margin: 0, flexShrink: 0, fontSize: 12, padding: '1px 6px', lineHeight: '20px' }}
+      >
+        Неделя {weekNum}
+      </Tag>
+
+      <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
+        <ClockCircleOutlined style={{ marginRight: 4 }} />{time}
       </Text>
 
       {entries.length > 0 && (
-        <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+        <Text type="secondary" style={{ fontSize: 12, flexShrink: 0 }}>
           {entries.length} {entries.length === 1 ? 'поле' : entries.length < 5 ? 'поля' : 'полей'}
         </Text>
       )}
@@ -98,11 +124,11 @@ const HistoryItem = ({ record }) => {
   if (entries.length === 0) {
     return (
       <div style={{
-        padding: '5px 8px',
+        padding: '6px 10px',
         borderLeft: `3px solid ${cfg.color}`,
         borderRadius: 4,
         background: token.colorFillAlter,
-        marginBottom: 2,
+        marginBottom: 3,
       }}>
         {header}
       </div>
@@ -114,9 +140,9 @@ const HistoryItem = ({ record }) => {
       ghost
       size="small"
       expandIcon={({ isActive }) => (
-        <RightOutlined style={{ fontSize: 10, color: token.colorTextSecondary, transform: isActive ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }} />
+        <RightOutlined style={{ fontSize: 11, color: token.colorTextSecondary, transform: isActive ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }} />
       )}
-      style={{ marginBottom: 2 }}
+      style={{ marginBottom: 3 }}
     >
       <Panel
         key="1"
@@ -128,18 +154,28 @@ const HistoryItem = ({ record }) => {
           padding: 0,
         }}
       >
-        <div style={{ padding: '4px 0 0 0' }}>
-          {}
-          {['UPDATE', 'CREATE'].includes(record.action_type) && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 3, fontSize: 10, color: token.colorTextSecondary, fontWeight: 600 }}>
-              <span style={{ minWidth: 150 }}>Поле</span>
-              <span style={{ flex: 1 }}>Было</span>
-              <span style={{ width: 14 }} />
-              <span style={{ flex: 1 }}>Стало</span>
+        <div style={{ padding: '4px 8px 6px 8px' }}>
+          {entries.length > 0 && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: gridCols,
+              gap: 12,
+              alignItems: 'center',
+              padding: '6px 0',
+              marginBottom: 4,
+              borderBottom: `1px solid ${token.colorBorderSecondary}`,
+              fontSize: 12,
+              color: token.colorTextSecondary,
+              fontWeight: 600,
+            }}>
+              <span>Поле</span>
+              <span>Было</span>
+              <span style={{ textAlign: 'center', userSelect: 'none' }}>→</span>
+              <span>Стало</span>
             </div>
           )}
           {entries.map(([field, change]) => (
-            <DiffRow key={field} fieldName={field} change={change} />
+            <DiffRow key={field} fieldName={field} change={change} isMobile={isMobile} />
           ))}
         </div>
       </Panel>
@@ -149,6 +185,7 @@ const HistoryItem = ({ record }) => {
 
 const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
   const { token } = theme.useToken();
+  const isMobile = useIsMobile();
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dateRange, setDateRange] = useState(null);
@@ -200,7 +237,7 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
       }
       open={open}
       onClose={onClose}
-      width={620}
+      width={isMobile ? '100%' : 900}
       destroyOnClose
       extra={
         <Tooltip title="Обновить">
@@ -253,9 +290,9 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
             {Object.entries(grouped).map(([day, items]) => (
               <div key={day}>
                 <div style={{
-                  fontSize: 11, fontWeight: 600, color: token.colorTextSecondary,
-                  padding: '6px 0 4px', letterSpacing: 0.3,
-                  borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 4,
+                  fontSize: 13, fontWeight: 600, color: token.colorTextSecondary,
+                  padding: '8px 0 4px', letterSpacing: 0.3,
+                  borderBottom: `1px solid ${token.colorBorderSecondary}`, marginBottom: 6,
                 }}>
                   {day}
                 </div>

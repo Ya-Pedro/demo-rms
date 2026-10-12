@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 
-from sqlalchemy import select, func, and_, update
+from sqlalchemy import select, func, and_, update, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +16,7 @@ from models import User, Vacancy, WeeklyReport, UserRole
                                                  
 VACANCY_LOAD_OPTIONS = [
     selectinload(Vacancy.recruiter),
+    selectinload(Vacancy.co_recruiter),
     selectinload(Vacancy.level),
     selectinload(Vacancy.status),
     selectinload(Vacancy.it_role),
@@ -54,6 +55,7 @@ class VacancyRepository:
         'interviews_fact': WeeklyReport.interviews_conducted,
         'interviews_plan': WeeklyReport.interviews_planned,
         'offer_made': WeeklyReport.offer_made,
+        'offer_accepted': WeeklyReport.offer_accepted,
     }
 
     async def get_list(
@@ -84,6 +86,7 @@ class VacancyRepository:
                         func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0).label('_mv_interviews_conducted'),
                         func.coalesce(func.sum(WeeklyReport.interviews_planned), 0).label('_mv_interviews_planned'),
                         func.coalesce(func.sum(WeeklyReport.offer_made), 0).label('_mv_offer_made'),
+                        func.coalesce(func.sum(WeeklyReport.offer_accepted), 0).label('_mv_offer_accepted'),
                     )
                 )
                 if period_conditions:
@@ -100,12 +103,22 @@ class VacancyRepository:
                     'interviews_fact': metrics_subq.c._mv_interviews_conducted,
                     'interviews_plan': metrics_subq.c._mv_interviews_planned,
                     'offer_made': metrics_subq.c._mv_offer_made,
+                    'offer_accepted': metrics_subq.c._mv_offer_accepted,
                 }
 
             for i, f in enumerate(fields):
                 field_name = f.strip()
                 order_dir = orders[i].strip() if i < len(orders) else 'desc'
-                if field_name == 'work_duration_days':
+                if field_name == 'vacancy_id':
+                    num_expr = func.coalesce(
+                        func.cast(func.nullif(func.regexp_replace(Vacancy.vacancy_id, r'\D', '', 'g'), ''), Integer),
+                        Vacancy.id
+                    )
+                    if order_dir == 'asc':
+                        base_query = base_query.order_by(num_expr.asc().nulls_last(), Vacancy.vacancy_id.asc().nulls_last())
+                    else:
+                        base_query = base_query.order_by(num_expr.desc().nulls_last(), Vacancy.vacancy_id.desc().nulls_last())
+                elif field_name == 'work_duration_days':
                     sort_col = func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)
                     if order_dir == 'asc':
                         base_query = base_query.order_by(sort_col.asc().nulls_last())
@@ -117,6 +130,25 @@ class VacancyRepository:
                         base_query = base_query.order_by(sort_col.asc())
                     else:
                         base_query = base_query.order_by(sort_col.desc())
+                elif field_name in (
+                    'level_id', 'status_id', 'it_role_id', 'admin_manager_id',
+                    'project_id', 'source_id', 'internal_transfer_id',
+                    'replacement_type_id', 'employment_type_id', 'feasibility_id',
+                    'block_id', 'city_id'
+                ):
+                    from models import Dictionary
+                    dict_subq = select(Dictionary.value).where(Dictionary.id == getattr(Vacancy, field_name)).scalar_subquery()
+                    if order_dir == 'asc':
+                        base_query = base_query.order_by(dict_subq.asc().nulls_last())
+                    else:
+                        base_query = base_query.order_by(dict_subq.desc().nulls_last())
+                elif field_name in ('recruiter_id', 'co_recruiter_id'):
+                    from models import User
+                    user_subq = select(User.full_name).where(User.id == getattr(Vacancy, field_name)).scalar_subquery()
+                    if order_dir == 'asc':
+                        base_query = base_query.order_by(user_subq.asc().nulls_last())
+                    else:
+                        base_query = base_query.order_by(user_subq.desc().nulls_last())
                 else:
                     sort_col = getattr(Vacancy, field_name, None)
                     from sqlalchemy.orm.attributes import InstrumentedAttribute
@@ -165,6 +197,7 @@ class VacancyRepository:
                 func.coalesce(func.sum(WeeklyReport.interviews_planned), 0).label("interviews_planned"),
                 func.coalesce(func.sum(WeeklyReport.interviews_conducted), 0).label("interviews_conducted"),
                 func.coalesce(func.sum(WeeklyReport.offer_made), 0).label("offer_made"),
+                func.coalesce(func.sum(WeeklyReport.offer_accepted), 0).label("offer_accepted"),
             )
             .where(WeeklyReport.vacancy_id.in_(vacancy_ids))
         )

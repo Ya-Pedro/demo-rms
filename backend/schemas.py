@@ -2,7 +2,7 @@
 \
 \
    
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, model_validator
 from typing import Optional, List
 from datetime import date, datetime
 from models import UserRole, DictionaryType
@@ -160,11 +160,16 @@ class VacancyBase(BaseModel):
     unit_id: Optional[str] = None
     employment_type_id: Optional[int] = None
     feasibility_id: Optional[int] = None
+    feasibility_text: Optional[str] = None
     iqhr_link: Optional[str] = None
     recruiter_id: Optional[int] = None
+    co_recruiter_id: Optional[int] = None
     block_id: Optional[int] = None
     hold_days: int = 0
     salary_gross: Optional[int] = None                          
+    offer_accepted: int = 0
+    offer_rejection_reason: Optional[str] = None
+    comment: Optional[str] = None
 
 class VacancyCreate(VacancyBase):
     pass
@@ -184,6 +189,9 @@ class VacancyUpdate(BaseModel):
     interviews_fact: Optional[int] = None
     interviews_plan: Optional[int] = None
     offer_made: Optional[int] = None
+    offer_accepted: Optional[int] = None
+    offer_rejection_reason: Optional[str] = None
+    comment: Optional[str] = None
     city_id: Optional[int] = None
     city_text: Optional[str] = None
     team_lead_text: Optional[str] = None
@@ -198,8 +206,10 @@ class VacancyUpdate(BaseModel):
     unit_id: Optional[str] = None
     employment_type_id: Optional[int] = None
     feasibility_id: Optional[int] = None
+    feasibility_text: Optional[str] = None
     iqhr_link: Optional[str] = None
     recruiter_id: Optional[int] = None
+    co_recruiter_id: Optional[int] = None
     block_id: Optional[int] = None
     hold_days: Optional[int] = None
     salary_gross: Optional[int] = None                          
@@ -233,6 +243,10 @@ class VacancyResponse(BaseModel):
     interviews_fact: int = 0
     interviews_plan: int = 0
     offer_made: int = 0
+    offer_accepted: int = 0
+    offer_accepted_cnt: int = 0
+    offer_rejection_reason: Optional[str] = None
+    comment: Optional[str] = None
     city_id: Optional[int] = None
     city_text: Optional[str] = None
     team_lead_text: Optional[str] = None
@@ -247,8 +261,11 @@ class VacancyResponse(BaseModel):
     unit_id: Optional[str] = None
     employment_type_id: Optional[int] = None
     feasibility_id: Optional[int] = None
+    feasibility_text: Optional[str] = None
+    feasibility_name: Optional[str] = None
     iqhr_link: Optional[str] = None
     recruiter_id: Optional[int] = None
+    co_recruiter_id: Optional[int] = None
     block_id: Optional[int] = None
     hold_days: int = 0
     salary_gross: Optional[int] = None                          
@@ -261,6 +278,7 @@ class VacancyResponse(BaseModel):
     
                      
     recruiter: Optional[UserResponse] = None
+    co_recruiter: Optional[UserResponse] = None
     level: Optional[DictionaryResponse] = None
     status: Optional[DictionaryResponse] = None
     it_role: Optional[DictionaryResponse] = None
@@ -287,6 +305,19 @@ class BulkDeleteRequest(BaseModel):
     ids: List[int] = []
     delete_all: bool = False
 
+class BulkAssignRecruiterRequest(BaseModel):
+    ids: Optional[List[int]] = None
+    vacancy_ids: Optional[List[int]] = None
+    recruiter_id: int
+
+    @model_validator(mode="after")
+    def populate_ids(self):
+        if not self.ids and self.vacancy_ids:
+            self.ids = self.vacancy_ids
+        if not self.ids:
+            self.ids = []
+        return self
+
                                                  
 class WeeklyReportBase(BaseModel):
     week_number: int
@@ -296,6 +327,9 @@ class WeeklyReportBase(BaseModel):
     interviews_planned: int = 0
     interviews_conducted: int = 0
     offer_made: int = 0
+    offer_accepted: int = 0
+    offer_rejection_reason: Optional[str] = None
+    comment: Optional[str] = None
 
 class WeeklyReportCreate(WeeklyReportBase):
     vacancy_id: int
@@ -306,6 +340,9 @@ class WeeklyReportUpdate(BaseModel):
     interviews_planned: Optional[int] = None
     interviews_conducted: Optional[int] = None
     offer_made: Optional[int] = None
+    offer_accepted: Optional[int] = None
+    offer_rejection_reason: Optional[str] = None
+    comment: Optional[str] = None
 
 class WeeklyReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -321,6 +358,9 @@ class WeeklyReportResponse(BaseModel):
     interviews_planned: int
     interviews_conducted: int
     offer_made: int
+    offer_accepted: int = 0
+    offer_rejection_reason: Optional[str] = None
+    comment: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

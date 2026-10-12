@@ -50,6 +50,7 @@ def apply_vacancy_filters(
     replacement_type_id: Optional[List[int]] = None,
     internal_transfer_id: Optional[List[int]] = None,
     recruiter_id: Optional[List[int]] = None,
+    co_recruiter_id: Optional[List[int]] = None,
     city_id: Optional[List[int]] = None,
     team_lead_id: Optional[List[int]] = None,
                                 
@@ -64,9 +65,20 @@ def apply_vacancy_filters(
     search_salary_gross: Optional[str] = None,
     search_city_text: Optional[str] = None,
     search_team_lead_text: Optional[str] = None,
+    search_feasibility_text: Optional[str] = None,
+    search_offer_rejection_reason: Optional[str] = None,
+    search_comment: Optional[str] = None,
+    search_recruiter: Optional[str] = None,
+    search_co_recruiter: Optional[str] = None,
                             
     search_quantity: Optional[str] = None,
     search_work_duration_days: Optional[str] = None,
+    search_resume_at_customer: Optional[str] = None,
+    search_resume_approved: Optional[str] = None,
+    search_interviews_fact: Optional[str] = None,
+    search_interviews_plan: Optional[str] = None,
+    search_offer_made: Optional[str] = None,
+    search_offer_accepted: Optional[str] = None,
                                                                               
     search_open_date: Optional[str] = None,
     search_close_date: Optional[str] = None,
@@ -80,7 +92,8 @@ def apply_vacancy_filters(
                                                             
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
-    date_range_field: str = "open_date",                                                     
+    date_range_field: str = "open_date",
+    **kwargs,
 ):
 \
 \
@@ -113,6 +126,7 @@ def apply_vacancy_filters(
         conditions.append(
             or_(
                 Vacancy.recruiter_id == current_user.id,
+                Vacancy.co_recruiter_id == current_user.id,
                 Vacancy.id.in_(delegated_subq),
             )
         )
@@ -130,7 +144,6 @@ def apply_vacancy_filters(
         "feasibility_id": (Vacancy.feasibility_id, feasibility_id),
         "replacement_type_id": (Vacancy.replacement_type_id, replacement_type_id),
         "internal_transfer_id": (Vacancy.internal_transfer_id, internal_transfer_id),
-        "recruiter_id": (Vacancy.recruiter_id, recruiter_id),
         "city_id": (Vacancy.city_id, city_id),
         "team_lead_id": (Vacancy.team_lead_id, team_lead_id),
     }
@@ -146,6 +159,41 @@ def apply_vacancy_filters(
             else:
                 conditions.append(col.in_(values))
 
+    if recruiter_id:
+        if 0 in recruiter_id:
+            valid_ids = [v for v in recruiter_id if v != 0]
+            if valid_ids:
+                conditions.append(or_(
+                    Vacancy.recruiter_id.in_(valid_ids),
+                    Vacancy.co_recruiter_id.in_(valid_ids),
+                    and_(Vacancy.recruiter_id.is_(None), Vacancy.co_recruiter_id.is_(None))
+                ))
+            else:
+                conditions.append(and_(Vacancy.recruiter_id.is_(None), Vacancy.co_recruiter_id.is_(None)))
+        else:
+            conditions.append(or_(Vacancy.recruiter_id.in_(recruiter_id), Vacancy.co_recruiter_id.in_(recruiter_id)))
+
+    if co_recruiter_id:
+        if 0 in co_recruiter_id:
+            valid_ids = [v for v in co_recruiter_id if v != 0]
+            if valid_ids:
+                conditions.append(or_(Vacancy.co_recruiter_id.in_(valid_ids), Vacancy.co_recruiter_id.is_(None)))
+            else:
+                conditions.append(Vacancy.co_recruiter_id.is_(None))
+        else:
+            conditions.append(Vacancy.co_recruiter_id.in_(co_recruiter_id))
+
+    if search_recruiter:
+        rec_subq = select(User.id).where(User.full_name.ilike(f"%{search_recruiter}%"))
+        conditions.append(or_(
+            Vacancy.recruiter_id.in_(rec_subq),
+            Vacancy.co_recruiter_id.in_(rec_subq)
+        ))
+
+    if search_co_recruiter:
+        co_rec_subq = select(User.id).where(User.full_name.ilike(f"%{search_co_recruiter}%"))
+        conditions.append(Vacancy.co_recruiter_id.in_(co_rec_subq))
+
     if exclude_status_id:
         conditions.append(or_(Vacancy.status_id.not_in(exclude_status_id), Vacancy.status_id.is_(None)))
 
@@ -160,6 +208,9 @@ def apply_vacancy_filters(
         "search_iqhr_link": (Vacancy.iqhr_link, search_iqhr_link),
         "search_city_text": (Vacancy.city_text, search_city_text),
         "search_team_lead_text": (Vacancy.team_lead_text, search_team_lead_text),
+        "search_feasibility_text": (Vacancy.feasibility_text, search_feasibility_text),
+        "search_offer_rejection_reason": (Vacancy.offer_rejection_reason, search_offer_rejection_reason),
+        "search_comment": (Vacancy.comment, search_comment),
     }
     for _name, (col, val) in _text_filters.items():
         if val:
@@ -186,10 +237,40 @@ def apply_vacancy_filters(
         except (ValueError, TypeError):
             pass
 
-    if search_salary_gross is not None:
+    if search_resume_at_customer is not None:
         try:
-            conditions.append(Vacancy.salary_gross == int(search_salary_gross))
-        except:
+            conditions.append(Vacancy.resume_at_customer == int(search_resume_at_customer))
+        except (ValueError, TypeError):
+            pass
+
+    if search_resume_approved is not None:
+        try:
+            conditions.append(Vacancy.resume_approved == int(search_resume_approved))
+        except (ValueError, TypeError):
+            pass
+
+    if search_interviews_fact is not None:
+        try:
+            conditions.append(Vacancy.interviews_fact == int(search_interviews_fact))
+        except (ValueError, TypeError):
+            pass
+
+    if search_interviews_plan is not None:
+        try:
+            conditions.append(Vacancy.interviews_plan == int(search_interviews_plan))
+        except (ValueError, TypeError):
+            pass
+
+    if search_offer_made is not None:
+        try:
+            conditions.append(Vacancy.offer_made == int(search_offer_made))
+        except (ValueError, TypeError):
+            pass
+
+    if search_offer_accepted is not None:
+        try:
+            conditions.append(Vacancy.offer_accepted_cnt == int(search_offer_accepted))
+        except (ValueError, TypeError):
             pass
 
                                                                                
