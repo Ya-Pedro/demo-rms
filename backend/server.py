@@ -87,10 +87,12 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down RMS application...")
 
                             
+APP_VERSION = os.environ.get("APP_VERSION", "0.2.0")
+
 app = FastAPI(
     title="RMS - Recruitment Management System",
     description="Внутренняя HR система для управления вакансиями",
-    version="1.0.0",
+    version=APP_VERSION,
     lifespan=lifespan
 )
 
@@ -170,14 +172,22 @@ app.add_middleware(AuditMiddleware)
 
 @app.get("/api")
 async def root():
-                               
     return {
         "message": "RMS API работает",
-        "version": "1.0.0",
+        "version": APP_VERSION,
+        "status": "ok"
+    }
+
+@app.get("/api/version")
+async def get_version():
+    return {
+        "version": APP_VERSION,
         "status": "ok"
     }
 
 @app.get("/api/health")
 async def health_check():
-                               
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "version": APP_VERSION
+    }

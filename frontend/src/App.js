@@ -74,7 +74,7 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-export const APP_VERSION = process.env.REACT_APP_VERSION || '0.1.0';
+export const APP_VERSION = process.env.REACT_APP_VERSION || '0.2.0';
 
 const forceLogout = () => {
   if (window.location.pathname === '/login') return;
