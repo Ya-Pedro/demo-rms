@@ -56,6 +56,7 @@ async def get_dashboard_metrics(
     recruiter_ids:      Optional[str] = Query(None),
     block_ids:          Optional[str] = Query(None),
     status_ids:         Optional[str] = Query(None),
+    vacancy_ids:        Optional[str] = Query(None),
     group_by:           str           = Query("it_role"),
                                                             
     block_id:           Optional[int] = Query(None),
@@ -84,6 +85,7 @@ async def get_dashboard_metrics(
     f_recruiters = _parse_ids(recruiter_ids)
     f_blocks     = _parse_ids(block_ids)
     f_statuses   = _parse_ids(status_ids)
+    f_vac_ids    = _parse_ids(vacancy_ids)
 
     if block_id   and not f_blocks:   f_blocks   = [block_id]
     if project_id and not f_projects: f_projects = [project_id]
@@ -124,52 +126,54 @@ async def get_dashboard_metrics(
         )
     )).all()
 
-    def date_matches(v) -> bool:
+    def get_effective_status(v) -> Optional[str]:
         if v.quantity == 0.001:
-            return False
-        if not dt_start and not dt_end:
-            return True
-
-        # Исключаем вакансии с датой открытия позже периода
+            return None
         if dt_end and v.open_date and v.open_date > dt_end:
-            return False
+            return None
 
         st_name = status_map.get(v.status_id)
+        if not dt_start and not dt_end:
+            return st_name
 
-        # Закрыта: колонка "Дата закрытия" за выбранный период
         if st_name == "Закрыта":
-            if not v.close_date:
-                return False
-            if dt_start and v.close_date < dt_start:
-                return False
-            if dt_end and v.close_date > dt_end:
-                return False
-            return True
+            c_date = v.close_date
+            if not c_date and v.status_changed_at:
+                c_date = v.status_changed_at
+            if not c_date:
+                return None
+            if dt_start and c_date < dt_start:
+                return None
+            if dt_end and c_date > dt_end:
+                return "Открыта"
+            return "Закрыта"
 
-        # Отмена: статус по "Дата изменения статуса" за период фильтра (включая пустые)
         if st_name == "Отмена":
             if v.status_changed_at is None:
-                return True
+                return "Отмена"
             if dt_start and v.status_changed_at < dt_start:
-                return False
+                return None
             if dt_end and v.status_changed_at > dt_end:
-                return False
-            return True
+                return "Открыта"
+            return "Отмена"
 
-        # Hold: статус по "Дата изменения статуса" за выбранный год фильтра (включая пустые)
         if st_name == "Hold":
             if v.status_changed_at is None:
-                return True
+                return "Hold"
+            if dt_end and v.status_changed_at > dt_end:
+                return "Открыта"
             filter_year = (dt_end or dt_start).year
-            if v.status_changed_at.year != filter_year:
-                return False
-            return True
+            if v.status_changed_at.year == filter_year:
+                return "Hold"
+            return None
 
-        # Активные статусы (открыта, проверка сб, согласование фин условий, оффер, подготовка документов, выход)
-        return True
+        return st_name
 
     def matches_filters(v, exclude_field: Optional[str] = None) -> bool:
-        if not date_matches(v):
+        eff_st = get_effective_status(v)
+        if eff_st is None:
+            return False
+        if exclude_field != "vacancy" and f_vac_ids and v.id not in f_vac_ids:
             return False
         if exclude_field != "it_role" and f_it_roles and v.it_role_id not in f_it_roles:
             return False
@@ -185,8 +189,10 @@ async def get_dashboard_metrics(
                 return False
         if exclude_field != "block" and f_blocks and v.block_id not in f_blocks:
             return False
-        if exclude_field != "status" and f_statuses and v.status_id not in f_statuses:
-            return False
+        if exclude_field != "status" and f_statuses:
+            allowed_status_names = {status_map.get(sid) for sid in f_statuses if sid in status_map}
+            if eff_st not in allowed_status_names:
+                return False
         return True
 
     vacs = [v for v in all_vacs if matches_filters(v)]
@@ -198,6 +204,8 @@ async def get_dashboard_metrics(
         WeeklyReport.interviews_planned,
         WeeklyReport.interviews_conducted,
         WeeklyReport.offer_made,
+        WeeklyReport.offer_accepted,
+        WeeklyReport.offer_rejection_reason,
         WeeklyReport.week_start,
     )
     all_reports = (await db.execute(report_query)).all()
@@ -206,10 +214,9 @@ async def get_dashboard_metrics(
     for r in all_reports:
         reports_by_vac[r.vacancy_id].append(r)
 
-                                                                               
-                                                                           
+    # Загружаем историю для всех закрытых вакансий (для корректного расчёта рабочих дней)
     final_vac_ids = {
-        v.id for v in vacs
+        v.id for v in all_vacs
         if v.status_id in (closed_ids | exit_ids)
         and v.open_date and v.close_date
     }
@@ -233,7 +240,7 @@ async def get_dashboard_metrics(
                                                                                  
     src_cnt: Counter = Counter()
     for v in vacs:
-        if v.status_id in closed_ids:
+        if get_effective_status(v) == "Закрыта":
             label = source_map.get(v.source_id, "Не указан") if v.source_id else "Не указан"
             src_cnt[label] += 1
     total1 = sum(src_cnt.values()) or 1
@@ -243,52 +250,79 @@ async def get_dashboard_metrics(
         key=lambda x: -x["value"],
     )
 
-                                                                                
+    open_cnt = 0
+    closed_cnt = 0
+    hold_cnt = 0
+    cancel_cnt = 0
+    for v in vacs:
+        eff = get_effective_status(v)
+        if eff == "Закрыта":
+            closed_cnt += 1
+        elif eff == "Hold":
+            hold_cnt += 1
+        elif eff == "Отмена":
+            cancel_cnt += 1
+        else:
+            open_cnt += 1
+
     chart2 = {
-        "total":  len(vacs),
-        "open":   sum(1 for v in vacs if v.status_id not in (closed_ids | exit_ids | hold_ids | cancel_ids)),
-        "closed": sum(1 for v in vacs if v.status_id in closed_ids),
-        "exit":   sum(1 for v in vacs if v.status_id in exit_ids),
-        "hold":   sum(1 for v in vacs if v.status_id in hold_ids),
-        "cancel": sum(1 for v in vacs if v.status_id in cancel_ids),
+        "total":  open_cnt + closed_cnt + hold_cnt + cancel_cnt,
+        "open":   open_cnt,
+        "closed": closed_cnt,
+        "hold":   hold_cnt,
+        "cancel": cancel_cnt,
     }
 
-                                                                                
     vac_ids3 = {v.id for v in vacs}
     funnel: dict = defaultdict(int)
     for v_id in vac_ids3:
         for r in reports_by_vac.get(v_id, []):
             funnel["resumes_sent"]         += r.resumes_sent         or 0
             funnel["candidates_agreed"]    += r.candidates_agreed    or 0
-            funnel["interviews_planned"]   += r.interviews_planned   or 0
             funnel["interviews_conducted"] += r.interviews_conducted or 0
             funnel["offer_made"]           += r.offer_made           or 0
-    chart3 = [
-        {"stage": "Передано заказчику",  "value": funnel["resumes_sent"]},
-        {"stage": "Резюме одобрено",      "value": funnel["candidates_agreed"]},
-        {"stage": "Собеседования план",   "value": funnel["interviews_planned"]},
-        {"stage": "Собеседования факт",   "value": funnel["interviews_conducted"]},
-        {"stage": "Оффер сделан",         "value": funnel["offer_made"]},
+            funnel["offer_accepted"]       += r.offer_accepted       or 0
+
+    closed_in_funnel = sum(1 for v in vacs if get_effective_status(v) == "Закрыта")
+    if funnel["offer_accepted"] == 0:
+        funnel["offer_accepted"] = sum(v.offer_accepted_cnt or 0 for v in vacs)
+        if funnel["offer_accepted"] == 0 and closed_in_funnel > 0:
+            funnel["offer_accepted"] = closed_in_funnel
+
+    raw_stages = [
+        ("Передано заказчику", funnel["resumes_sent"]),
+        ("Резюме одобрено",    funnel["candidates_agreed"]),
+        ("Собеседования",      funnel["interviews_conducted"]),
+        ("Оффер сделан",       funnel["offer_made"]),
+        ("Оффер принят",       funnel["offer_accepted"]),
+        ("Закрыта",            closed_in_funnel),
     ]
 
-                                                                                
+    first_val = raw_stages[0][1] if raw_stages else 0
+    chart3 = []
+    for i, (stg_name, val) in enumerate(raw_stages):
+        prev_val = raw_stages[i - 1][1] if i > 0 else val
+        step_pct = round(val / prev_val * 100, 1) if prev_val > 0 else 0.0
+        tot_pct  = round(val / first_val * 100, 1) if first_val > 0 else 0.0
+        chart3.append({
+            "stage": stg_name,
+            "value": val,
+            "conv_step": step_pct,
+            "conv_total": tot_pct,
+        })
+
     comp_cnt: Counter = Counter()
     for v in vacs:
-        if v.status_id in closed_ids and v.candidate_company and v.candidate_company.strip():
+        if get_effective_status(v) == "Закрыта" and v.candidate_company and v.candidate_company.strip():
             comp_cnt[v.candidate_company.strip()] += 1
     chart4 = [{"company": k, "value": cnt} for k, cnt in comp_cnt.most_common(15)]
 
-                                                                               
-                                 
-                                                                  
-                                                         
-                                                                  
     use_map    = it_role_map if group_by == "it_role" else level_map
     group_attr = "it_role_id" if group_by == "it_role" else "level_id"
 
     durations: dict = defaultdict(list)
     for v in vacs:
-        if v.status_id not in (closed_ids | exit_ids):
+        if get_effective_status(v) != "Закрыта":
             continue
         if not v.close_date or not v.open_date:
             continue
@@ -314,19 +348,24 @@ async def get_dashboard_metrics(
         key=lambda x: -x["avg_days"],
     )
 
-                                                                                
     st_cnt: Counter = Counter()
     for v in vacs:
-        label = status_map.get(v.status_id, "Не указан") if v.status_id else "Не указан"
-        st_cnt[label] += 1
+        eff = get_effective_status(v)
+        if eff in ("Закрыта", "Hold", "Отмена"):
+            st_name = eff
+        else:
+            cur_st = status_map.get(v.status_id)
+            if cur_st in ("Закрыта", "Hold", "Отмена") or not cur_st:
+                st_name = "Открыта"
+            else:
+                st_name = cur_st
+        st_cnt[st_name] += 1
     chart6 = sorted(
         [{"status": k, "value": cnt} for k, cnt in st_cnt.items()],
         key=lambda x: -x["value"],
     )
 
-                                                                                
-                                                          
-    jo_closed    = sum(1 for v in vacs if v.status_id in (closed_ids | exit_ids))
+    jo_closed    = sum(1 for v in vacs if get_effective_status(v) == "Закрыта")
     offers_total = sum(
         r.offer_made or 0
         for v in vacs
@@ -396,11 +435,22 @@ async def get_dashboard_metrics(
         p25, p50, p75 = 0, 0, 0
     chart_salaries = {"p25": round(p25), "p50": round(p50), "p75": round(p75)}
 
-    # Причины отказа
-    rejection_cnt: Counter = Counter()
+    # Причины отказа: все причины из справочника со значением 0 по умолчанию
+    rejection_reason_map = await _dict_map(db, DictionaryType.OFFER_REJECTION_REASON)
+    rejection_cnt: dict[str, int] = {name: 0 for name in rejection_reason_map.values()}
     for v in vacs:
-        if v.offer_rejection_reason and v.offer_rejection_reason.strip():
-            rejection_cnt[v.offer_rejection_reason.strip()] += 1
+        reasons_from_reports = [
+            r.offer_rejection_reason.strip()
+            for r in reports_by_vac.get(v.id, [])
+            if getattr(r, 'offer_rejection_reason', None) and r.offer_rejection_reason.strip()
+        ]
+        if reasons_from_reports:
+            for rsn in reasons_from_reports:
+                rejection_cnt[rsn] = rejection_cnt.get(rsn, 0) + 1
+        elif v.offer_rejection_reason and v.offer_rejection_reason.strip():
+            rsn = v.offer_rejection_reason.strip()
+            rejection_cnt[rsn] = rejection_cnt.get(rsn, 0) + 1
+
     chart_rejections = sorted(
         [{"reason": k, "value": cnt} for k, cnt in rejection_cnt.items()],
         key=lambda x: -x["value"],
@@ -408,7 +458,7 @@ async def get_dashboard_metrics(
 
     # Конверсия принятия JO (кумулятивная по месяцам, кварталам, году)
     target_year = (dt_end or dt_start).year if (dt_end or dt_start) else _date.today().year
-    closed_vacs_pool = [v for v in all_vacs if matches_filters(v, "status") and v.status_id in closed_ids and v.close_date]
+    closed_vacs_pool = [v for v in all_vacs if matches_filters(v, "status") and get_effective_status(v) == "Закрыта" and v.close_date]
     year_closed_vacs = [v for v in closed_vacs_pool if v.close_date.year == target_year]
 
     vac_offers = {}
@@ -484,6 +534,66 @@ async def get_dashboard_metrics(
         "year": year_items,
     }
 
+    # Динамика среднего срока закрытия вакансий (раб. дни) по месяцам, кварталам, году
+    vac_days_map = {}
+    for v in closed_vacs_pool:
+        if not v.open_date or not v.close_date:
+            continue
+        d = calculate_net_working_days(
+            open_date=v.open_date,
+            close_date=v.close_date,
+            history_records=history_by_vac.get(v.id, []),
+            status_map=status_map,
+        )
+        if d > 0:
+            vac_days_map[v.id] = d
+
+    year_closed_avg = [v for v in closed_vacs_pool if v.close_date.year == target_year and v.id in vac_days_map]
+
+    avg_month_items = []
+    for m in range(1, max_m + 1):
+        m_vacs = [v for v in year_closed_avg if v.close_date.month == m]
+        m_days = [vac_days_map[v.id] for v in m_vacs]
+        avg_d = round(sum(m_days) / len(m_days), 1) if m_days else 0
+        avg_month_items.append({
+            "label": MONTH_NAMES[m - 1][0],
+            "name": MONTH_NAMES[m - 1][1].capitalize(),
+            "value": avg_d,
+            "count": len(m_vacs),
+        })
+
+    avg_quarter_items = []
+    for q in range(1, 5):
+        q_start_m = (q - 1) * 3 + 1
+        if max_m < q_start_m:
+            break
+        q_end_m = min(q * 3, max_m)
+        q_vacs = [v for v in year_closed_avg if q_start_m <= v.close_date.month <= q_end_m]
+        q_days = [vac_days_map[v.id] for v in q_vacs]
+        avg_d = round(sum(q_days) / len(q_days), 1) if q_days else 0
+        avg_quarter_items.append({
+            "label": f"Q{q}",
+            "name": Q_NAMES[q - 1],
+            "value": avg_d,
+            "count": len(q_vacs),
+        })
+
+    yr_vacs = [v for v in year_closed_avg if v.close_date.month <= max_m]
+    yr_days = [vac_days_map[v.id] for v in yr_vacs]
+    avg_d_yr = round(sum(yr_days) / len(yr_days), 1) if yr_days else 0
+    avg_year_items = [{
+        "label": f"{target_year}",
+        "name": f"{target_year} год",
+        "value": avg_d_yr,
+        "count": len(yr_vacs),
+    }]
+
+    chart_avg_days_timeline = {
+        "month": avg_month_items,
+        "quarter": avg_quarter_items,
+        "year": avg_year_items,
+    }
+
     # Взаимозависимые фильтры, зависимые от даты и остальных выбранных фильтров
     def _opts(m: dict, allowed_ids: Optional[set] = None):
         if allowed_ids is not None:
@@ -500,7 +610,10 @@ async def get_dashboard_metrics(
     } | {
         v.co_recruiter_id for v in all_vacs if v.co_recruiter_id and matches_filters(v, "recruiter")
     }
-    avail_statuses   = {v.status_id for v in all_vacs if v.status_id and matches_filters(v, "status")}
+    avail_status_names = {get_effective_status(v) for v in all_vacs if matches_filters(v, "status")}
+    avail_status_names.discard(None)
+    avail_statuses   = {sid for sid, name in status_map.items() if name in avail_status_names}
+    avail_vac_ids    = {v.id for v in all_vacs if matches_filters(v, "vacancy")}
 
     filter_blocks         = _opts(block_map, avail_blocks)
     filter_projects       = _opts(project_map, avail_projects)
@@ -509,22 +622,24 @@ async def get_dashboard_metrics(
     filter_admin_managers = _opts(admin_mgr_map, avail_admin_mgrs)
     filter_recruiters     = [r for r in recruiters_opts if r["id"] in avail_recruiters]
     filter_statuses       = _opts(status_map, avail_statuses)
+    filter_vacancies      = sorted([{"id": v_id, "value": f"№{v_id}"} for v_id in avail_vac_ids], key=lambda x: x["id"])
 
     return {
-        "chart1_source":         chart1,
-        "chart2_open_closed":    chart2,
-        "chart3_funnel":         chart3,
-        "chart4_companies":      chart4,
-        "chart5_avg_days":       chart5,
-        "chart6_statuses":       chart6,
-        "chart7_jo_rate":        chart7,
-        "chart8_recruiter_load": chart8,
-        "chart_levels":          chart_levels,
-        "chart_replacement":     chart_replacement,
-        "chart_employment":      chart_employment,
-        "chart_salaries":        chart_salaries,
-        "chart_rejections":      chart_rejections,
-        "chart_jo_conversion":   chart_jo_conversion,
+        "chart1_source":           chart1,
+        "chart2_open_closed":      chart2,
+        "chart3_funnel":           chart3,
+        "chart4_companies":        chart4,
+        "chart5_avg_days":         chart5,
+        "chart6_statuses":         chart6,
+        "chart7_jo_rate":          chart7,
+        "chart8_recruiter_load":   chart8,
+        "chart_levels":            chart_levels,
+        "chart_replacement":       chart_replacement,
+        "chart_employment":        chart_employment,
+        "chart_salaries":          chart_salaries,
+        "chart_rejections":        chart_rejections,
+        "chart_jo_conversion":     chart_jo_conversion,
+        "chart_avg_days_timeline": chart_avg_days_timeline,
         "filters": {
             "blocks":         filter_blocks,
             "projects":       filter_projects,
@@ -533,5 +648,6 @@ async def get_dashboard_metrics(
             "admin_managers": filter_admin_managers,
             "recruiters":     filter_recruiters,
             "statuses":       filter_statuses,
+            "vacancies":      filter_vacancies,
         },
     }

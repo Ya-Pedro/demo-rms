@@ -13,6 +13,7 @@ import isoWeek from 'dayjs/plugin/isoWeek';
 import { api } from '../App';
 import ReportsTour from '../components/ReportsTour';
 import useIsMobile from '../hooks/useIsMobile';
+import { OFFER_REJECTION_REASONS } from './DashboardPage';
 import './statusRows.css';
 
 dayjs.extend(isoWeek);
@@ -284,7 +285,7 @@ const ReportsPage = () => {
         const types = [
           'specialist_level', 'vacancy_status', 'it_role', 'admin_manager',
           'project', 'source', 'internal_transfer', 'replacement_type',
-          'employment_type', 'block', 'recruiter'
+          'employment_type', 'block', 'offer_rejection_reason', 'recruiter'
         ];
         const results = {};
         for (const type of types) {
@@ -764,7 +765,11 @@ const ReportsPage = () => {
         title:'Причина отказа от Оффера', dataIndex:'offer_rejection_reason', key:'offer_rejection_reason', width: 170, ellipsis: true,
         ...mkSort('offer_rejection_reason'),
         filteredValue: fi['offer_rejection_reason'] || null,
-        ...TEXT_FILTER_DROPDOWN,
+        filters: (dictionaries.offer_rejection_reason && dictionaries.offer_rejection_reason.length > 0)
+          ? dictionaries.offer_rejection_reason.map(r => ({ text: r.value, value: r.value }))
+          : OFFER_REJECTION_REASONS.map(r => ({ text: r.label, value: r.value })),
+        filterSearch: true,
+        filterDropdownProps: { getPopupContainer },
         render: v => v || '-',
       },
       {

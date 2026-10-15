@@ -35,6 +35,7 @@ from routers.reports_router import router as reports_router
 from routers.export_router import router as export_router
 from routers.delegation_router import router as delegation_router
 from routers.dashboards_router import router as dashboards_router
+from routers.notes_router import router as notes_router
 
                    
 logging.basicConfig(
@@ -162,6 +163,7 @@ app.include_router(reports_router, prefix="/api")
 app.include_router(export_router, prefix="/api")
 app.include_router(delegation_router, prefix="/api")
 app.include_router(dashboards_router, prefix="/api")
+app.include_router(notes_router, prefix="/api")
 
                            
 app.add_middleware(AuditMiddleware)

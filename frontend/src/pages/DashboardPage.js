@@ -1,5 +1,5 @@
 import { tokenStorage } from '../tokenStorage';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Button, Select, Space, Modal, Form, Input,
   InputNumber, DatePicker, message, Drawer, Divider, Checkbox, Row, Col, Spin, theme
@@ -198,7 +198,6 @@ const DashboardPage = () => {
   const [reportLoading, setReportLoading] = useState(false);
   const [weekOptions] = useState(generateWeekOptions());
   const [isReportWeekEditable, setIsReportWeekEditable] = useState(true);
-  const [customReason, setCustomReason] = useState('');
 
   const [editingReportId, setEditingReportId] = useState(null);
 
@@ -249,7 +248,7 @@ const DashboardPage = () => {
       const types = [
         'specialist_level', 'vacancy_status', 'it_role', 'project',
         'source', 'employment_type', 'replacement_type', 'feasibility',
-        'block', 'admin_manager', 'internal_transfer'
+        'block', 'admin_manager', 'internal_transfer', 'offer_rejection_reason'
       ];
       const results = {};
       for (const type of types) {
@@ -274,6 +273,15 @@ const DashboardPage = () => {
       console.error('Failed to load users:', error);
     }
   };
+
+  const rejectionReasonOptions = useMemo(() => {
+    const fromDict = (dictionaries.offer_rejection_reason || []).map((d) => ({
+      value: d.value,
+      label: d.value,
+    }));
+    if (fromDict.length > 0) return fromDict;
+    return OFFER_REJECTION_REASONS;
+  }, [dictionaries.offer_rejection_reason]);
 
   const handleCreate = () => {
     setEditingVacancy(null);
@@ -304,7 +312,6 @@ const DashboardPage = () => {
       interviews_plan:    record.interviews_plan    || 0,
       offer_made:         record.offer_made         || 0,
       offer_accepted:     record.offer_accepted     || record.offer_accepted_cnt || 0,
-      offer_rejection_reason: record.offer_rejection_reason || null,
       comment:            record.comment || '',
       feasibility_id:     record.feasibility_id || record.feasibility?.id || null,
     });
@@ -323,10 +330,8 @@ const DashboardPage = () => {
       if (isRecruiter) {
         if (editingVacancy) {
           delete payload.recruiter_id;
-          delete payload.co_recruiter_id;
         } else {
           payload.recruiter_id = user?.id;
-          delete payload.co_recruiter_id;
         }
       }
       if (editingVacancy) {
@@ -477,7 +482,7 @@ const DashboardPage = () => {
     try {
       const res = await api.get(`/reports/vacancy/${vacancy.id}`);
       const reports = res.data.items || [];
-      const existing = reports.find(r => r.week_number === currentWeek && r.year === currentYear);
+      const existing = reports.find(r => r.week_number === currentWeek && r.year === currentYear && (!isRecruiter || !r.user_id || r.user_id === user?.id));
       if (existing) {
         setEditingReportId(existing.id);
         reportForm.setFieldsValue({
@@ -502,7 +507,7 @@ const DashboardPage = () => {
       const [year, week] = value.split('-').map(Number);
       const res = await api.get(`/reports/vacancy/${reportVacancy.id}`);
       const reports = res.data.items || [];
-      const existing = reports.find(r => r.week_number === week && r.year === year);
+      const existing = reports.find(r => r.week_number === week && r.year === year && (!isRecruiter || !r.user_id || r.user_id === user?.id));
       if (existing) {
         setEditingReportId(existing.id);
         reportForm.setFieldsValue({
@@ -563,6 +568,7 @@ const DashboardPage = () => {
           vacancy_id: reportVacancy.id,
           week_number: week,
           year: year,
+          user_id: user?.id,
           ...payload,
         });
         message.success('Отчёт сохранён.');
@@ -745,35 +751,11 @@ const DashboardPage = () => {
                   disabled={!isReportWeekEditable}
                   allowClear
                   showSearch
-                  popupMatchSelectWidth={false}
-                  placeholder="Выберите причину или укажите свою"
-                  options={OFFER_REJECTION_REASONS}
-                  dropdownRender={(menu) => (
-                    <>
-                      {menu}
-                      <Divider style={{ margin: '8px 0' }} />
-                      <Space style={{ padding: '0 8px 4px' }}>
-                        <Input
-                          placeholder="Своя причина..."
-                          value={customReason}
-                          onChange={(e) => setCustomReason(e.target.value)}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        />
-                        <Button
-                          type="text"
-                          icon={<PlusOutlined />}
-                          onClick={() => {
-                            if (customReason.trim()) {
-                              reportForm.setFieldsValue({ offer_rejection_reason: customReason.trim() });
-                              setCustomReason('');
-                            }
-                          }}
-                        >
-                          Выбрать
-                        </Button>
-                      </Space>
-                    </>
-                  )}
+                  placeholder="Выберите причину отказа от оффера"
+                  options={rejectionReasonOptions}
+                  filterOption={(input, option) =>
+                    (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
                 />
               </Form.Item>
             </Form>
@@ -928,11 +910,10 @@ const DashboardPage = () => {
                   <Select 
                     popupMatchSelectWidth={false}
                     options={users.map(u => ({ value: u.id, label: u.full_name }))} 
-                    allowClear={!isRecruiter}
+                    allowClear
                     showSearch 
                     optionFilterProp="label"
-                    disabled={isRecruiter}
-                    placeholder={isRecruiter ? 'Не назначен' : 'Выберите доп. рекрутера'}
+                    placeholder="Выберите доп. рекрутера"
                   />
                 </HighlightFormItem>
               </Col>
@@ -955,20 +936,9 @@ const DashboardPage = () => {
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={isMobile ? 24 : 12}>
+              <Col span={24}>
                 <HighlightFormItem editing={!!editingVacancy} name="comment" label="Комментарий">
-                  <Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} placeholder="Комментарий по кандидату / вакансии" />
-                </HighlightFormItem>
-              </Col>
-              <Col span={isMobile ? 24 : 12}>
-                <HighlightFormItem editing={!!editingVacancy} name="offer_rejection_reason" label="Причина отказа от Оффера">
-                  <Select
-                    allowClear
-                    showSearch
-                    popupMatchSelectWidth={false}
-                    placeholder="Выберите причину"
-                    options={OFFER_REJECTION_REASONS}
-                  />
+                  <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} placeholder="Комментарий по кандидату / вакансии" />
                 </HighlightFormItem>
               </Col>
             </Row>

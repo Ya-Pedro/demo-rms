@@ -195,7 +195,7 @@ class VacancyService:
         metrics_map = {}
         if vacancies:
             metrics_map = await self.repo.get_weekly_metrics(
-                [v.id for v in vacancies], period_conditions
+                [v.id for v in vacancies], period_conditions, current_user=current_user
             )
 
                                                                   
@@ -236,7 +236,7 @@ class VacancyService:
                                 
         if current_user and current_user.role == UserRole.RECRUITER:
             vacancy_data["recruiter_id"] = current_user.id
-            vacancy_data.pop("co_recruiter_id", None)
+            # Preserve co_recruiter_id so recruiter can assign a co-recruiter
 
         funnel = {
             "resumes_sent": vacancy_data.pop("resume_at_customer", 0) or 0,
@@ -279,6 +279,7 @@ class VacancyService:
                     "year": yr,
                     "week_start": monday,
                     "report_date": now_utc,
+                    "user_id": current_user.id if current_user else None,
                     **funnel,
                 })
             await self.repo.commit()
@@ -293,6 +294,7 @@ class VacancyService:
                 "year": yr,
                 "week_start": monday,
                 "report_date": now_utc,
+                "user_id": current_user.id if current_user else None,
                 **funnel,
             })
             await self.repo.commit()
@@ -333,7 +335,7 @@ class VacancyService:
 
         if current_user and current_user.role == UserRole.RECRUITER:
             update_data.pop("recruiter_id", None)
-            update_data.pop("co_recruiter_id", None)
+            # Preserve co_recruiter_id so recruiter can update co-recruiter
 
                                             
         _hist_before = None

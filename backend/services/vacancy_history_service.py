@@ -81,6 +81,7 @@ REPORT_FIELD_LABELS = {
     "interviews_planned":   "Собеседования план",
     "interviews_conducted": "Собеседования факт",
     "offer_made":           "Оффер сделан",
+    "offer_accepted":       "Оффер принят",
 }
 
 ROLE_LABELS = {
@@ -275,6 +276,7 @@ class VacancyHistoryService:
         year: int,
         metrics: dict,
         user: User,
+        offer_rejection_reason: Optional[str] = None,
     ) -> None:
         changes: dict = {}
         for field, label in REPORT_FIELD_LABELS.items():
@@ -294,6 +296,19 @@ class VacancyHistoryService:
         ))
         logger.debug("history REPORT vacancy_id=%s week=%s/%s", vacancy_id, week_number, year)
 
+        # Track offer rejection reason separately if provided
+        if offer_rejection_reason:
+            self._add(VacancyHistory(
+                vacancy_id=vacancy_id,
+                user_id=user.id,
+                action_type="OFFER_REJECTION",
+                changes=json.dumps({
+                    "Причина отказа от оффера": {"old": "—", "new": offer_rejection_reason},
+                    "Неделя": {"old": "—", "new": f"Неделя {week_number}, {year}"},
+                }, ensure_ascii=False),
+                vacancy_snapshot=vacancy_name,
+            ))
+
     async def record_report_updated(
         self,
         vacancy_id: int,
@@ -303,6 +318,8 @@ class VacancyHistoryService:
         old_metrics: dict,
         new_metrics: dict,
         user: User,
+        old_offer_rejection_reason: Optional[str] = None,
+        new_offer_rejection_reason: Optional[str] = None,
     ) -> None:
         changes: dict = {}
         for field, label in REPORT_FIELD_LABELS.items():
@@ -311,16 +328,30 @@ class VacancyHistoryService:
             if old_v != new_v:
                 changes[label] = {"old": str(old_v), "new": str(new_v)}
 
-        if not changes:
-            return
+        if changes:
+            self._add(VacancyHistory(
+                vacancy_id=vacancy_id,
+                user_id=user.id,
+                action_type="REPORT",
+                changes=json.dumps(changes, ensure_ascii=False),
+                vacancy_snapshot=vacancy_name,
+            ))
 
-        self._add(VacancyHistory(
-            vacancy_id=vacancy_id,
-            user_id=user.id,
-            action_type="REPORT",
-            changes=json.dumps(changes, ensure_ascii=False),
-            vacancy_snapshot=vacancy_name,
-        ))
+        # Track offer rejection reason separately if changed
+        if new_offer_rejection_reason is not None and new_offer_rejection_reason != old_offer_rejection_reason:
+            self._add(VacancyHistory(
+                vacancy_id=vacancy_id,
+                user_id=user.id,
+                action_type="OFFER_REJECTION",
+                changes=json.dumps({
+                    "Причина отказа от оффера": {
+                        "old": old_offer_rejection_reason or "—",
+                        "new": new_offer_rejection_reason or "—",
+                    },
+                    "Неделя": {"old": "—", "new": f"Неделя {week_number}, {year}"},
+                }, ensure_ascii=False),
+                vacancy_snapshot=vacancy_name,
+            ))
 
                                                                                 
 

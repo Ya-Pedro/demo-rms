@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 
-from sqlalchemy import select, func, and_, update, Integer
+from sqlalchemy import select, func, and_, or_, update, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -187,8 +187,8 @@ class VacancyRepository:
         self,
         vacancy_ids: List[int],
         conditions: list,
+        current_user: Optional[User] = None,
     ) -> dict:
-                                                                     
         m_q = (
             select(
                 WeeklyReport.vacancy_id,
@@ -199,10 +199,18 @@ class VacancyRepository:
                 func.coalesce(func.sum(WeeklyReport.offer_made), 0).label("offer_made"),
                 func.coalesce(func.sum(WeeklyReport.offer_accepted), 0).label("offer_accepted"),
             )
+            .join(Vacancy, WeeklyReport.vacancy_id == Vacancy.id)
             .where(WeeklyReport.vacancy_id.in_(vacancy_ids))
         )
         if conditions:
             m_q = m_q.where(and_(*conditions))
+        if current_user and current_user.role == UserRole.RECRUITER:
+            m_q = m_q.where(
+                or_(
+                    WeeklyReport.user_id == current_user.id,
+                    and_(WeeklyReport.user_id.is_(None), Vacancy.recruiter_id == current_user.id),
+                )
+            )
         m_q = m_q.group_by(WeeklyReport.vacancy_id)
 
         rows = (await self.db.execute(m_q)).all()

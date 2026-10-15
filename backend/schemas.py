@@ -322,6 +322,7 @@ class BulkAssignRecruiterRequest(BaseModel):
 class WeeklyReportBase(BaseModel):
     week_number: int
     year: int
+    user_id: Optional[int] = None
     resumes_sent: int = 0
     candidates_agreed: int = 0
     interviews_planned: int = 0
@@ -335,6 +336,7 @@ class WeeklyReportCreate(WeeklyReportBase):
     vacancy_id: int
 
 class WeeklyReportUpdate(BaseModel):
+    user_id: Optional[int] = None
     resumes_sent: Optional[int] = None
     candidates_agreed: Optional[int] = None
     interviews_planned: Optional[int] = None
@@ -349,6 +351,7 @@ class WeeklyReportResponse(BaseModel):
     
     id: int
     vacancy_id: int
+    user_id: Optional[int] = None
     week_number: int
     year: int
     report_date: Optional[datetime] = None
@@ -395,3 +398,13 @@ class SmartExportRequest(BaseModel):
     sort_field: Optional[str] = None
     sort_order: Optional[str] = "desc"
     search: Optional[str] = None
+
+class NoteResponse(BaseModel):
+    scope: str
+    sheets: list
+    updated_at: Optional[datetime] = None
+    updated_by_name: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class NoteUpdateRequest(BaseModel):
+    sheets: list

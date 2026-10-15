@@ -17,6 +17,7 @@ const DICTIONARY_TYPES = [
   { value: 'block', label: 'Блок' },
   { value: 'admin_manager', label: 'Административный руководитель' },
   { value: 'internal_transfer', label: 'Внутренний перевод' },
+  { value: 'offer_rejection_reason', label: 'Причина отказа от Оффера' },
 ];
 
 const DictionaryPage = () => {

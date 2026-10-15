@@ -42,6 +42,7 @@ import { api } from '../App';
 dayjs.extend(isoWeek);
 
 import DelegationModal from '../components/DelegationModal';
+import { OFFER_REJECTION_REASONS } from './DashboardPage';
 import './VacancyTable.css';
 
 const STORAGE_KEY_PREFIX = 'rms_table_settings_';
@@ -1089,7 +1090,11 @@ const VacancyTable = ({
       {
         title: 'Причина отказа от Оффера', dataIndex: 'offer_rejection_reason', key: 'offer_rejection_reason', ...mkSort('offer_rejection_reason'), width: 170, ellipsis: true,
         filteredValue: fi.offer_rejection_reason || null,
-        ...TEXT_FILTER_DROPDOWN,
+        filters: (dictionaries?.offer_rejection_reason && dictionaries.offer_rejection_reason.length > 0)
+          ? dictionaries.offer_rejection_reason.map(r => ({ text: r.value, value: r.value }))
+          : OFFER_REJECTION_REASONS.map(r => ({ text: r.label, value: r.value })),
+        filterSearch: true,
+        filterDropdownProps: { getPopupContainer },
         render: (v) => v || '-',
       },
       {

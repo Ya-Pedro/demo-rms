@@ -4,7 +4,7 @@
    
 from sqlalchemy import (
     Column, Integer, String, Boolean, Date, DateTime, 
-    ForeignKey, Text, Enum as SQLEnum, Numeric
+    ForeignKey, Text, Enum as SQLEnum, Numeric, JSON
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -36,6 +36,7 @@ class DictionaryType(str, enum.Enum):
     TEAM_LEAD = "team_lead"                            
     INTERNAL_TRANSFER = "internal_transfer"                        
     CITY = "city"                                            
+    OFFER_REJECTION_REASON = "offer_rejection_reason"                                            
 
 class User(Base):
                                                          
@@ -266,9 +267,10 @@ class WeeklyReport(Base):
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
-                   
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True, comment="Автор отчёта")
+
     vacancy = relationship("Vacancy", back_populates="weekly_reports")
+    user = relationship("User", foreign_keys=[user_id])
 
                                                                                      
                                                                             
@@ -317,6 +319,23 @@ class VacancyHistory(Base):
 
     vacancy = relationship("Vacancy", foreign_keys=[vacancy_id])
     user    = relationship("User",    foreign_keys=[user_id])
+
+class Note(Base):
+    """
+    Заметки системы:
+    - Для superadmin и admin заметки общие (scope = 'admin_shared')
+    - Для recruiter заметки персональные (scope = 'user_{user_id}')
+    """
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope = Column(String(64), unique=True, nullable=False, index=True)
+    data = Column(JSON, nullable=False, default=list)
+    updated_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
 
 from middleware.audit import AuditLog                                         
 from services.refresh_token import RefreshToken                                        

@@ -12,6 +12,7 @@ import {
   Card,
   message,
   Tour,
+  Tag,
 } from 'antd';
 import {
   PlusOutlined,
@@ -23,9 +24,12 @@ import {
   ReloadOutlined,
   CopyOutlined,
   QuestionCircleOutlined,
+  SyncOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
 import { ThemeContext } from '../App';
 import { tokenStorage } from '../tokenStorage';
+import api from '../apiClient';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -53,9 +57,13 @@ const NOTES_TOUR_STEPS = [
 ];
 
 const LEGACY_STORAGE_KEY = 'rms_recruiter_notes_sheets_v1';
+const SHARED_ADMIN_STORAGE_KEY = 'rms_notes_sheets_shared_admin';
 
-const getUserStorageKey = (userId) => {
-  return userId ? `rms_notes_sheets_u_${userId}` : LEGACY_STORAGE_KEY;
+const getNotesStorageKey = (user) => {
+  if (user?.role === 'admin' || user?.role === 'superadmin') {
+    return SHARED_ADMIN_STORAGE_KEY;
+  }
+  return user?.id ? `rms_notes_sheets_u_${user.id}` : LEGACY_STORAGE_KEY;
 };
 
 const DEFAULT_SHEETS = [
@@ -190,43 +198,215 @@ const EditableCell = React.memo(function EditableCell({
     </div>
   );
 });
+const normalizeSheet = (s, idx = 0) => {
+  if (!s || typeof s !== 'object') {
+    return {
+      id: `sheet_${idx + 1}`,
+      name: `Лист ${idx + 1}`,
+      columns: [
+        { key: 'col_1', title: 'Столбец 1', width: 200 },
+        { key: 'col_notes', title: 'Заметки', width: 300 },
+      ],
+      rows: [
+        { id: `r_init_${idx}`, col_1: '', col_notes: '' },
+      ],
+    };
+  }
+
+  const id = s.id || `sheet_${idx + 1}`;
+  const name = s.name || `Лист ${idx + 1}`;
+  let columns = Array.isArray(s.columns) ? s.columns : null;
+  let rows = Array.isArray(s.rows) ? s.rows : null;
+
+  // If sheet was saved as a matrix (data: [[...], [...]])
+  if ((!columns || !rows) && Array.isArray(s.data) && s.data.length > 0) {
+    const headers = s.data[0] || [];
+    columns = headers.map((h, ci) => ({
+      key: `col_${ci + 1}`,
+      title: String(h || `Столбец ${ci + 1}`),
+      width: 200,
+    }));
+    rows = s.data.slice(1).map((row, ri) => {
+      const rObj = { id: `r_${ri + 1}` };
+      columns.forEach((c, ci) => {
+        rObj[c.key] = row[ci] !== undefined ? String(row[ci]) : '';
+      });
+      return rObj;
+    });
+  }
+
+  if (!columns || columns.length === 0) {
+    columns = [
+      { key: 'col_1', title: 'Столбец 1', width: 200 },
+      { key: 'col_notes', title: 'Заметки', width: 300 },
+    ];
+  }
+  if (!rows) {
+    rows = [];
+  }
+
+  return { id, name, columns, rows };
+};
+
+const normalizeSheets = (sheetsList) => {
+  if (!Array.isArray(sheetsList) || sheetsList.length === 0) {
+    return DEFAULT_SHEETS;
+  }
+  return sheetsList.map((s, idx) => normalizeSheet(s, idx));
+};
 
 export default function NotesPage() {
   const { isDarkMode } = useContext(ThemeContext);
 
   const user = tokenStorage.getUser();
   const userId = user?.id || null;
-  const userStorageKey = getUserStorageKey(userId);
+  const isAdminRole = user?.role === 'admin' || user?.role === 'superadmin';
+  const isRecruiter = user?.role === 'recruiter';
+  const notesStorageKey = getNotesStorageKey(user);
 
-  const loadSheets = useCallback(() => {
+  const loadInitialSheets = useCallback(() => {
     try {
-      const savedUser = localStorage.getItem(userStorageKey);
+      const savedUser = localStorage.getItem(notesStorageKey);
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return normalizeSheets(parsed);
+      }
+      // Migration fallback: if admin/superadmin had personal notes before shared migration
+      if (isAdminRole && userId) {
+        const savedPersonal = localStorage.getItem(`rms_notes_sheets_u_${userId}`);
+        if (savedPersonal) {
+          const parsed = JSON.parse(savedPersonal);
+          if (Array.isArray(parsed) && parsed.length > 0) return normalizeSheets(parsed);
+        }
       }
       // Fallback / migration from legacy key if user storage is empty
       const savedLegacy = localStorage.getItem(LEGACY_STORAGE_KEY);
       if (savedLegacy) {
         const parsed = JSON.parse(savedLegacy);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) return normalizeSheets(parsed);
       }
     } catch (e) {
       console.error('Failed to load notes from localStorage', e);
     }
     return DEFAULT_SHEETS;
-  }, [userStorageKey]);
+  }, [notesStorageKey, isAdminRole, userId]);
 
-  const [sheets, setSheets] = useState(loadSheets);
-
-  // Reload sheets if user switches
-  useEffect(() => {
-    setSheets(loadSheets());
-  }, [loadSheets]);
-
+  const [sheets, setSheets] = useState(loadInitialSheets);
   const [activeSheetId, setActiveSheetId] = useState(() => {
     return sheets[0]?.id || 'sheet_candidates';
   });
+
+  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'syncing' | 'saved' | 'error'
+  const [lastUpdatedInfo, setLastUpdatedInfo] = useState(null);
+  const [refreshLoading, setRefreshLoading] = useState(false);
+
+  const isInitialLoadedRef = React.useRef(false);
+  const saveTimeoutRef = React.useRef(null);
+  const latestSheetsRef = React.useRef(sheets);
+  latestSheetsRef.current = sheets;
+
+  const fetchNotes = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshLoading(true);
+    try {
+      const res = await api.get('/notes');
+      if (res?.data) {
+        const rawSheets = res.data.sheets;
+        if (Array.isArray(rawSheets) && rawSheets.length > 0) {
+          const serverSheets = normalizeSheets(rawSheets);
+          setSheets(serverSheets);
+          try {
+            localStorage.setItem(notesStorageKey, JSON.stringify(serverSheets));
+          } catch (e) {}
+          if (!serverSheets.some((s) => s.id === activeSheetId)) {
+            setActiveSheetId(serverSheets[0]?.id || 'sheet_candidates');
+          }
+        } else {
+          // If server has no sheets yet, seed with initial local/default sheets
+          const localSheets = normalizeSheets(loadInitialSheets());
+          await api.put('/notes', { sheets: localSheets });
+          setSheets(localSheets);
+          try {
+            localStorage.setItem(notesStorageKey, JSON.stringify(localSheets));
+          } catch (e) {}
+        }
+
+        if (res.data.updated_at || res.data.updated_by_name) {
+          setLastUpdatedInfo({
+            at: res.data.updated_at,
+            by: res.data.updated_by_name,
+          });
+        }
+        setSyncStatus('saved');
+        if (isManual) {
+          message.success('Заметки успешно обновлены');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch notes from backend', err);
+      if (isManual) {
+        message.error('Ошибка загрузки заметок с сервера');
+      }
+    } finally {
+      isInitialLoadedRef.current = true;
+      if (isManual) setRefreshLoading(false);
+    }
+  }, [notesStorageKey, activeSheetId, loadInitialSheets]);
+
+  // Initial load on mount or key change
+  useEffect(() => {
+    isInitialLoadedRef.current = false;
+    fetchNotes(false);
+  }, [fetchNotes]);
+
+  // Periodic background sync (every 30 seconds when tab is active and not syncing)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && syncStatus !== 'syncing') {
+        fetchNotes(false);
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotes, syncStatus]);
+
+  // Persist to localStorage and sync to backend with debounce
+  useEffect(() => {
+    try {
+      localStorage.setItem(notesStorageKey, JSON.stringify(sheets));
+    } catch (e) {
+      console.error('Failed to save notes to localStorage', e);
+    }
+
+    if (!isInitialLoadedRef.current) {
+      return;
+    }
+
+    setSyncStatus('syncing');
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await api.put('/notes', { sheets: latestSheetsRef.current });
+        setSyncStatus('saved');
+        if (res?.data?.updated_at || res?.data?.updated_by_name) {
+          setLastUpdatedInfo({
+            at: res.data.updated_at,
+            by: res.data.updated_by_name,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to save notes to backend', err);
+        setSyncStatus('error');
+      }
+    }, 700);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [sheets, notesStorageKey]);
 
   const [searchFilter, setSearchFilter] = useState('');
   const [columnSearch, setColumnSearch] = useState({});
@@ -245,7 +425,6 @@ export default function NotesPage() {
   const [renameSheetTitle, setRenameSheetTitle] = useState('');
 
   // Tour state - only for recruiter role (hidden for admin and superadmin)
-  const isRecruiter = user?.role === 'recruiter';
   const tourKey = `rms_notes_tour_completed_${userId || 'default'}`;
   const [tourOpen, setTourOpen] = useState(false);
 
@@ -260,23 +439,35 @@ export default function NotesPage() {
     localStorage.setItem(tourKey, 'true');
   };
 
-  // Persist to user-specific localStorage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem(userStorageKey, JSON.stringify(sheets));
-    } catch (e) {
-      console.error('Failed to save notes to localStorage', e);
-    }
-  }, [sheets, userStorageKey]);
-
   const activeSheet = useMemo(() => {
-    return sheets.find((s) => s.id === activeSheetId) || sheets[0] || null;
+    const raw = sheets.find((s) => s.id === activeSheetId) || sheets[0] || null;
+    if (!raw) return null;
+    return {
+      ...raw,
+      columns: Array.isArray(raw.columns) ? raw.columns : [],
+      rows: Array.isArray(raw.rows) ? raw.rows : [],
+    };
   }, [sheets, activeSheetId]);
 
   // Handle active sheet update
   const updateActiveSheet = useCallback((updater) => {
     setSheets((prev) =>
-      prev.map((s) => (s.id === activeSheetId ? updater(s) : s))
+      prev.map((s) => {
+        if (s.id === activeSheetId) {
+          const safeSheet = {
+            ...s,
+            columns: Array.isArray(s.columns) ? s.columns : [],
+            rows: Array.isArray(s.rows) ? s.rows : [],
+          };
+          const updated = updater(safeSheet);
+          return {
+            ...updated,
+            columns: Array.isArray(updated.columns) ? updated.columns : [],
+            rows: Array.isArray(updated.rows) ? updated.rows : [],
+          };
+        }
+        return s;
+      })
     );
   }, [activeSheetId]);
 
@@ -460,12 +651,14 @@ export default function NotesPage() {
 
   // Filtered rows
   const filteredRows = useMemo(() => {
-    if (!activeSheet) return [];
+    if (!activeSheet || !Array.isArray(activeSheet.rows)) return [];
+    const cols = Array.isArray(activeSheet.columns) ? activeSheet.columns : [];
     return activeSheet.rows.filter((row) => {
+      if (!row) return false;
       // Global search
       if (searchFilter.trim()) {
         const needle = searchFilter.toLowerCase();
-        const matchesGlobal = activeSheet.columns.some((col) => {
+        const matchesGlobal = cols.some((col) => {
           const val = (row[col.key] ?? '').toString().toLowerCase();
           return val.includes(needle);
         });
@@ -493,10 +686,10 @@ export default function NotesPage() {
 
   // Export current sheet to CSV with BOM and semicolon (Excel format)
   const handleExportCSV = useCallback(() => {
-    if (!activeSheet) return;
+    if (!activeSheet || !Array.isArray(activeSheet.columns) || !Array.isArray(activeSheet.rows)) return;
     const rowsToExport = filteredRows.length > 0 ? filteredRows : activeSheet.rows;
 
-    const headerRow = activeSheet.columns.map((c) => `"${c.title.replace(/"/g, '""')}"`).join(';');
+    const headerRow = activeSheet.columns.map((c) => `"${(c.title || '').replace(/"/g, '""')}"`).join(';');
     const dataRows = rowsToExport.map((r) =>
       activeSheet.columns
         .map((c) => `"${(r[c.key] ?? '').toString().replace(/"/g, '""')}"`)
@@ -507,7 +700,7 @@ export default function NotesPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    const safeSheetName = activeSheet.name.replace(/[/\\?%*:|"<>]/g, '_');
+    const safeSheetName = (activeSheet.name || 'Лист').replace(/[/\\?%*:|"<>]/g, '_');
     link.setAttribute('download', `${safeSheetName}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
@@ -518,7 +711,7 @@ export default function NotesPage() {
 
   // Dynamic table columns configuration
   const tableColumns = useMemo(() => {
-    if (!activeSheet) return [];
+    if (!activeSheet || !Array.isArray(activeSheet.columns)) return [];
     const cols = activeSheet.columns.map((c) => ({
       title: (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -667,17 +860,66 @@ export default function NotesPage() {
           }}
         >
           <div>
-            <Space align="center">
+            <Space align="center" wrap>
               <Title level={4} style={{ margin: 0 }}>
                 Рабочие заметки
               </Title>
+              {isAdminRole ? (
+                <Tag color="blue" style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
+                  Общие заметки администраторов
+                </Tag>
+              ) : (
+                <Tag color="default" style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
+                  Личные заметки
+                </Tag>
+              )}
+              {syncStatus === 'syncing' && (
+                <Tag icon={<SyncOutlined spin />} color="processing" style={{ margin: 0, borderRadius: 4 }}>
+                  Сохранение...
+                </Tag>
+              )}
+              {syncStatus === 'saved' && (
+                <Tag icon={<CheckCircleOutlined />} color="success" style={{ margin: 0, borderRadius: 4 }}>
+                  Сохранено
+                </Tag>
+              )}
+              {syncStatus === 'error' && (
+                <Tag color="error" style={{ margin: 0, borderRadius: 4 }}>
+                  Ошибка сохранения
+                </Tag>
+              )}
             </Space>
             <div style={{ marginTop: 4, color: isDarkMode ? '#8b949e' : '#64748b', fontSize: 13 }}>
-              Электронная таблица для ведения оперативных заметок, списков кандидатов и задач. Данные сохраняются автоматически.
+              {isAdminRole
+                ? 'Общие рабочие заметки для администраторов и суперадминистраторов системы. Изменения видны всем администраторам.'
+                : 'Персональная электронная таблица для ведения оперативных заметок, списков кандидатов и задач. Данные сохраняются автоматически.'}
+              {lastUpdatedInfo?.by && (
+                <span style={{ marginLeft: 8, fontStyle: 'italic', fontSize: 12, opacity: 0.85 }}>
+                  (посл. изменение: {lastUpdatedInfo.by}
+                  {lastUpdatedInfo.at
+                    ? `, ${new Date(lastUpdatedInfo.at).toLocaleDateString('ru-RU', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}`
+                    : ''}
+                  )
+                </span>
+              )}
             </div>
           </div>
 
           <Space wrap>
+            <Tooltip title="Синхронизировать с сервером и загрузить актуальные данные">
+              <Button
+                icon={<ReloadOutlined spin={refreshLoading} />}
+                loading={refreshLoading}
+                onClick={() => fetchNotes(true)}
+              >
+                Обновить
+              </Button>
+            </Tooltip>
             <Input
               placeholder="Поиск по всему листу..."
               prefix={<SearchOutlined />}

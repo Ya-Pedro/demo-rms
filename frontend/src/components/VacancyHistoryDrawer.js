@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Drawer, Tag, Space, DatePicker, Spin,
-  Empty, Typography, Button, Tooltip, Collapse, theme,
+  Empty, Typography, Button, Tooltip, Collapse, theme, Tabs, Badge,
 } from 'antd';
 import {
   EditOutlined, PlusCircleOutlined, DeleteOutlined,
   UserOutlined, ClockCircleOutlined, ReloadOutlined,
   UserSwitchOutlined, FileTextOutlined, UserDeleteOutlined,
-  RightOutlined,
+  RightOutlined, CloseCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -25,12 +25,13 @@ const { Text } = Typography;
 const { Panel } = Collapse;
 
 const ACTION_CONFIG = {
-  CREATE:     { color: '#52c41a', icon: <PlusCircleOutlined />,  label: 'Создание',           tagColor: 'success'    },
-  UPDATE:     { color: '#1677ff', icon: <EditOutlined />,         label: 'Изменение',          tagColor: 'processing' },
-  DELETE:     { color: '#ff4d4f', icon: <DeleteOutlined />,       label: 'Удаление',           tagColor: 'error'      },
-  DELEGATE:   { color: '#fa8c16', icon: <UserSwitchOutlined />,   label: 'Делегирование',      tagColor: 'warning'    },
-  UNDELEGATE: { color: '#722ed1', icon: <UserDeleteOutlined />,   label: 'Отзыв делегирования',tagColor: 'purple'     },
-  REPORT:     { color: '#13c2c2', icon: <FileTextOutlined />,     label: 'Отчёт',              tagColor: 'cyan'       },
+  CREATE:          { color: '#52c41a', icon: <PlusCircleOutlined />,   label: 'Создание',                  tagColor: 'success'    },
+  UPDATE:          { color: '#1677ff', icon: <EditOutlined />,          label: 'Изменение',                 tagColor: 'processing' },
+  DELETE:          { color: '#ff4d4f', icon: <DeleteOutlined />,        label: 'Удаление',                  tagColor: 'error'      },
+  DELEGATE:        { color: '#fa8c16', icon: <UserSwitchOutlined />,    label: 'Делегирование',             tagColor: 'warning'    },
+  UNDELEGATE:      { color: '#722ed1', icon: <UserDeleteOutlined />,    label: 'Отзыв делегирования',       tagColor: 'purple'     },
+  REPORT:          { color: '#13c2c2', icon: <FileTextOutlined />,      label: 'Отчёт',                     tagColor: 'cyan'       },
+  OFFER_REJECTION: { color: '#fa541c', icon: <CloseCircleOutlined />,  label: 'Причина отказа от оффера',  tagColor: 'volcano'    },
 };
 const getCfg = (t) => ACTION_CONFIG[t] || ACTION_CONFIG.UPDATE;
 
@@ -211,16 +212,89 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
 
   useEffect(() => {
     if (open && vacancy?.id) { setDateRange(null); fetchHistory(null); }
-    if (!open) setRecords([]);
-  }, [open, vacancy?.id]);
+    if (!open) {
+      setRecords([]);
+      setActiveTab('ALL');
+    }
+  }, [open, vacancy?.id, fetchHistory]);
 
   const handleRange = (range) => { setDateRange(range); fetchHistory(range); };
 
-  const grouped = records.reduce((acc, r) => {
+  const [activeTab, setActiveTab] = useState('ALL');
+
+  const isOfferRejectionRecord = (r) => {
+    if (r.action_type === 'OFFER_REJECTION') return true;
+    if (r.changes) {
+      const keys = Object.keys(r.changes);
+      return keys.some(k => k.toLowerCase().includes('причина отказа') || k.toLowerCase().includes('rejection'));
+    }
+    return false;
+  };
+
+  const getFilteredRecords = (tab) => {
+    if (tab === 'ALL') return records;
+    if (tab === 'OFFER_REJECTION') return records.filter(isOfferRejectionRecord);
+    if (tab === 'UPDATE') return records.filter(r => r.action_type === 'UPDATE' && !isOfferRejectionRecord(r));
+    if (tab === 'REPORT') return records.filter(r => r.action_type === 'REPORT');
+    if (tab === 'CREATE') return records.filter(r => r.action_type === 'CREATE');
+    return records.filter(r => r.action_type === tab);
+  };
+
+  const filteredRecords = getFilteredRecords(activeTab);
+
+  const countAll = records.length;
+  const countUpdate = records.filter(r => r.action_type === 'UPDATE' && !isOfferRejectionRecord(r)).length;
+  const countReport = records.filter(r => r.action_type === 'REPORT').length;
+  const countCreate = records.filter(r => r.action_type === 'CREATE').length;
+  const countRejection = records.filter(isOfferRejectionRecord).length;
+
+  const tabItems = [
+    {
+      key: 'ALL',
+      label: (
+        <span>Все {countAll > 0 && <Tag style={{ marginLeft: 4, borderRadius: 10, fontSize: 11 }}>{countAll}</Tag>}</span>
+      ),
+    },
+    {
+      key: 'UPDATE',
+      label: (
+        <span><EditOutlined /> Изменение {countUpdate > 0 && <Tag color="processing" style={{ marginLeft: 4, borderRadius: 10, fontSize: 11 }}>{countUpdate}</Tag>}</span>
+      ),
+    },
+    {
+      key: 'REPORT',
+      label: (
+        <span><FileTextOutlined /> Отчёт {countReport > 0 && <Tag color="cyan" style={{ marginLeft: 4, borderRadius: 10, fontSize: 11 }}>{countReport}</Tag>}</span>
+      ),
+    },
+    {
+      key: 'CREATE',
+      label: (
+        <span><PlusCircleOutlined /> Создание {countCreate > 0 && <Tag color="success" style={{ marginLeft: 4, borderRadius: 10, fontSize: 11 }}>{countCreate}</Tag>}</span>
+      ),
+    },
+    {
+      key: 'OFFER_REJECTION',
+      label: (
+        <span><CloseCircleOutlined /> Причина отказа от оффера {countRejection > 0 && <Tag color="volcano" style={{ marginLeft: 4, borderRadius: 10, fontSize: 11 }}>{countRejection}</Tag>}</span>
+      ),
+    },
+  ];
+
+  const grouped = filteredRecords.reduce((acc, r) => {
     const day = dayjs(r.created_at).format('D MMMM YYYY');
     (acc[day] = acc[day] || []).push(r);
     return acc;
   }, {});
+
+  const getEmptyDesc = () => {
+    if (dateRange) return 'Нет событий за выбранный период';
+    if (activeTab === 'OFFER_REJECTION') return 'Причины отказа от оффера не зафиксированы';
+    if (activeTab === 'REPORT') return 'Отчётов по вакансии пока нет';
+    if (activeTab === 'UPDATE') return 'Изменений вакансии пока нет';
+    if (activeTab === 'CREATE') return 'Событие создания не найдено';
+    return 'История пуста';
+  };
 
   return (
     <Drawer
@@ -247,7 +321,7 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
       }
     >
       <div style={{
-        marginBottom: 14, padding: '8px 12px',
+        marginBottom: 12, padding: '8px 12px',
         background: token.colorFillAlter, borderRadius: 6, border: `1px solid ${token.colorBorderSecondary}`,
         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
       }}>
@@ -258,31 +332,25 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
           getPopupContainer={() => document.body} allowClear size="small"
         />
         {dateRange && <Button size="small" onClick={() => handleRange(null)}>Сбросить</Button>}
-        {!loading && records.length > 0 && (
+        {!loading && filteredRecords.length > 0 && (
           <Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
-            {records.length} {records.length === 1 ? 'запись' : records.length < 5 ? 'записи' : 'записей'}
+            {filteredRecords.length} {filteredRecords.length === 1 ? 'запись' : filteredRecords.length < 5 ? 'записи' : 'записей'}
           </Text>
         )}
       </div>
 
-      {!loading && records.length > 0 && (
-        <div style={{ marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {Object.entries(records.reduce((a, r) => { a[r.action_type] = (a[r.action_type] || 0) + 1; return a; }, {}))
-            .map(([type, cnt]) => {
-              const cfg = getCfg(type);
-              return (
-                <Tag key={type} color={cfg.tagColor} style={{ margin: 0, fontSize: 11 }}>
-                  {cfg.icon}&nbsp;{cfg.label}: {cnt}
-                </Tag>
-              );
-            })}
-        </div>
-      )}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={tabItems}
+        size="small"
+        style={{ marginBottom: 12 }}
+      />
 
       <Spin spinning={loading}>
-        {!loading && records.length === 0 ? (
+        {!loading && filteredRecords.length === 0 ? (
           <Empty
-            description={dateRange ? 'Нет событий за период' : 'История пуста'}
+            description={getEmptyDesc()}
             style={{ marginTop: 40 }}
           />
         ) : (

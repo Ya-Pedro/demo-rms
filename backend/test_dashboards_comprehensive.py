@@ -77,16 +77,16 @@ async def main():
     print("\n--- 2. Testing Metrics Data Integrity (All Vacancies Accounted For) ---")
     c2 = data["chart2_open_closed"]
     total = c2["total"]
-    sum_parts = c2["open"] + c2["closed"] + c2["exit"] + c2["hold"] + c2["cancel"]
+    sum_parts = c2["open"] + c2["closed"] + c2["hold"] + c2["cancel"]
     print(f"  Total vacancies: {total}")
-    print(f"  Status breakdown: Open={c2['open']}, Closed={c2['closed']}, Exit={c2['exit']}, Hold={c2['hold']}, Cancel={c2['cancel']}")
+    print(f"  Status breakdown: Open={c2['open']}, Closed={c2['closed']}, Hold={c2['hold']}, Cancel={c2['cancel']}")
     assert total > 0, "Expected non-zero total vacancies"
     assert sum_parts == total, f"Sum of statuses ({sum_parts}) does not match total ({total})"
-    print("  [PASS] All vacancies accounted for 100% without loss (open+closed+exit+hold+cancel == total)")
+    print("  [PASS] All vacancies accounted for 100% without loss (open+closed+hold+cancel == total)")
 
     # Funnel
     funnel = data["chart3_funnel"]
-    assert len(funnel) == 5, f"Expected 5 funnel stages, got {len(funnel)}"
+    assert len(funnel) == 6, f"Expected 6 funnel stages, got {len(funnel)}"
     print(f"  [PASS] Funnel stages present: {[s['stage'] for s in funnel]}")
 
     # JO Conversion

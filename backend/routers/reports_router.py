@@ -90,34 +90,43 @@ async def create_report(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этой вакансии")
     
                          
-    existing = await db.execute(
-        select(WeeklyReport).where(
-            WeeklyReport.vacancy_id == report_data.vacancy_id,
-            WeeklyReport.week_number == report_data.week_number,
-            WeeklyReport.year == report_data.year
-        )
+    # Existing report check
+    existing_q = select(WeeklyReport).where(
+        WeeklyReport.vacancy_id == report_data.vacancy_id,
+        WeeklyReport.week_number == report_data.week_number,
+        WeeklyReport.year == report_data.year,
     )
+    if current_user.role == UserRole.RECRUITER:
+        existing_q = existing_q.where(
+            or_(
+                WeeklyReport.user_id == current_user.id,
+                and_(WeeklyReport.user_id.is_(None), vacancy.recruiter_id == current_user.id),
+            )
+        )
+    existing = await db.execute(existing_q)
     if existing.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Отчет за неделю {report_data.week_number} уже существует. Используйте редактирование."
         )
     
-                          
     week_start = _get_week_start(report_data.year, report_data.week_number)
     
     report_dict = report_data.model_dump()
     report_dict['week_start'] = week_start
     report_dict['report_date'] = datetime.now()
+    report_dict['user_id'] = current_user.id
     
     new_report = WeeklyReport(**report_dict)
     db.add(new_report)
 
-                                                                                                  
+    # If offer_rejection_reason provided, update vacancy-level reason as well
+    if getattr(report_data, 'offer_rejection_reason', None):
+        vacancy.offer_rejection_reason = report_data.offer_rejection_reason
+
     await db.commit()
     await db.refresh(new_report)
 
-                                  
     try:
         from services.vacancy_history_service import VacancyHistoryService
         _hist = VacancyHistoryService(db)
@@ -135,6 +144,7 @@ async def create_report(
                 "offer_accepted":       getattr(report_data, 'offer_accepted', 0),
             },
             user=current_user,
+            offer_rejection_reason=getattr(report_data, 'offer_rejection_reason', None),
         )
         await db.commit()
         await FastAPICache.clear(namespace="dashboards")
@@ -1172,13 +1182,21 @@ async def update_report(
         "offer_accepted":       report.offer_accepted,
     }
 
+    _old_reason = report.offer_rejection_reason
+
+    if report.user_id is None:
+        report.user_id = current_user.id
+
     for field, value in update_data.items():
         setattr(report, field, value)
+
+    # If offer_rejection_reason was updated, reflect on vacancy level as well
+    if "offer_rejection_reason" in update_data and report.vacancy:
+        report.vacancy.offer_rejection_reason = report.offer_rejection_reason
 
     await db.commit()
     await db.refresh(report)
 
-                                    
     try:
         from services.vacancy_history_service import VacancyHistoryService
         _hist2 = VacancyHistoryService(db)
@@ -1198,6 +1216,8 @@ async def update_report(
             old_metrics=_old_metrics,
             new_metrics=_new_metrics,
             user=current_user,
+            old_offer_rejection_reason=_old_reason,
+            new_offer_rejection_reason=report.offer_rejection_reason,
         )
         await db.commit()
         await FastAPICache.clear(namespace="dashboards")

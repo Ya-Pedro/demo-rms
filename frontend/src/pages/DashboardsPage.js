@@ -59,7 +59,7 @@ const CHART_FORMULAS = {
   source: {
     title: 'Источник найма',
     formula: '(Вакансии источника / Всего закрытых) × 100%',
-    description: 'Доля закрытых вакансий по каждому каналу подбора (HH, Рекомендация, Прямой поиск и др.).',
+    description: 'Доля закрытых вакансий по каждому каналу подбора',
     rules: 'Только вакансии со статусом «Закрыта».',
   },
   replacement: {
@@ -71,7 +71,7 @@ const CHART_FORMULAS = {
   employment: {
     title: 'Вид занятости',
     formula: '(Вакансии вида / Всего вакансий) × 100%',
-    description: 'Распределение вакансий по формату найма: Штат (ТК РФ), ГПХ, Аутстаффинг, ИП / Самозанятость.',
+    description: 'Распределение вакансий по формату найма',
     rules: 'Все вакансии с учётом выбранных фильтров.',
   },
   jo_conversion: {
@@ -88,33 +88,33 @@ const CHART_FORMULAS = {
   },
   recruiter_load: {
     title: 'Загрузка рекрутеров',
-    formula: 'Количество активных вакансий у каждого рекрутера',
-    description: 'Текущий объём открытых вакансий в работе у каждого рекрутера команды.',
+    formula: 'Количество вакансий у каждого рекрутера',
+    description: 'Объём вакансий у каждого рекрутера команды.',
     rules: 'Учитываются основной и дополнительный рекрутеры.',
   },
   open_details: {
     title: 'Детализация «Открытых» вакансий',
     formula: 'Количество вакансий на каждом этапе подбора',
-    description: 'Распределение активных позиций по текущим этапам (В работе, Скрининг, СБ, Согласование оффера и др.).',
-    rules: 'Исключены финальные статусы («Закрыта», «Выход», «Hold», «Отмена»).',
+    description: 'Распределение активных позиций по текущим этапам (Открыта, Проверка СБ, Оффер, Согласование фин условий, Подготовка документов, Выход)',
+    rules: 'Исключены финальные статусы («Закрыта», «Hold», «Отмена»).',
   },
   statuses: {
     title: 'Вакансии по статусам',
-    formula: 'Открыта + Закрыта + Выход + Hold + Отмена',
+    formula: 'Открыта + Закрыта + Hold + Отмена',
     description: 'Общий баланс всех вакансий компании по ключевым группам статусов.',
-    rules: '100% вакансий в системе без потерь.',
+    rules: '«Всего» = Открыта + Закрыта + Hold + Отмена. Статус «Выход» включён в «Открыта».',
   },
   funnel: {
     title: 'Воронка найма',
-    formula: 'Сумма показателей из еженедельных отчётов',
-    description: 'Движение кандидатов по этапам: Передано заказчику → Резюме одобрено → Собеседования → Оффер сделан.',
-    rules: 'Данные суммируются за выбранный период.',
+    formula: 'Сумма показателей из еженедельных отчётов и % перехода с этапа на этап',
+    description: 'Движение кандидатов по этапам: Передано заказчику → Резюме одобрено → Собеседования → Оффер сделан → Оффер принят → Закрыта.',
+    rules: 'Данные суммируются за выбранный период и рассчитывается % перехода.',
   },
   rejections: {
     title: 'Причины отказа',
     formula: 'Количество отказов по каждой причине',
     description: 'Причины, по которым кандидаты отклонили оффер (уровень дохода, контроффер, локация и др.).',
-    rules: 'Вакансии с заполненной причиной отказа от оффера.',
+    rules: 'Отображаются все причины из справочника; при отсутствии отказов значение 0.',
   },
   companies: {
     title: 'Топ-15 компаний кандидатов',
@@ -126,6 +126,12 @@ const CHART_FORMULAS = {
     title: 'Средний срок закрытия (раб. дни)',
     formula: 'Сумма рабочих дней / Количество закрытых вакансий',
     description: 'Чистое рабочее время от даты открытия до даты закрытия по производственному календарю РФ.',
+    rules: 'Выходные и праздники исключены; дни нахождения в «Hold» автоматически вычитаются.',
+  },
+  avg_days_timeline: {
+    title: 'Средний срок закрытия вакансии (динамика)',
+    formula: 'Сумма рабочих дней / Количество закрытых вакансий',
+    description: 'Динамика чистого времени закрытия вакансий в рабочих днях по месяцам, кварталам и годам.',
     rules: 'Выходные и праздники исключены; дни нахождения в «Hold» автоматически вычитаются.',
   },
 };
@@ -547,6 +553,265 @@ const JOConversionCard = ({ data, isMobile, onFormulaClick }) => {
   );
 };
 
+const AvgDaysDot = ({ cx, cy, payload, maxVal, minVal, hasDiff, isDarkMode }) => {
+  if (cx == null || cy == null || !payload) return null;
+  const isBest = hasDiff && payload.value === minVal;
+  const isWorst = hasDiff && payload.value === maxVal;
+  const green = isDarkMode ? '#2fc08c' : '#169b6b';
+  const red   = isDarkMode ? '#f06462' : '#d93f3e';
+  const blue  = isDarkMode ? '#5aa0f0' : '#2a78d6';
+  const color = isBest ? green : isWorst ? red : blue;
+  const r = (isBest || isWorst) ? 7 : 4.5;
+
+  return (
+    <g key={`dot-avg-${payload.label || payload.name}`}>
+      <circle cx={cx} cy={cy} r={r} fill={color} stroke={color} strokeWidth={2} />
+      <text
+        x={cx}
+        y={isBest ? cy + 18 : cy - 12}
+        textAnchor="middle"
+        fill={color}
+        fontSize={FS_BAR_VAL}
+        fontWeight={isBest || isWorst ? 700 : 500}
+      >
+        {`${payload.value}`}
+      </text>
+    </g>
+  );
+};
+
+const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
+  const { isDarkMode } = React.useContext(ThemeContext);
+  const [mode, setMode] = useState('month');
+
+  const green = isDarkMode ? '#2fc08c' : '#169b6b';
+  const red   = isDarkMode ? '#f06462' : '#d93f3e';
+  const blue  = isDarkMode ? '#5aa0f0' : '#2a78d6';
+  const amber = isDarkMode ? '#f59f00' : '#d97706';
+  const gridColor = isDarkMode ? '#2c3038' : '#e5e7eb';
+
+  const list = (data?.[mode] || []).filter(d => d.value > 0 || d.count > 0);
+  const values = list.map(d => d.value);
+  const maxVal = values.length ? Math.max(...values) : 0;
+  const minVal = values.length ? Math.min(...values) : 0;
+  const hasDiff = list.length > 1 && maxVal !== minVal;
+
+  const dyn = (arr, i) => {
+    if (i < 1) return null;
+    const prev = arr[i - 1].value;
+    const curr = arr[i].value;
+    if (!prev) return null;
+    const x = curr - prev;
+    return {
+      abs: Math.round(x * 10) / 10,
+      pct: Math.round((x / prev) * 1000) / 10,
+    };
+  };
+
+  const lastIdx = list.length - 1;
+  const lastItem = list[lastIdx];
+  const lastDyn = dyn(list, lastIdx);
+
+  const bestItem = hasDiff ? list.find(d => d.value === minVal) : null;
+  const worstItem = hasDiff ? list.find(d => d.value === maxVal) : null;
+
+  let yDomain = ['auto', 'auto'];
+  if (values.length) {
+    if (mode === 'year') {
+      yDomain = [0, Math.ceil((maxVal + 15) / 10) * 10];
+    } else {
+      const floorMin = Math.max(0, Math.floor((minVal - 5) / 5) * 5);
+      const ceilMax = Math.ceil((maxVal + 8) / 5) * 5;
+      yDomain = [floorMin, ceilMax];
+    }
+  }
+
+  const kpiTileStyle = {
+    background: isDarkMode ? '#1e222b' : '#f8fafc',
+    border: `1px solid ${T.border}`,
+    borderRadius: 10,
+    padding: '10px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+  };
+
+  return (
+    <Card
+      style={CS}
+      bodyStyle={{ padding: '14px 20px' }}
+      headStyle={CHS}
+      title={<><FieldTimeOutlined style={{ marginRight: 8, color: amber }} />Динамика среднего срока закрытия (раб. дни)</>}
+      extra={
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <Radio.Group size="small" value={mode} onChange={e => setMode(e.target.value)} buttonStyle="solid">
+            <Radio.Button value="month">Месяц</Radio.Button>
+            <Radio.Button value="quarter">Квартал</Radio.Button>
+            <Radio.Button value="year">Год</Radio.Button>
+          </Radio.Group>
+          <FormulaButton chartKey="avg_days_timeline" onOpen={onFormulaClick} isMobile={isMobile} />
+        </div>
+      }
+    >
+      {/* 4 KPI cards matching Средний срок закрытия вакансии.html */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+        gap: 10,
+        marginBottom: 16
+      }}>
+        {/* KPI 1: Последний период */}
+        <div style={kpiTileStyle}>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 2 }}>Последний период</div>
+          <div style={{ fontSize: 19, fontWeight: 700, color: T.text }}>
+            {lastItem ? `${lastItem.value} р.д.` : '—'}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>
+            {lastItem ? (lastItem.name || lastItem.label) : ''}
+          </div>
+        </div>
+
+        {/* KPI 2: Динамика к пред. периоду */}
+        <div style={kpiTileStyle}>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 2 }}>Динамика к пред. периоду</div>
+          <div style={{
+            fontSize: 19,
+            fontWeight: 700,
+            color: !lastDyn ? T.text : (lastDyn.abs < 0 ? green : lastDyn.abs > 0 ? red : T.text)
+          }}>
+            {lastDyn ? (
+              <>
+                {lastDyn.abs < 0 ? '▼ ' : lastDyn.abs > 0 ? '▲ +' : ''}
+                {lastDyn.abs < 0 ? lastDyn.abs : lastDyn.abs > 0 ? lastDyn.abs : 0} р.д.
+              </>
+            ) : '—'}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>
+            {lastDyn ? `${lastDyn.pct > 0 ? '+' : ''}${lastDyn.pct}%` : 'нет предыдущего'}
+          </div>
+        </div>
+
+        {/* KPI 3: Лучший (мин.) */}
+        <div style={kpiTileStyle}>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 2 }}>Лучший (мин.)</div>
+          <div style={{ fontSize: 19, fontWeight: 700, color: green }}>
+            {bestItem ? `${bestItem.value} р.д.` : (list.length === 1 ? `${list[0].value} р.д.` : '—')}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>
+            {bestItem ? (bestItem.name || bestItem.label) : (list.length === 1 ? (list[0].name || list[0].label) : '')}
+          </div>
+        </div>
+
+        {/* KPI 4: Худший (макс.) */}
+        <div style={kpiTileStyle}>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 2 }}>Худший (макс.)</div>
+          <div style={{ fontSize: 19, fontWeight: 700, color: red }}>
+            {worstItem ? `${worstItem.value} р.д.` : (list.length === 1 ? `${list[0].value} р.д.` : '—')}
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>
+            {worstItem ? (worstItem.name || worstItem.label) : (list.length === 1 ? (list[0].name || list[0].label) : '')}
+          </div>
+        </div>
+      </div>
+
+      {!list.length ? (
+        <NoData text="Нет данных по срокам закрытия вакансий" />
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <ResponsiveContainer width="100%" height={240}>
+            {mode === 'year' ? (
+              <BarChart data={list} barSize={54} margin={{ top: 22, right: 24, bottom: 4, left: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+                <YAxis domain={yDomain} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+                <RTooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0].payload;
+                    return (
+                      <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{d.name || label}</div>
+                        <div style={{ color: T.sub }}>Средний срок: <b style={{ color: amber }}>{d.value} р.д.</b></div>
+                        <div style={{ color: T.sub }}>Закрыто вакансий: <b>{d.count}</b></div>
+                      </div>
+                    );
+                  }}
+                />
+                <Bar dataKey="value" fill={amber} radius={[6, 6, 0, 0]}>
+                  <LabelList dataKey="value" position="top" formatter={v => `${v} р.д.`} style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+                </Bar>
+              </BarChart>
+            ) : (
+              <LineChart data={list} margin={{ top: 24, right: 24, bottom: 4, left: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+                <YAxis domain={yDomain} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+                <RTooltip
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0].payload;
+                    const idx = list.findIndex(item => item.label === d.label);
+                    const dy = dyn(list, idx);
+                    return (
+                      <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>{d.name || label}</div>
+                        <div style={{ color: T.sub }}>Средний срок: <b style={{ color: amber }}>{d.value} р.д.</b></div>
+                        <div style={{ color: T.sub }}>Закрыто вакансий: <b>{d.count}</b></div>
+                        {dy && (
+                          <div style={{ color: dy.abs < 0 ? green : dy.abs > 0 ? red : T.sub, marginTop: 4 }}>
+                            К предыдущему: <b>{dy.abs > 0 ? `+${dy.abs}` : dy.abs} р.д. ({dy.pct > 0 ? `+${dy.pct}` : dy.pct}%)</b>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke={blue}
+                  strokeWidth={2}
+                  dot={(props) => (
+                    <AvgDaysDot
+                      key={`dot-avg-${props.index}`}
+                      {...props}
+                      maxVal={maxVal}
+                      minVal={minVal}
+                      hasDiff={hasDiff}
+                      isDarkMode={isDarkMode}
+                    />
+                  )}
+                  activeDot={{ r: 8 }}
+                />
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, flexWrap: 'wrap', gap: 8, borderTop: `1px solid ${T.border}`, paddingTop: 10 }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: FS_LEGEND, color: T.sub, alignItems: 'center' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <i style={{ width: 10, height: 10, borderRadius: '50%', background: green, display: 'inline-block' }} />
+            Минимум (лучше)
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <i style={{ width: 10, height: 10, borderRadius: '50%', background: red, display: 'inline-block' }} />
+            Максимум (хуже)
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <i style={{ width: 10, height: 10, borderRadius: '50%', background: blue, display: 'inline-block' }} />
+            Остальные
+          </span>
+        </div>
+        <span style={{ fontSize: 12, color: T.muted }}>
+          {mode === 'month' ? 'Данные по месяцам выбранного года. Рассчитано по производственному календарю РФ.' : mode === 'quarter' ? 'Квартал — средний срок закрытия за квартал.' : 'Год — средний срок закрытия за год; ось Y от 0.'}
+        </span>
+      </div>
+    </Card>
+  );
+};
+
 const RejectionReasonsCard = ({ data, isMobile, onFormulaClick }) => {
   const { isDarkMode } = React.useContext(ThemeContext);
   const red = isDarkMode ? '#f06462' : '#f85149';
@@ -625,6 +890,7 @@ export default function DashboardsPage() {
   const [recruiterIds,   setRecruiterIds]  = useState(() => savedDashboardsFilters?.recruiterIds ?? null);
   const [blockIds,       setBlockIds]      = useState(() => savedDashboardsFilters?.blockIds ?? null);
   const [statusIds,      setStatusIds]     = useState(() => savedDashboardsFilters?.statusIds ?? null);
+  const [vacancyIds,     setVacancyIds]    = useState(() => savedDashboardsFilters?.vacancyIds ?? null);
   const [groupBy,        setGroupBy]       = useState(() => savedDashboardsFilters?.groupBy ?? 'it_role');
 
   // Active formula modal
@@ -640,9 +906,10 @@ export default function DashboardsPage() {
       recruiterIds,
       blockIds,
       statusIds,
+      vacancyIds,
       groupBy,
     });
-  }, [period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, groupBy]);
+  }, [period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, vacancyIds, groupBy]);
 
   const buildParams = () => {
     const p = new URLSearchParams();
@@ -655,6 +922,7 @@ export default function DashboardsPage() {
     if (recruiterIds?.length) p.append('recruiter_ids',     recruiterIds.join(','));
     if (blockIds?.length)     p.append('block_ids',         blockIds.join(','));
     if (statusIds?.length)    p.append('status_ids',        statusIds.join(','));
+    if (vacancyIds?.length)   p.append('vacancy_ids',       vacancyIds.join(','));
     if (groupBy)              p.append('group_by',          groupBy);
     return p;
   };
@@ -669,7 +937,7 @@ export default function DashboardsPage() {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: [
       'dashboards',
-      period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, groupBy
+      period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, vacancyIds, groupBy
     ],
     queryFn: fetchDashboardData,
     keepPreviousData: true,
@@ -693,6 +961,7 @@ export default function DashboardsPage() {
     clean(recruiterIds, data.filters.recruiters, setRecruiterIds);
     clean(blockIds, data.filters.blocks, setBlockIds);
     clean(statusIds, data.filters.statuses, setStatusIds);
+    clean(vacancyIds, data.filters.vacancies, setVacancyIds);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.filters]);
 
@@ -705,14 +974,15 @@ export default function DashboardsPage() {
     setRecruiterIds(null);
     setBlockIds(null);
     setStatusIds(null);
+    setVacancyIds(null);
     saveSavedDashboardsFilters(null);
   };
 
   const f = data?.filters || {};
-  const hasFilters = period || itRoleIds || levelIds || adminMgrIds || projectIds || recruiterIds || blockIds || statusIds;
+  const hasFilters = period || itRoleIds || levelIds || adminMgrIds || projectIds || recruiterIds || blockIds || statusIds || vacancyIds;
 
   const chart1 = data?.chart1_source    || [];
-  const chart2 = data?.chart2_open_closed || { total: 0, open: 0, closed: 0, exit: 0, hold: 0, cancel: 0 };
+  const chart2 = data?.chart2_open_closed || { total: 0, open: 0, closed: 0, hold: 0, cancel: 0 };
   const chart3 = data?.chart3_funnel    || [];
   const chart4 = data?.chart4_companies || [];
   const chart5 = data?.chart5_avg_days  || [];
@@ -723,17 +993,17 @@ export default function DashboardsPage() {
   const chartEmployment  = data?.chart_employment  || [];
   const chartRejections  = data?.chart_rejections  || [];
   const chartJoConv      = data?.chart_jo_conversion || { month: [], quarter: [], year: [] };
+  const chartAvgDaysTimeline = data?.chart_avg_days_timeline || { month: [], quarter: [], year: [] };
 
   const bar2data = [
     { name: 'Всего',   value: chart2.total,  fill: T.sub   },
     { name: 'Открыта', value: chart2.open,   fill: T.blue  },
     { name: 'Закрыта', value: chart2.closed, fill: T.green },
-    { name: 'Выход',   value: chart2.exit,   fill: T.teal  },
     { name: 'Hold',    value: chart2.hold,   fill: T.amber },
     { name: 'Отмена',  value: chart2.cancel, fill: T.red   },
   ].filter(d => d.value > 0);
 
-  const DRILL_DOWN_EXCLUDE = new Set(['Закрыта', 'Выход', 'Hold', 'Отмена', 'Всего']);
+  const DRILL_DOWN_EXCLUDE = new Set(['Закрыта', 'Hold', 'Отмена', 'Всего']);
   const chart6Details = chart6.filter(r => !DRILL_DOWN_EXCLUDE.has(r.status));
 
   return (
@@ -780,6 +1050,7 @@ export default function DashboardsPage() {
           <MultiFlt value={recruiterIds} onChange={setRecruiterIds} options={f.recruiters} placeholder="Рекрутер" isMobile={isMobile} />
           <MultiFlt value={blockIds} onChange={setBlockIds} options={f.blocks} placeholder="ИТ Блок" isMobile={isMobile} />
           <MultiFlt value={statusIds} onChange={setStatusIds} options={f.statuses} placeholder="Статус вакансии" isMobile={isMobile} style={{ minWidth: isMobile ? 130 : 160 }} />
+          <MultiFlt value={vacancyIds} onChange={setVacancyIds} options={f.vacancies} placeholder="ID вакансии" isMobile={isMobile} style={{ minWidth: isMobile ? 110 : 130 }} />
 
           {hasFilters && (
             <Button size="small" icon={<ClearOutlined />} onClick={clearFilters} style={{ color: T.red, borderColor: T.red, fontSize: 12 }}>
@@ -795,6 +1066,7 @@ export default function DashboardsPage() {
           <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
+          <Col xs={24} lg={24}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={24}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={12}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={12}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
@@ -845,6 +1117,15 @@ export default function DashboardsPage() {
           <Col xs={24} lg={24}>
             <JOConversionCard
               data={chartJoConv}
+              isMobile={isMobile}
+              onFormulaClick={setActiveFormulaKey}
+            />
+          </Col>
+
+          {/* Динамика среднего срока закрытия (раб. дни) */}
+          <Col xs={24} lg={24}>
+            <AvgDaysTimelineCard
+              data={chartAvgDaysTimeline}
               isMobile={isMobile}
               onFormulaClick={setActiveFormulaKey}
             />
@@ -981,15 +1262,44 @@ export default function DashboardsPage() {
               extra={<FormulaButton chartKey="funnel" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
             >
               {chart3.every(r => r.value === 0) ? <NoData /> : (
-                <ResponsiveContainer width="100%" height={230}>
-                  <BarChart data={chart3} layout="vertical" barSize={24} margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 8 }}>
+                <ResponsiveContainer width="100%" height={Math.max(260, chart3.length * 42 + 20)}>
+                  <BarChart data={chart3} layout="vertical" barSize={24} margin={{ top: 4, right: isMobile ? 40 : 115, bottom: 4, left: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                     <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <YAxis type="category" dataKey="stage" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub, fontWeight: 500 }} />
-                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
+                    <YAxis type="category" dataKey="stage" width={isMobile ? 110 : 175} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub, fontWeight: 500 }} />
+                    <RTooltip
+                      cursor={{ fill: 'rgba(128,128,128,0.15)' }}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                            <div style={{ color: T.sub }}>Кандидатов: <b style={{ color: T.teal }}>{d.value}</b></div>
+                            {d.conv_step !== undefined && d.stage !== 'Передано заказчику' && (
+                              <div style={{ color: T.sub, marginTop: 2 }}>Конверсия с пред. этапа: <b style={{ color: T.text }}>{d.conv_step}%</b></div>
+                            )}
+                            {d.conv_total !== undefined && (
+                              <div style={{ color: T.sub, marginTop: 2 }}>Общая конверсия от старта: <b style={{ color: T.text }}>{d.conv_total}%</b></div>
+                            )}
+                          </div>
+                        );
+                      }}
+                    />
                     <Bar dataKey="value" radius={[0, 5, 5, 0]}>
-                      {chart3.map((_, i) => <BCell key={i} fill={PALETTE[i]} />)}
-                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+                      {chart3.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                      <LabelList
+                        dataKey="value"
+                        position="right"
+                        formatter={(val, entry) => {
+                          const d = entry?.payload || {};
+                          if (d.conv_step !== undefined && d.stage !== 'Передано заказчику') {
+                            return `${val} (${d.conv_step}%)`;
+                          }
+                          return `${val}`;
+                        }}
+                        style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }}
+                      />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
