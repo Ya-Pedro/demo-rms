@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from io import BytesIO
 import logging
 import json
+import re
 from uuid import uuid4
 import pandas as pd
 from fastapi_cache import FastAPICache
@@ -562,14 +563,17 @@ def _parse_cell_date(val, col_title: str, excel_row: int) -> Tuple[Optional[date
     if s.lower() in EMPTY_DATE_STRINGS:
         return None, None
     try:
-        parsed = pd.to_datetime(s, dayfirst=True)
-        return parsed.date(), None
-    except Exception:
-        try:
+        if re.match(r"^\d{4}[-./]\d{1,2}[-./]\d{1,2}", s):
+            parsed = pd.to_datetime(s, dayfirst=False)
+            return parsed.date(), None
+        elif re.match(r"^\d{1,2}[-./]\d{1,2}[-./]\d{4}", s):
+            parsed = pd.to_datetime(s, dayfirst=True)
+            return parsed.date(), None
+        else:
             parsed = pd.to_datetime(s)
             return parsed.date(), None
-        except Exception:
-            return None, f"Строка {excel_row}, колонка «{col_title}»: неверный формат даты «{s}» (ожидается ДД.ММ.ГГГГ)"
+    except Exception:
+        return None, f"Строка {excel_row}, колонка «{col_title}»: неверный формат даты «{s}» (ожидается ДД.ММ.ГГГГ)"
 
 def _match_columns(df) -> Tuple[Dict[str, Tuple[str, dict]], Optional[str]]:
     matched_columns = {}

@@ -147,7 +147,7 @@ def build_excel_from_vacancies(
 
         row = {
             "ID вакансии":                    v.vacancy_id or "",
-            "Дата открытия":                  str(v.open_date) if v.open_date else "",
+            "Дата открытия":                  v.open_date.strftime("%d.%m.%Y") if v.open_date else "",
             "Количество":                     v.quantity or 0,
             "Уровень специалиста":            v.level.value if v.level else "",
             "Вакансия":                       v.position_name or "",
@@ -166,8 +166,8 @@ def build_excel_from_vacancies(
             "Город":                          v.city.value if v.city else (v.city_text or ""),
             "Источник найма":                 v.source.value if v.source else "",
             "Внутренний перевод":             v.internal_transfer.value if v.internal_transfer else "",
-            "Дата изм. статуса":              str(v.status_changed_at) if v.status_changed_at else "",
-            "Дата закрытия":                  str(v.close_date) if v.close_date else "",
+            "Дата изм. статуса":              v.status_changed_at.strftime("%d.%m.%Y") if v.status_changed_at else "",
+            "Дата закрытия":                  v.close_date.strftime("%d.%m.%Y") if v.close_date else "",
             "ФИО кандидата":                  v.candidate_name or "",
             "Комментарий":                    v.comment or "",
             "Компания кандидата":             v.candidate_company or "",

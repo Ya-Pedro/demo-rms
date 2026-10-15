@@ -1044,7 +1044,7 @@ async def export_all_reports(
         v = vac_map.get(r.vacancy_db_id)
         excel_rows.append({
             "ID вакансии": r.vacancy_ext_id or "",
-            "Дата открытия": str(v.open_date) if v and v.open_date else "",
+            "Дата открытия": v.open_date.strftime("%d.%m.%Y") if v and v.open_date else "",
             "Количество": v.quantity if v else "",
             "Уровень специалиста": v.level.value if v and v.level else "",
             "Вакансия": r.vacancy_name or "",
@@ -1063,8 +1063,8 @@ async def export_all_reports(
             "Город": (v.city.value if v and v.city else (v.city_text or "")) if v else "",
             "Источник найма": v.source.value if v and v.source else "",
             "Внутренний перевод": v.internal_transfer.value if v and v.internal_transfer else "",
-            "Дата изм. статуса": str(v.status_changed_at) if v and v.status_changed_at else "",
-            "Дата закрытия": str(v.close_date) if v and v.close_date else "",
+            "Дата изм. статуса": v.status_changed_at.strftime("%d.%m.%Y") if v and v.status_changed_at else "",
+            "Дата закрытия": v.close_date.strftime("%d.%m.%Y") if v and v.close_date else "",
             "ФИО кандидата": v.candidate_name or "" if v else "",
             "Комментарий": v.comment or "" if v else "",
             "Компания кандидата": v.candidate_company or "" if v else "",
