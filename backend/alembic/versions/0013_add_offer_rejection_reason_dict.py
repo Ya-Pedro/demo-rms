@@ -33,8 +33,10 @@ def upgrade() -> None:
     is_postgres = bind.dialect.name == "postgresql"
 
     if is_postgres:
+        op.execute("COMMIT")
         op.execute("ALTER TYPE dictionarytype ADD VALUE IF NOT EXISTS 'OFFER_REJECTION_REASON'")
         op.execute("ALTER TYPE dictionarytype ADD VALUE IF NOT EXISTS 'offer_rejection_reason'")
+        op.execute("BEGIN")
 
     for i, reason in enumerate(DEFAULT_REASONS):
         escaped_reason = reason.replace("'", "''")
@@ -44,7 +46,7 @@ def upgrade() -> None:
             SELECT 'OFFER_REJECTION_REASON', '{escaped_reason}', {i + 1}, true, NOW()
             WHERE NOT EXISTS (
                 SELECT 1 FROM dictionaries 
-                WHERE type IN ('OFFER_REJECTION_REASON', 'offer_rejection_reason') AND value = '{escaped_reason}'
+                WHERE type::text IN ('OFFER_REJECTION_REASON', 'offer_rejection_reason') AND value = '{escaped_reason}'
             );
             """
         )
