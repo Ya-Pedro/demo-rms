@@ -27,9 +27,8 @@ import {
   SyncOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons';
-import { ThemeContext } from '../App';
+import { ThemeContext, api } from '../App';
 import { tokenStorage } from '../tokenStorage';
-import api from '../apiClient';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -125,16 +124,25 @@ const EditableCell = React.memo(function EditableCell({
   value,
   onSave,
   isDarkMode,
+  onEditingChange,
 }) {
   const [editing, setEditing] = useState(false);
   const [currentVal, setCurrentVal] = useState(value ?? '');
 
   useEffect(() => {
-    setCurrentVal(value ?? '');
-  }, [value]);
+    if (!editing) {
+      setCurrentVal(value ?? '');
+    }
+  }, [value, editing]);
+
+  const handleStartEditing = () => {
+    setEditing(true);
+    if (onEditingChange) onEditingChange(true);
+  };
 
   const handleSave = () => {
     setEditing(false);
+    if (onEditingChange) onEditingChange(false);
     if (currentVal !== (value ?? '')) {
       onSave(currentVal);
     }
@@ -147,6 +155,7 @@ const EditableCell = React.memo(function EditableCell({
     } else if (e.key === 'Escape') {
       setCurrentVal(value ?? '');
       setEditing(false);
+      if (onEditingChange) onEditingChange(false);
     }
   };
 
@@ -168,7 +177,7 @@ const EditableCell = React.memo(function EditableCell({
 
   return (
     <div
-      onClick={() => setEditing(true)}
+      onClick={handleStartEditing}
       style={{
         cursor: 'pointer',
         minHeight: 28,
@@ -301,9 +310,50 @@ export default function NotesPage() {
   const [refreshLoading, setRefreshLoading] = useState(false);
 
   const isInitialLoadedRef = React.useRef(false);
+  const isRemoteUpdateRef = React.useRef(false);
+  const isEditingCellRef = React.useRef(false);
   const saveTimeoutRef = React.useRef(null);
   const latestSheetsRef = React.useRef(sheets);
   latestSheetsRef.current = sheets;
+  const lastSyncedJsonRef = React.useRef('');
+
+  const saveToServer = useCallback(async (sheetsToSave) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    const jsonStr = JSON.stringify(sheetsToSave);
+    if (jsonStr === lastSyncedJsonRef.current) {
+      setSyncStatus('saved');
+      return;
+    }
+
+    setSyncStatus('syncing');
+    try {
+      const res = await api.put('/notes', { sheets: sheetsToSave });
+      lastSyncedJsonRef.current = jsonStr;
+      setSyncStatus('saved');
+      if (res?.data?.updated_at || res?.data?.updated_by_name) {
+        setLastUpdatedInfo({
+          at: res.data.updated_at,
+          by: res.data.updated_by_name,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to save notes to backend', err);
+      setSyncStatus('error');
+    }
+  }, []);
+
+  const debouncedSave = useCallback((sheetsToSave) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    setSyncStatus('syncing');
+    saveTimeoutRef.current = setTimeout(() => {
+      saveToServer(sheetsToSave);
+    }, 400);
+  }, [saveToServer]);
 
   const fetchNotes = useCallback(async (isManual = false) => {
     if (isManual) setRefreshLoading(true);
@@ -313,21 +363,36 @@ export default function NotesPage() {
         const rawSheets = res.data.sheets;
         if (Array.isArray(rawSheets) && rawSheets.length > 0) {
           const serverSheets = normalizeSheets(rawSheets);
-          setSheets(serverSheets);
-          try {
-            localStorage.setItem(notesStorageKey, JSON.stringify(serverSheets));
-          } catch (e) {}
-          if (!serverSheets.some((s) => s.id === activeSheetId)) {
-            setActiveSheetId(serverSheets[0]?.id || 'sheet_candidates');
+          const serverJson = JSON.stringify(serverSheets);
+
+          if (!isEditingCellRef.current) {
+            const localJson = JSON.stringify(latestSheetsRef.current);
+            if (serverJson !== localJson) {
+              isRemoteUpdateRef.current = true;
+              setSheets(serverSheets);
+              lastSyncedJsonRef.current = serverJson;
+              try {
+                localStorage.setItem(notesStorageKey, serverJson);
+              } catch (e) {}
+
+              setActiveSheetId((currActive) => {
+                if (serverSheets.some((s) => s.id === currActive)) {
+                  return currActive;
+                }
+                return serverSheets[0]?.id || 'sheet_candidates';
+              });
+            }
           }
-        } else {
-          // If server has no sheets yet, seed with initial local/default sheets
+        } else if (!isInitialLoadedRef.current) {
+          // If server has no sheets yet on initial load, seed with initial local/default sheets
           const localSheets = normalizeSheets(loadInitialSheets());
-          await api.put('/notes', { sheets: localSheets });
+          isRemoteUpdateRef.current = true;
           setSheets(localSheets);
+          lastSyncedJsonRef.current = JSON.stringify(localSheets);
           try {
             localStorage.setItem(notesStorageKey, JSON.stringify(localSheets));
           } catch (e) {}
+          saveToServer(localSheets);
         }
 
         if (res.data.updated_at || res.data.updated_by_name) {
@@ -350,7 +415,7 @@ export default function NotesPage() {
       isInitialLoadedRef.current = true;
       if (isManual) setRefreshLoading(false);
     }
-  }, [notesStorageKey, activeSheetId, loadInitialSheets]);
+  }, [notesStorageKey, loadInitialSheets, saveToServer]);
 
   // Initial load on mount or key change
   useEffect(() => {
@@ -358,14 +423,25 @@ export default function NotesPage() {
     fetchNotes(false);
   }, [fetchNotes]);
 
-  // Periodic background sync (every 30 seconds when tab is active and not syncing)
+  // Periodic background sync (every 4 seconds when tab is active and not syncing or editing) + on window focus
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible' && syncStatus !== 'syncing') {
+    const onFocus = () => {
+      if (document.visibilityState === 'visible' && syncStatus !== 'syncing' && !isEditingCellRef.current) {
         fetchNotes(false);
       }
-    }, 30000);
-    return () => clearInterval(interval);
+    };
+    window.addEventListener('focus', onFocus);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && syncStatus !== 'syncing' && !isEditingCellRef.current) {
+        fetchNotes(false);
+      }
+    }, 4000);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
   }, [fetchNotes, syncStatus]);
 
   // Persist to localStorage and sync to backend with debounce
@@ -380,33 +456,13 @@ export default function NotesPage() {
       return;
     }
 
-    setSyncStatus('syncing');
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    if (isRemoteUpdateRef.current) {
+      isRemoteUpdateRef.current = false;
+      return;
     }
 
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await api.put('/notes', { sheets: latestSheetsRef.current });
-        setSyncStatus('saved');
-        if (res?.data?.updated_at || res?.data?.updated_by_name) {
-          setLastUpdatedInfo({
-            at: res.data.updated_at,
-            by: res.data.updated_by_name,
-          });
-        }
-      } catch (err) {
-        console.error('Failed to save notes to backend', err);
-        setSyncStatus('error');
-      }
-    }, 700);
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [sheets, notesStorageKey]);
+    debouncedSave(sheets);
+  }, [sheets, notesStorageKey, debouncedSave]);
 
   const [searchFilter, setSearchFilter] = useState('');
   const [columnSearch, setColumnSearch] = useState({});
@@ -474,9 +530,10 @@ export default function NotesPage() {
   // Add sheet
   const handleAddSheet = useCallback(() => {
     const newId = `sheet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const currentList = latestSheetsRef.current || [];
     const newSheet = {
       id: newId,
-      name: `Лист ${sheets.length + 1}`,
+      name: `Лист ${currentList.length + 1}`,
       columns: [
         { key: `col_1`, title: 'Столбец 1', width: 200 },
         { key: `col_2`, title: 'Столбец 2', width: 200 },
@@ -486,18 +543,21 @@ export default function NotesPage() {
         { id: `r_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`, col_1: '', col_2: '', col_notes: '' },
       ],
     };
-    setSheets((prev) => [...prev, newSheet]);
+    const updated = [...currentList, newSheet];
+    setSheets(updated);
     setActiveSheetId(newId);
+    saveToServer(updated);
     message.success(`Создан лист "${newSheet.name}"`);
-  }, [sheets.length]);
+  }, [saveToServer]);
 
   // Delete sheet
   const handleDeleteSheet = useCallback((targetId) => {
-    if (sheets.length <= 1) {
+    const currentList = latestSheetsRef.current || [];
+    if (currentList.length <= 1) {
       message.warning('Нельзя удалить единственный лист');
       return;
     }
-    const targetSheet = sheets.find((s) => s.id === targetId);
+    const targetSheet = currentList.find((s) => s.id === targetId);
     const sheetName = targetSheet?.name || 'Лист';
 
     Modal.confirm({
@@ -507,15 +567,19 @@ export default function NotesPage() {
       okType: 'danger',
       cancelText: 'Отмена',
       onOk: () => {
-        const filtered = sheets.filter((s) => s.id !== targetId);
+        const filtered = (latestSheetsRef.current || []).filter((s) => s.id !== targetId);
         setSheets(filtered);
-        if (activeSheetId === targetId) {
-          setActiveSheetId(filtered[0].id);
-        }
+        setActiveSheetId((currActive) => {
+          if (currActive === targetId) {
+            return filtered[0]?.id || 'sheet_candidates';
+          }
+          return currActive;
+        });
+        saveToServer(filtered);
         message.success(`Лист «${sheetName}» удален`);
       },
     });
-  }, [sheets, activeSheetId]);
+  }, [saveToServer]);
 
   // Rename sheet
   const handleOpenRename = useCallback(() => {
@@ -529,10 +593,15 @@ export default function NotesPage() {
       message.warning('Название листа не может быть пустым');
       return;
     }
-    updateActiveSheet((s) => ({ ...s, name: renameSheetTitle.trim() }));
+    const newTitle = renameSheetTitle.trim();
+    const updated = (latestSheetsRef.current || []).map((s) =>
+      s.id === activeSheetId ? { ...s, name: newTitle } : s
+    );
+    setSheets(updated);
+    saveToServer(updated);
     setRenameModalVisible(false);
     message.success('Лист переименован');
-  }, [renameSheetTitle, updateActiveSheet]);
+  }, [renameSheetTitle, activeSheetId, saveToServer]);
 
   // Add row
   const handleAddRow = useCallback(() => {
@@ -771,6 +840,9 @@ export default function NotesPage() {
         <EditableCell
           value={text}
           onSave={(newVal) => handleCellSave(record.id, c.key, newVal)}
+          onEditingChange={(isEditing) => {
+            isEditingCellRef.current = isEditing;
+          }}
           isDarkMode={isDarkMode}
         />
       ),

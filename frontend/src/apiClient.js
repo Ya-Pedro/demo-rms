@@ -113,6 +113,9 @@ apiClient.interceptors.response.use(
 
         const newAccessToken = resp.data.access_token;
         tokenStore.setAccess(newAccessToken);
+        if (resp.data.refresh_token) {
+          tokenStore.setRefresh(resp.data.refresh_token);
+        }
         processQueue(null, newAccessToken);
 
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
