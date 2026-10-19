@@ -75,6 +75,8 @@ async def get_dashboard_metrics(
     try:
         if start_date: dt_start = _date.fromisoformat(start_date)
         if end_date:   dt_end   = _date.fromisoformat(end_date)
+        if dt_start and dt_end and dt_start > dt_end:
+            dt_start, dt_end = dt_end, dt_start
     except ValueError:
         pass
 
@@ -432,6 +434,12 @@ async def get_dashboard_metrics(
                 f"ID {v.recruiter_id}"
             )
             recruiter_load[name] += 1
+        if v.co_recruiter_id:
+            name_co = next(
+                (r["value"] for r in recruiters_opts if r["id"] == v.co_recruiter_id),
+                f"ID {v.co_recruiter_id}"
+            )
+            recruiter_load[name_co] += 1
     chart8 = sorted(
         [{"recruiter": name, "value": cnt} for name, cnt in recruiter_load.items()],
         key=lambda x: -x["value"],
@@ -461,12 +469,15 @@ async def get_dashboard_metrics(
     sals = [v.salary_gross for v in vacs if v.salary_gross and v.salary_gross > 0]
     if sals:
         sals.sort()
-        try:
-            q = statistics.quantiles(sals, n=4)
-            p25, p50, p75 = q[0], q[1], q[2]
-        except AttributeError:
-            n = len(sals)
-            p25, p50, p75 = sals[n // 4], sals[n // 2], sals[(n * 3) // 4]
+        if len(sals) >= 2:
+            try:
+                q = statistics.quantiles(sals, n=4)
+                p25, p50, p75 = q[0], q[1], q[2]
+            except Exception:
+                n = len(sals)
+                p25, p50, p75 = sals[n // 4], sals[n // 2], sals[(n * 3) // 4]
+        else:
+            p25, p50, p75 = sals[0], sals[0], sals[0]
     else:
         p25, p50, p75 = 0, 0, 0
     chart_salaries = {"p25": round(p25), "p50": round(p50), "p75": round(p75)}
