@@ -102,7 +102,7 @@ const CHART_FORMULAS = {
     title: 'Вакансии по статусам',
     formula: 'Открыта + Закрыта + Hold + Отмена',
     description: 'Общий баланс всех вакансий компании по ключевым группам статусов.',
-    rules: '«Всего» = Открыта + Закрыта + Hold + Отмена. Статус «Выход» включён в «Открыта».',
+    rules: '«Всего» = Открыта + Закрыта + Hold + Отмена. «Открыта» и «Hold» — остаток на дату конца периода (включая вакансии, ушедшие в Hold до начала периода). «Закрыта» и «Отмена» — поток переходов внутри периода. Статус «Выход» включён в «Открыта».',
   },
   funnel: {
     title: 'Воронка найма',
@@ -257,6 +257,12 @@ const MultiFlt = ({ value, onChange, options, placeholder, style, isMobile }) =>
     getPopupContainer={() => document.body}
     showSearch
     optionFilterProp="children"
+    filterOption={(input, option) => {
+      if (!input) return true;
+      const child = option?.children ? String(option.children).toLowerCase() : '';
+      const inp = input.toLowerCase().replace(/^№/, '').trim();
+      return child.includes(input.toLowerCase().trim()) || (inp && child.replace(/^№/, '').includes(inp));
+    }}
   >
     {(options || []).map(o => (
       <Select.Option key={o.id} value={o.id}>{o.value}</Select.Option>

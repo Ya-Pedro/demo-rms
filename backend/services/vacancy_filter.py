@@ -24,7 +24,7 @@ def _today() -> date:
         return (datetime.now(timezone.utc) + timedelta(hours=3)).date()
 from typing import List, Optional
 
-from sqlalchemy import and_, or_, select, func
+from sqlalchemy import and_, or_, select, func, cast, String
 from sqlalchemy.orm import Query
 
 from models import Vacancy, UserRole, User, VacancyDelegation
@@ -198,8 +198,14 @@ def apply_vacancy_filters(
         conditions.append(or_(Vacancy.status_id.not_in(exclude_status_id), Vacancy.status_id.is_(None)))
 
                                                                                 
+    if search_vacancy_id:
+        s_vid = str(search_vacancy_id).strip()
+        conditions.append(or_(
+            Vacancy.vacancy_id.ilike(f"%{s_vid}%"),
+            cast(Vacancy.id, String).ilike(f"%{s_vid}%"),
+        ))
+
     _text_filters = {
-        "search_vacancy_id": (Vacancy.vacancy_id, search_vacancy_id),
         "search_position_name": (Vacancy.position_name, search_position_name),
         "search_candidate_name": (Vacancy.candidate_name, search_candidate_name),
         "search_candidate_company": (Vacancy.candidate_company, search_candidate_company),

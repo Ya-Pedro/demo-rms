@@ -8,7 +8,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, case, Integer
+from sqlalchemy import select, func, and_, or_, case, Integer, cast, String
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime, date, timedelta
@@ -427,7 +427,11 @@ async def get_all_reports(
             (Vacancy.vacancy_id.ilike(f"%{vacancy_search}%"))
         )
     if search_vacancy_id:
-        conditions.append(Vacancy.vacancy_id.ilike(f"%{search_vacancy_id}%"))
+        s_vid = str(search_vacancy_id).strip()
+        conditions.append(or_(
+            Vacancy.vacancy_id.ilike(f"%{s_vid}%"),
+            cast(Vacancy.id, String).ilike(f"%{s_vid}%"),
+        ))
     if search_vacancy_name:
         conditions.append(Vacancy.position_name.ilike(f"%{search_vacancy_name}%"))
     if search_candidate:

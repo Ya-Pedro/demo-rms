@@ -85,7 +85,7 @@ async def get_dashboard_metrics(
     f_recruiters = _parse_ids(recruiter_ids)
     f_blocks     = _parse_ids(block_ids)
     f_statuses   = _parse_ids(status_ids)
-    f_vac_ids    = _parse_ids(vacancy_ids)
+    f_vac_tokens = set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None
 
     if block_id   and not f_blocks:   f_blocks   = [block_id]
     if project_id and not f_projects: f_projects = [project_id]
@@ -111,7 +111,7 @@ async def get_dashboard_metrics(
     # 3.3. Тянем вакансии (только нужные поля)
     all_vacs = (await db.execute(
         select(
-            Vacancy.id, Vacancy.status_id, Vacancy.source_id,
+            Vacancy.id, Vacancy.vacancy_id, Vacancy.status_id, Vacancy.source_id,
             Vacancy.block_id, Vacancy.project_id,
             Vacancy.it_role_id, Vacancy.level_id,
             Vacancy.admin_manager_id, Vacancy.recruiter_id,
@@ -126,6 +126,31 @@ async def get_dashboard_metrics(
         )
     )).all()
 
+    # Загружаем историю вакансий, выходивших из статуса Hold после даты среза dt_end
+    hold_exits: dict[int, _date] = {}
+    if dt_end:
+        hist_hold_rows = (await db.execute(
+            select(
+                VacancyHistory.vacancy_id,
+                VacancyHistory.created_at,
+                VacancyHistory.changes,
+            ).where(
+                VacancyHistory.changes.ilike('%Hold%'),
+                VacancyHistory.action_type == "UPDATE",
+            )
+        )).all()
+        import json as _json
+        for hr in hist_hold_rows:
+            try:
+                ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
+                st_ch = ch.get("Статус вакансии") or ch.get("status")
+                if st_ch and st_ch.get("old") == "Hold":
+                    exit_d = hr.created_at.date()
+                    if hr.vacancy_id not in hold_exits or exit_d > hold_exits[hr.vacancy_id]:
+                        hold_exits[hr.vacancy_id] = exit_d
+            except Exception:
+                pass
+
     def get_effective_status(v) -> Optional[str]:
         if v.quantity == 0.001:
             return None
@@ -135,6 +160,12 @@ async def get_dashboard_metrics(
         st_name = status_map.get(v.status_id)
         if not dt_start and not dt_end:
             return st_name
+
+        # Если вакансия вышла из Hold позже даты среза dt_end, на момент среза она была в Hold
+        if dt_end and v.id in hold_exits:
+            exit_d = hold_exits[v.id]
+            if exit_d > dt_end:
+                return "Hold"
 
         if st_name == "Закрыта":
             c_date = v.close_date
@@ -149,23 +180,23 @@ async def get_dashboard_metrics(
             return "Закрыта"
 
         if st_name == "Отмена":
-            if v.status_changed_at is None:
-                return "Отмена"
-            if dt_start and v.status_changed_at < dt_start:
+            c_date = v.status_changed_at or v.close_date
+            if not c_date:
+                if dt_end and v.open_date and v.open_date <= dt_end:
+                    return "Открыта"
                 return None
-            if dt_end and v.status_changed_at > dt_end:
+            if dt_start and c_date < dt_start:
+                return None
+            if dt_end and c_date > dt_end:
                 return "Открыта"
             return "Отмена"
 
         if st_name == "Hold":
-            if v.status_changed_at is None:
-                return "Hold"
-            if dt_end and v.status_changed_at > dt_end:
+            h_date = v.status_changed_at
+            if dt_end and h_date and h_date > dt_end:
                 return "Открыта"
-            filter_year = (dt_end or dt_start).year
-            if v.status_changed_at.year == filter_year:
-                return "Hold"
-            return None
+            # На дату среза была в Hold (без ограничения снизу, тянется с 2025 и ранее)
+            return "Hold"
 
         return st_name
 
@@ -173,8 +204,13 @@ async def get_dashboard_metrics(
         eff_st = get_effective_status(v)
         if eff_st is None:
             return False
-        if exclude_field != "vacancy" and f_vac_ids and v.id not in f_vac_ids:
-            return False
+        if exclude_field != "vacancy" and f_vac_tokens:
+            matches_vac = (
+                str(v.id) in f_vac_tokens or
+                (v.vacancy_id and str(v.vacancy_id).strip() in f_vac_tokens)
+            )
+            if not matches_vac:
+                return False
         if exclude_field != "it_role" and f_it_roles and v.it_role_id not in f_it_roles:
             return False
         if exclude_field != "level" and f_levels and v.level_id not in f_levels:
@@ -613,8 +649,6 @@ async def get_dashboard_metrics(
     avail_status_names = {get_effective_status(v) for v in all_vacs if matches_filters(v, "status")}
     avail_status_names.discard(None)
     avail_statuses   = {sid for sid, name in status_map.items() if name in avail_status_names}
-    avail_vac_ids    = {v.id for v in all_vacs if matches_filters(v, "vacancy")}
-
     filter_blocks         = _opts(block_map, avail_blocks)
     filter_projects       = _opts(project_map, avail_projects)
     filter_it_roles       = _opts(it_role_map, avail_it_roles)
@@ -622,7 +656,21 @@ async def get_dashboard_metrics(
     filter_admin_managers = _opts(admin_mgr_map, avail_admin_mgrs)
     filter_recruiters     = [r for r in recruiters_opts if r["id"] in avail_recruiters]
     filter_statuses       = _opts(status_map, avail_statuses)
-    filter_vacancies      = sorted([{"id": v_id, "value": f"№{v_id}"} for v_id in avail_vac_ids], key=lambda x: x["id"])
+
+    vac_items = []
+    for v in all_vacs:
+        if matches_filters(v, "vacancy"):
+            disp_id = str(v.vacancy_id).strip() if (v.vacancy_id and str(v.vacancy_id).strip()) else str(v.id)
+            vac_items.append({"id": v.id, "disp": disp_id, "value": f"№{disp_id}"})
+
+    def _vac_sort_key(item):
+        try:
+            return (0, int(item["disp"]))
+        except ValueError:
+            return (1, item["disp"])
+
+    filter_vacancies = sorted(vac_items, key=_vac_sort_key)
+    filter_vacancies = [{"id": x["id"], "value": x["value"]} for x in filter_vacancies]
 
     return {
         "chart1_source":           chart1,
