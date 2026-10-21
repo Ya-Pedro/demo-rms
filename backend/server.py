@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down RMS application...")
 
                             
-APP_VERSION = os.environ.get("APP_VERSION", "0.2.0")
+APP_VERSION = os.environ.get("APP_VERSION", "0.2.1")
 
 app = FastAPI(
     title="RMS - Recruitment Management System",
