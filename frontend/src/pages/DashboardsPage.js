@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import dayjs from 'dayjs';
 import useIsMobile from '../hooks/useIsMobile';
 import {
-  Row, Col, Card, Select, Skeleton, Typography,
+  Row, Col, Card, Select, Skeleton, Typography, Statistic, Divider,
   DatePicker, Button, Spin, Space, Radio, Modal, Tooltip,
 } from 'antd';
 import {
@@ -16,7 +16,7 @@ import {
   RiseOutlined, TeamOutlined,
   FunnelPlotOutlined, PieChartOutlined, FilterOutlined,
   ClearOutlined, FieldTimeOutlined, BankOutlined,
-  FileTextOutlined, ReloadOutlined, InfoCircleOutlined,
+  FileTextOutlined, ReloadOutlined, InfoCircleOutlined, DollarOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { api, ThemeContext } from '../App';
@@ -56,6 +56,12 @@ const FS_LEGEND     = 13; // Legend items and percentages
 
 // Descriptions and formulas for all dashboard charts — concise, clear and uniform
 const CHART_FORMULAS = {
+  salaries: {
+    title: 'Медианная зарплата (Gross)',
+    formula: 'Q1 (25%) • Медиана (50%) • Q3 (75%)',
+    description: 'Расчёт 25-го перцентиля (Q1), медианы (50%) и 75-го перцентиля (Q3) совокупного дохода кандидатов Gross по вакансиям.',
+    rules: 'Данные рассчитываются на основе поля «Зарплата кандидатов Gross» для вакансий с учётом всех активных фильтров.',
+  },
   source: {
     title: 'Источник найма',
     formula: '(Вакансии источника / Всего закрытых) × 100%',
@@ -311,6 +317,64 @@ const renderPieLabel = (props) => {
     <text x={x} y={y} fill={T.text} fontSize={FS_AXIS_LABEL} fontWeight={600} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
       {`${(percent * 100).toFixed(0)}%`}
     </text>
+  );
+};
+
+const SalaryCard = ({ data, isMobile, onFormulaClick }) => {
+  const p50 = data?.p50 || 0;
+  const p25 = data?.p25 || 0;
+  const p75 = data?.p75 || 0;
+  const hasData = p50 > 0 || p25 > 0 || p75 > 0;
+
+  return (
+    <Card
+      style={CS}
+      bodyStyle={{ padding: isMobile ? '16px 16px' : '18px 28px' }}
+      headStyle={CHS}
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <DollarOutlined style={{ marginRight: 8, color: T.purple, fontSize: 16 }} />
+            <span>Медианная ЗП (Gross)</span>
+          </div>
+          <FormulaButton chartKey="salaries" onOpen={onFormulaClick} isMobile={isMobile} />
+        </div>
+      }
+    >
+      {!hasData ? (
+        <NoData text="Нет данных по зарплатам для выбранных фильтров" />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 16 : 48, flexWrap: 'wrap' }}>
+            <Statistic
+              title={<Text style={{ fontSize: 13, color: T.muted, fontWeight: 500 }}>Медианная ЗП (Gross)</Text>}
+              value={p50}
+              valueStyle={{ fontSize: isMobile ? 22 : 30, fontWeight: 700, color: T.purple }}
+              suffix=" ₽"
+            />
+            {!isMobile && <Divider type="vertical" style={{ height: 48, margin: 0 }} />}
+            <Statistic
+              title={<Text style={{ fontSize: 13, color: T.muted, fontWeight: 500 }}>Q1 (25%)</Text>}
+              value={p25}
+              valueStyle={{ fontSize: isMobile ? 18 : 24, fontWeight: 600, color: T.sub }}
+              suffix=" ₽"
+            />
+            {!isMobile && <Divider type="vertical" style={{ height: 48, margin: 0 }} />}
+            <Statistic
+              title={<Text style={{ fontSize: 13, color: T.muted, fontWeight: 500 }}>Q3 (75%)</Text>}
+              value={p75}
+              valueStyle={{ fontSize: isMobile ? 18 : 24, fontWeight: 600, color: T.sub }}
+              suffix=" ₽"
+            />
+          </div>
+          <div style={{ marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 6 }}>
+            <Text style={{ fontSize: 11, color: T.muted }}>
+              * Данные на основе сделанных офферов
+            </Text>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 };
 
@@ -1000,6 +1064,7 @@ export default function DashboardsPage() {
   const chartRejections  = data?.chart_rejections  || [];
   const chartJoConv      = data?.chart_jo_conversion || { month: [], quarter: [], year: [] };
   const chartAvgDaysTimeline = data?.chart_avg_days_timeline || { month: [], quarter: [], year: [] };
+  const chartSalaries    = data?.chart_salaries    || { p25: 0, p50: 0, p75: 0, count: 0 };
 
   const bar2data = [
     { name: 'Всего',   value: chart2.total,  fill: T.sub   },
@@ -1069,6 +1134,7 @@ export default function DashboardsPage() {
 
       {isLoading && !data ? (
         <Row gutter={[20, 20]}>
+          <Col xs={24} lg={24}><Card style={CS}><Skeleton active paragraph={{ rows: 2 }} /></Card></Col>
           <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
           <Col xs={24} lg={8}><Card style={CS}><Skeleton active paragraph={{ rows: 6 }} /></Card></Col>
@@ -1079,6 +1145,15 @@ export default function DashboardsPage() {
         </Row>
       ) : (
         <Row gutter={[20, 20]}>
+
+          {/* 0. Медианная ЗП (Gross) */}
+          <Col xs={24} lg={24}>
+            <SalaryCard
+              data={chartSalaries}
+              isMobile={isMobile}
+              onFormulaClick={setActiveFormulaKey}
+            />
+          </Col>
 
           {/* 1. Источник найма */}
           <Col xs={24} lg={8}>

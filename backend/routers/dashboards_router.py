@@ -469,18 +469,19 @@ async def get_dashboard_metrics(
     sals = [v.salary_gross for v in vacs if v.salary_gross and v.salary_gross > 0]
     if sals:
         sals.sort()
+        p50 = statistics.median(sals)
         if len(sals) >= 2:
             try:
                 q = statistics.quantiles(sals, n=4)
-                p25, p50, p75 = q[0], q[1], q[2]
+                p25, p75 = q[0], q[2]
             except Exception:
                 n = len(sals)
-                p25, p50, p75 = sals[n // 4], sals[n // 2], sals[(n * 3) // 4]
+                p25, p75 = sals[n // 4], sals[(n * 3) // 4]
         else:
-            p25, p50, p75 = sals[0], sals[0], sals[0]
+            p25, p75 = sals[0], sals[0]
     else:
         p25, p50, p75 = 0, 0, 0
-    chart_salaries = {"p25": round(p25), "p50": round(p50), "p75": round(p75)}
+    chart_salaries = {"p25": round(p25), "p50": round(p50), "p75": round(p75), "count": len(sals)}
 
     # Причины отказа: все причины из справочника со значением 0 по умолчанию
     rejection_reason_map = await _dict_map(db, DictionaryType.OFFER_REJECTION_REASON)
