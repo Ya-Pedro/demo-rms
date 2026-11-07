@@ -29,21 +29,21 @@ const { RangePicker } = DatePicker;
 const T = {
   bg: 'var(--layout-bg)', border: 'var(--border-color)',
   text: 'var(--text-color)', sub: '#8b949e', muted: '#8b949e',
-  blue: '#58a6ff', green: '#3fb950', red: '#f85149',
-  amber: '#d29922', purple: '#bc8cff', teal: '#56d364',
+  blue: '#1677ff', green: '#16a34a', red: '#dc2626',
+  amber: '#d97706', purple: '#7c3aed', teal: '#0d9488',
 };
 
 const PALETTE = [
-  '#2563eb','#16a34a','#d97706','#7c3aed','#0d9488',
+  '#1677ff','#16a34a','#d97706','#7c3aed','#0d9488',
   '#dc2626','#ea580c','#0891b2','#65a30d','#be185d',
-  '#6366f1','#14b8a6','#f59e0b','#8b5cf6','#10b981',
+  '#4f46e5','#14b8a6','#f59e0b','#a855f7','#10b981',
 ];
 
 const STATUS_COLOR = {
-  'Открыта': T.blue, 'Закрыта': T.green, 'Hold': T.amber,
-  'Отмена': T.red, 'Оффер': T.purple, 'Выход': T.teal,
-  'Подготовка документов': '#f59e0b', 'Проверка СБ': '#6366f1',
-  'Согласование фин условий': '#14b8a6',
+  'Открыта': '#1677ff', 'Закрыта': '#16a34a', 'Hold': '#d97706',
+  'Отмена': '#dc2626', 'Оффер': '#7c3aed', 'Выход': '#0d9488',
+  'Подготовка документов': '#ea580c', 'Проверка СБ': '#4f46e5',
+  'Согласование фин условий': '#0891b2',
 };
 
 const CS  = { borderRadius: 10, border: `1px solid ${T.border}`, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', height: '100%' };
@@ -184,7 +184,7 @@ const FormulaModal = ({ formulaKey, onClose }) => {
     <Modal
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <InfoCircleOutlined style={{ color: isDarkMode ? '#58a6ff' : '#2563eb', fontSize: 19 }} />
+          <InfoCircleOutlined style={{ color: isDarkMode ? '#4096ff' : '#1677ff', fontSize: 19 }} />
           <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-color)' }}>
             {info?.title}
           </span>
@@ -613,11 +613,11 @@ const RecruiterLoadCard = ({
               background: isDarkMode ? '#113565' : '#1677ff',
               color: '#ffffff',
               fontWeight: 700,
-              fontSize: 13,
+              fontSize: 16,
               textAlign: 'center',
-              padding: '9px 12px',
+              padding: '12px 16px',
               borderRadius: '6px 6px 0 0',
-              letterSpacing: 0.4,
+              letterSpacing: 0.5,
               boxShadow: '0 2px 4px rgba(22, 119, 255, 0.2)',
             }}>
               Всего активных вакансий в работе у рекрутера
@@ -863,9 +863,9 @@ const ConversionDot = ({ cx, cy, payload, maxVal, minVal, hasDiff, isDarkMode })
   if (cx == null || cy == null || !payload) return null;
   const isMax = hasDiff && payload.value === maxVal;
   const isMin = hasDiff && payload.value === minVal;
-  const green = isDarkMode ? '#2fc08c' : '#169b6b';
-  const red   = isDarkMode ? '#f06462' : '#d93f3e';
-  const blue  = isDarkMode ? '#5aa0f0' : '#2a78d6';
+  const green = isDarkMode ? '#3fb950' : '#16a34a';
+  const red   = isDarkMode ? '#f85149' : '#dc2626';
+  const blue  = isDarkMode ? '#4096ff' : '#1677ff';
   const color = isMax ? green : isMin ? red : blue;
   const r = (isMax || isMin) ? 7 : 4.5;
 
@@ -890,9 +890,9 @@ const JOConversionCard = ({ data, isMobile, onFormulaClick }) => {
   const { isDarkMode } = React.useContext(ThemeContext);
   const [mode, setMode] = useState('month');
 
-  const green = isDarkMode ? '#2fc08c' : '#169b6b';
-  const red   = isDarkMode ? '#f06462' : '#d93f3e';
-  const blue  = isDarkMode ? '#5aa0f0' : '#2a78d6';
+  const green = isDarkMode ? '#3fb950' : '#16a34a';
+  const red   = isDarkMode ? '#f85149' : '#dc2626';
+  const blue  = isDarkMode ? '#4096ff' : '#1677ff';
   const gridColor = isDarkMode ? '#2c3038' : '#e5e7eb';
 
   const list = data?.[mode] || [];
@@ -1054,9 +1054,9 @@ const AvgDaysDot = ({ cx, cy, payload, maxVal, minVal, hasDiff, isDarkMode }) =>
   if (cx == null || cy == null || !payload) return null;
   const isBest = hasDiff && payload.value === minVal;
   const isWorst = hasDiff && payload.value === maxVal;
-  const green = isDarkMode ? '#2fc08c' : '#169b6b';
-  const red   = isDarkMode ? '#f06462' : '#d93f3e';
-  const blue  = isDarkMode ? '#5aa0f0' : '#2a78d6';
+  const green = isDarkMode ? '#3fb950' : '#16a34a';
+  const red   = isDarkMode ? '#f85149' : '#dc2626';
+  const blue  = isDarkMode ? '#4096ff' : '#1677ff';
   const color = isBest ? green : isWorst ? red : blue;
   const r = (isBest || isWorst) ? 7 : 4.5;
 
@@ -1065,7 +1065,7 @@ const AvgDaysDot = ({ cx, cy, payload, maxVal, minVal, hasDiff, isDarkMode }) =>
       <circle cx={cx} cy={cy} r={r} fill={color} stroke={color} strokeWidth={2} />
       <text
         x={cx}
-        y={isBest ? cy + 18 : cy - 12}
+        y={cy < 18 ? cy + 16 : cy - 12}
         textAnchor="middle"
         fill={color}
         fontSize={FS_BAR_VAL}
@@ -1081,10 +1081,10 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
   const { isDarkMode } = React.useContext(ThemeContext);
   const [mode, setMode] = useState('month');
 
-  const green = isDarkMode ? '#2fc08c' : '#169b6b';
-  const red   = isDarkMode ? '#f06462' : '#d93f3e';
-  const blue  = isDarkMode ? '#5aa0f0' : '#2a78d6';
-  const amber = isDarkMode ? '#f59f00' : '#d97706';
+  const green = isDarkMode ? '#3fb950' : '#16a34a';
+  const red   = isDarkMode ? '#f85149' : '#dc2626';
+  const blue  = isDarkMode ? '#4096ff' : '#1677ff';
+  const amber = isDarkMode ? '#f59e0b' : '#d97706';
   const gridColor = isDarkMode ? '#2c3038' : '#e5e7eb';
 
   const list = (data?.[mode] || []).filter(d => d.value > 0 || d.count > 0);
@@ -1117,7 +1117,7 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
     if (mode === 'year') {
       yDomain = [0, Math.ceil((maxVal + 15) / 10) * 10];
     } else {
-      const floorMin = Math.max(0, Math.floor((minVal - 5) / 5) * 5);
+      const floorMin = Math.max(0, Math.floor((minVal - 8) / 5) * 5);
       const ceilMax = Math.ceil((maxVal + 8) / 5) * 5;
       yDomain = [floorMin, ceilMax];
     }
@@ -1239,9 +1239,9 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
                 </Bar>
               </BarChart>
             ) : (
-              <LineChart data={list} margin={{ top: 24, right: 24, bottom: 4, left: 4 }}>
+              <LineChart data={list} margin={{ top: 24, right: 24, bottom: 18, left: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="label" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} dy={6} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
                 <YAxis domain={yDomain} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
                 <RTooltip
                   content={({ active, payload, label }) => {
@@ -1311,7 +1311,9 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
 
 const RejectionReasonsCard = ({ data, isMobile, onFormulaClick }) => {
   const { isDarkMode } = React.useContext(ThemeContext);
-  const red = isDarkMode ? '#f06462' : '#f85149';
+  const red = isDarkMode ? '#f85149' : '#dc2626';
+
+  const totalRejections = useMemo(() => (data || []).reduce((acc, d) => acc + (d.value || 0), 0), [data]);
 
   return (
     <Card
@@ -1325,24 +1327,36 @@ const RejectionReasonsCard = ({ data, isMobile, onFormulaClick }) => {
         <NoData text="Нет зарегистрированных отказов от оффера" />
       ) : (
         <ResponsiveContainer width="100%" height={Math.max(260, data.length * 40 + 30)}>
-          <BarChart data={data} layout="vertical" barSize={22} margin={{ top: 8, right: isMobile ? 24 : 64, bottom: 8, left: 8 }}>
+          <BarChart data={data} layout="vertical" barSize={22} margin={{ top: 8, right: isMobile ? 36 : 85, bottom: 8, left: 8 }}>
             <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={isDarkMode ? '#2c3038' : '#f0f0f0'} />
             <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} allowDecimals={false} />
             <YAxis type="category" dataKey="reason" width={isMobile ? 110 : 170} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
             <RTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null;
+                const d = payload[0].payload || {};
+                const val = payload[0].value;
+                const pct = d.pct !== undefined ? d.pct : (totalRejections ? Math.round((val / totalRejections) * 1000) / 10 : 0);
                 return (
                   <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
                     <div style={{ fontWeight: 600, marginBottom: 3, color: T.text }}>{label}</div>
-                    <div style={{ color: T.sub }}>Количество отказов: <b style={{ color: red }}>{payload[0].value}</b></div>
+                    <div style={{ color: T.sub }}>Количество отказов: <b style={{ color: red }}>{val} ({pct}%)</b></div>
                   </div>
                 );
               }}
             />
             <Bar dataKey="value" radius={[0, 5, 5, 0]}>
               {data.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-              <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+              <LabelList
+                dataKey="value"
+                position="right"
+                formatter={(val, entry) => {
+                  const d = entry?.payload || {};
+                  const pct = d.pct !== undefined ? d.pct : (totalRejections ? Math.round((val / totalRejections) * 1000) / 10 : 0);
+                  return `${val} (${pct}%)`;
+                }}
+                style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }}
+              />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

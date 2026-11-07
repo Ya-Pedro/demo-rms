@@ -94,12 +94,6 @@ def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
                 f"ID {v.recruiter_id}"
             )
             rec_names.append(name)
-        if v.co_recruiter_id:
-            name_co = next(
-                (r["value"] for r in recruiters_opts if r["id"] == v.co_recruiter_id),
-                f"ID {v.co_recruiter_id}"
-            )
-            rec_names.append(name_co)
 
         for name in rec_names:
             if name not in recruiter_matrix_map:
@@ -175,10 +169,10 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
     ws.merge_cells("A1:I1")
     t_cell = ws["A1"]
     t_cell.value = "Всего активных вакансий в работе у рекрутера"
-    t_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    t_cell.font = Font(name="Calibri", size=13, bold=True, color="FFFFFF")
     t_cell.fill = PatternFill(start_color="1677FF", end_color="1677FF", fill_type="solid")
     t_cell.alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 24
+    ws.row_dimensions[1].height = 28
 
     # 2. Шапка колонок
     headers = [
@@ -434,8 +428,7 @@ async def get_dashboard_metrics(
         if exclude_field != "project" and f_projects and v.project_id not in f_projects:
             return False
         if exclude_field != "recruiter" and f_recruiters:
-            rec_match = (v.recruiter_id in f_recruiters) or (v.co_recruiter_id and v.co_recruiter_id in f_recruiters)
-            if not rec_match:
+            if v.recruiter_id not in f_recruiters:
                 return False
         if exclude_field != "block" and f_blocks and v.block_id not in f_blocks:
             return False
@@ -646,12 +639,6 @@ async def get_dashboard_metrics(
                 f"ID {v.recruiter_id}"
             )
             recruiter_load[name] += 1
-        if v.co_recruiter_id:
-            name_co = next(
-                (r["value"] for r in recruiters_opts if r["id"] == v.co_recruiter_id),
-                f"ID {v.co_recruiter_id}"
-            )
-            recruiter_load[name_co] += 1
     chart8 = sorted(
         [{"recruiter": name, "value": cnt} for name, cnt in recruiter_load.items()],
         key=lambda x: -x["value"],
@@ -714,8 +701,12 @@ async def get_dashboard_metrics(
                 if rsn:
                     rejection_cnt[rsn] = rejection_cnt.get(rsn, 0) + 1
 
+    total_rejections = sum(rejection_cnt.values()) or 1
     chart_rejections = sorted(
-        [{"reason": k, "value": cnt} for k, cnt in rejection_cnt.items()],
+        [
+            {"reason": k, "value": cnt, "pct": round(cnt / total_rejections * 100, 1)}
+            for k, cnt in rejection_cnt.items()
+        ],
         key=lambda x: -x["value"],
     )
 
@@ -870,8 +861,6 @@ async def get_dashboard_metrics(
     avail_admin_mgrs = {v.admin_manager_id for v in all_vacs if v.admin_manager_id and matches_filters(v, "admin_manager")}
     avail_recruiters = {
         v.recruiter_id for v in all_vacs if v.recruiter_id and matches_filters(v, "recruiter")
-    } | {
-        v.co_recruiter_id for v in all_vacs if v.co_recruiter_id and matches_filters(v, "recruiter")
     }
     avail_status_names = {get_effective_status(v) for v in all_vacs if matches_filters(v, "status")}
     avail_status_names.discard(None)
@@ -1009,7 +998,7 @@ async def export_recruiter_load(
             continue
         if f_projects and v.project_id not in f_projects:
             continue
-        if f_recruiters and (v.recruiter_id not in f_recruiters and v.co_recruiter_id not in f_recruiters):
+        if f_recruiters and v.recruiter_id not in f_recruiters:
             continue
         if f_blocks and v.block_id not in f_blocks:
             continue
