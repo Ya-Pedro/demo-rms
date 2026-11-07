@@ -28,7 +28,7 @@ import {
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
-  ClearOutlined, FileTextOutlined, DownloadOutlined, UploadOutlined,
+  ClearOutlined, FileTextOutlined, UploadOutlined,
   SettingOutlined, ArrowUpOutlined, ArrowDownOutlined, PushpinOutlined,
   ReloadOutlined, QuestionCircleOutlined, UserSwitchOutlined, HistoryOutlined,
   CommentOutlined, CheckCircleOutlined, ExclamationCircleOutlined,
@@ -441,7 +441,6 @@ const VacancyTable = ({
   onDelete,
   onCreate,
   onReportClick,
-  onExportClick,
   onTableStateChange,
   onResetRequest,
   onTourComplete,
@@ -1484,10 +1483,6 @@ const VacancyTable = ({
         </Button>
         <Button icon={<ReloadOutlined />} size="small"
           onClick={() => fetchData()} title="Обновить" data-tour="reload-btn" />
-        <Button icon={<DownloadOutlined />} size="small"
-          onClick={onExportClick} data-testid="export-button" data-tour="export-btn">
-          Экспорт
-        </Button>
         {user?.role === 'recruiter' && (
           <Tooltip title="Обучение по работе с системой">
             <Button

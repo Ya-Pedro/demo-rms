@@ -115,9 +115,17 @@ def _resolve_fk(vacancy: Vacancy, field: str) -> Optional[str]:
     rel_attr, disp_attr = FK_RELATION_MAP[field]
     try:
         obj = getattr(vacancy, rel_attr, None)
-        if obj is None:
-            return None
-        return str(getattr(obj, disp_attr, None) or "")
+        if obj is not None:
+            val = getattr(obj, disp_attr, None)
+            if val:
+                return str(val)
+        if field == "feasibility_id" and getattr(vacancy, "feasibility_text", None):
+            return str(vacancy.feasibility_text)
+        if field == "city_id" and getattr(vacancy, "city_text", None):
+            return str(vacancy.city_text)
+        if field == "team_lead_id" and getattr(vacancy, "team_lead_text", None):
+            return str(vacancy.team_lead_text)
+        return None
     except Exception:
         return None
 

@@ -236,10 +236,12 @@ class Vacancy(Base):
 
     @property
     def feasibility_name(self):
+        from sqlalchemy import inspect
+        state = inspect(self)
+        if "feasibility" in state.dict and self.feasibility:
+            return self.feasibility.value
         if self.feasibility_text:
             return self.feasibility_text
-        if self.feasibility:
-            return self.feasibility.value
         return None
 
 class WeeklyReport(Base):

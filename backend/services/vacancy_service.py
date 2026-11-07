@@ -90,6 +90,7 @@ def vacancy_to_dict(vacancy: Vacancy, metrics=None) -> dict:
         "employment_type_id": vacancy.employment_type_id,
         "feasibility_id": vacancy.feasibility_id,
         "feasibility_text": vacancy.feasibility_text,
+        "feasibility_name": vacancy.feasibility_name,
         "iqhr_link": vacancy.iqhr_link,
         "recruiter_id": vacancy.recruiter_id,
         "co_recruiter_id": vacancy.co_recruiter_id,
@@ -377,6 +378,17 @@ class VacancyService:
             funnel_updates["comment"] = update_data["comment"]
         if "offer_rejection_reason" in update_data:
             funnel_updates["offer_rejection_reason"] = update_data["offer_rejection_reason"]
+
+        if "feasibility_id" in update_data:
+            fid = update_data["feasibility_id"]
+            if fid:
+                from models import Dictionary
+                d_item = await self.db.get(Dictionary, fid)
+                vacancy.feasibility_text = d_item.value if d_item else None
+            else:
+                vacancy.feasibility_text = None
+        elif "feasibility_text" in update_data:
+            vacancy.feasibility_text = update_data["feasibility_text"]
 
         await self.repo.update(vacancy, update_data)
 

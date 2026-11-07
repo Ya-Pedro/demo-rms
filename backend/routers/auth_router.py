@@ -203,9 +203,9 @@ async def _issue_tokens(db: AsyncSession, user: User, request: Request) -> dict:
                                                                                
                                                                 
                                                                                
-    session_id = _secrets.token_hex(16)                                
-    set_active_session(user.id, session_id)
-    _invalidate_session_cache(user.id)                                    
+    session_id = _secrets.token_hex(16)
+    _invalidate_session_cache(user.id)   # сначала чистим старую запись из кэша
+    set_active_session(user.id, session_id)  # потом записываем новую сессию (Redis + кэш)
     access_token = create_access_token(
         data={"sub": user.email, "role": user.role.value, "sid": session_id},
         expires_delta=timedelta(minutes=RT_EXPIRE),
@@ -483,8 +483,8 @@ async def refresh_access_token(
 
                                
     new_session_id = secrets.token_hex(16)
-    set_active_session(user.id, new_session_id)
-    _invalidate_session_cache(user.id)
+    _invalidate_session_cache(user.id)   # сначала чистим старую запись из кэша
+    set_active_session(user.id, new_session_id)  # потом записываем новую сессию
     new_access_token = create_access_token(
         data={"sub": user.email, "role": user.role.value, "sid": new_session_id},
         expires_delta=timedelta(minutes=RT_ACCESS_EXPIRE),

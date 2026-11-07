@@ -184,14 +184,6 @@ const DashboardPage = () => {
   
 
   const [tableState, setTableState] = useState({ filters: {}, sorter: {} });
-  
-
-  const [exportModalVisible, setExportModalVisible] = useState(false);
-  const [exportPeriod, setExportPeriod] = useState('all_time');
-  const [exportCustomDates, setExportCustomDates] = useState(null);
-  const [exportWithFilters, setExportWithFilters] = useState(true);
-  const [exportLoading, setExportLoading] = useState(false);
-  
 
   const [reportModalVisible, setReportModalVisible] = useState(false);
   const [reportVacancy, setReportVacancy] = useState(null);
@@ -313,7 +305,11 @@ const DashboardPage = () => {
       offer_made:         record.offer_made         || 0,
       offer_accepted:     record.offer_accepted     || record.offer_accepted_cnt || 0,
       comment:            record.comment || '',
-      feasibility_id:     record.feasibility_id || record.feasibility?.id || null,
+      feasibility_id:     record.feasibility_id || record.feasibility?.id || (
+        (dictionaries.feasibility || []).find(d => 
+          record.feasibility_text && d.value?.trim().toLowerCase() === record.feasibility_text.trim().toLowerCase()
+        )?.id
+      ) || null,
     });
     setDrawerVisible(true);
   };
@@ -324,9 +320,11 @@ const DashboardPage = () => {
       setLoading(true);
       const payload = {
         ...values,
-        open_date: values.open_date?.format('YYYY-MM-DD'),
-        close_date: values.close_date?.format('YYYY-MM-DD'),
+        open_date: values.open_date ? values.open_date.format('YYYY-MM-DD') : null,
+        close_date: values.close_date ? values.close_date.format('YYYY-MM-DD') : null,
       };
+      delete payload.vacancy_id;
+
       if (isRecruiter) {
         if (editingVacancy) {
           delete payload.recruiter_id;
@@ -345,7 +343,13 @@ const DashboardPage = () => {
       actionRef.current?.reload();
     } catch (error) {
       console.error('Save error:', error);
-      message.error(error.response?.data?.detail || 'Ошибка сохранения');
+      let detail = error.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        detail = detail.map(d => d.msg || JSON.stringify(d)).join(', ');
+      } else if (typeof detail === 'object' && detail !== null) {
+        detail = JSON.stringify(detail);
+      }
+      message.error(detail || error.message || 'Ошибка сохранения');
     } finally {
       setLoading(false);
     }
@@ -377,86 +381,6 @@ const DashboardPage = () => {
   const handleResetRequest = useCallback(() => {
     setTableKey(k => k + 1);
   }, []);
-  
-  const hasActiveFilters = tableState.filters && 
-    Object.values(tableState.filters).some(v => v && v.length > 0);
-
-  const handleExport = async () => {
-    setExportLoading(true);
-    try {
-      const token = tokenStorage.getAccess();
-      const params = new URLSearchParams();
-      params.append('period', exportPeriod);
-      if (excludedStatuses && excludedStatuses.length > 0) {
-        excludedStatuses.forEach(id => params.append('exclude_status_id', id));
-      }
-
-      if (exportPeriod === 'custom' && exportCustomDates && exportCustomDates.length === 2) {
-        params.append('start_date', exportCustomDates[0].format('YYYY-MM-DD'));
-        params.append('end_date', exportCustomDates[1].format('YYYY-MM-DD'));
-      }
-
-      if (exportWithFilters && hasActiveFilters) {
-        const filters = tableState.filters;
-        const filterKeys = [
-          'status_id', 'project_id', 'recruiter_id', 'co_recruiter_id', 'it_role_id',
-          'level_id', 'source_id', 'block_id',
-          'employment_type_id', 'feasibility_id', 'replacement_type_id',
-          'admin_manager_id', 'internal_transfer_id',
-        ];
-        for (const key of filterKeys) {
-          if (filters[key]?.length) {
-            for (const val of filters[key]) {
-              params.append(key, val);
-            }
-          }
-        }
-        const textKeys = [
-          'vacancy_id', 'position_name', 'candidate_name', 'candidate_company',
-          'ex_employee_name', 'unit_id', 'salary_gross', 'iqhr_link',
-          'city_text', 'team_lead_text', 'feasibility_text',
-        ];
-        for (const key of textKeys) {
-          if (filters[key]?.[0]) {
-            params.append(`search_${key}`, filters[key][0]);
-          }
-        }
-      }
-
-      const url = `${API_BASE}/export/vacancies?${params.toString()}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-
-      if (!response.ok) throw new Error(`Export failed: ${response.status}`);
-
-      const blob = await response.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = 'vacancies_export.xlsx';
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?(.+?)"?$/);
-        if (match && match[1]) filename = match[1];
-      }
-
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      window.URL.revokeObjectURL(downloadUrl);
-
-      setExportModalVisible(false);
-      message.success('Экспорт завершен');
-    } catch (error) {
-      console.error('Export error:', error);
-      message.error('Ошибка экспорта');
-    } finally {
-      setExportLoading(false);
-    }
-  };
 
   const handleReportClick = async (vacancy) => {
     setReportVacancy(vacancy);
@@ -599,75 +523,10 @@ const DashboardPage = () => {
         onDelete={handleDelete}
         onCreate={handleCreate}
         onReportClick={handleReportClick}
-        onExportClick={() => setExportModalVisible(true)}
         onTableStateChange={handleTableStateChange}
         onResetRequest={handleResetRequest}
         onTourComplete={handleVacanciesTourComplete}
       />
-
-      {}
-      <Modal
-        title="Экспорт вакансий в Excel"
-        open={exportModalVisible}
-        onCancel={() => setExportModalVisible(false)}
-        onOk={handleExport}
-        okText="Скачать"
-        cancelText="Отмена"
-        confirmLoading={exportLoading}
-        width={isMobile ? '95vw' : 480}
-        data-testid="export-modal"
-      >
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>Выберите период:</label>
-          <Select
-            value={exportPeriod}
-            onChange={(val) => {
-              setExportPeriod(val);
-              if (val !== 'custom') setExportCustomDates(null);
-            }}
-            options={EXPORT_PERIODS}
-            style={{ width: '100%' }}
-            data-testid="export-period-select"
-          />
-        </div>
-
-        {}
-        {exportPeriod === 'custom' && (
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>Выберите даты:</label>
-            <RangePicker
-              value={exportCustomDates}
-              onChange={setExportCustomDates}
-              format="DD.MM.YYYY"
-              style={{ width: '100%' }}
-              data-testid="export-custom-dates"
-              placeholder={['Дата начала', 'Дата конца']}
-            />
-          </div>
-        )}
-
-        {hasActiveFilters && (
-          <div style={{
-            padding: 14,
-            border: `1px solid ${token.colorPrimaryBorder}`,
-            borderRadius: 6,
-            background: token.colorPrimaryBg,
-            marginBottom: 16,
-          }}>
-            <Checkbox
-              checked={exportWithFilters}
-              onChange={e => setExportWithFilters(e.target.checked)}
-              data-testid="export-with-filters-checkbox"
-            >
-              <span style={{ fontWeight: 500 }}>Выгрузить с учетом фильтров таблицы</span>
-            </Checkbox>
-            <div style={{ marginTop: 6, fontSize: 13, color: token.colorPrimary }}>
-              <CheckCircleOutlined style={{ marginRight: 4 }} />
-              В таблице применены фильтры. При включенной опции в Excel попадут только отфильтрованные записи.
-            </div>
-          </div>
-        )}
-      </Modal>
 
       {}
       <Modal
