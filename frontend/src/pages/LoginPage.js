@@ -116,7 +116,7 @@ const LoginPage = () => {
     if (is_temporary_password) {
       setForceChangeOpen(true);
     } else {
-      message.success('Добро пожаловать!');
+      message.success('Вход выполнен');
       navigate('/');
     }
   };
@@ -144,7 +144,7 @@ const LoginPage = () => {
     } catch {
 
     }
-    message.success('Пароль создан. Добро пожаловать!');
+    message.success('Пароль обновлен');
     navigate('/');
   };
 
@@ -153,6 +153,7 @@ const LoginPage = () => {
       <div className="login-card">
         <div className="login-logo">
           <h1>RMS</h1>
+          <p>Система управления рекрутментом</p>
         </div>
 
         {}
@@ -308,15 +309,15 @@ const LoginPage = () => {
 
       <div style={{
         position: 'fixed',
-        bottom: 12,
+        bottom: 16,
         right: 16,
         fontSize: 12,
-        color: '#64748b',
-        fontWeight: 500,
-        background: 'rgba(255, 255, 255, 0.85)',
+        color: '#94a3b8',
+        fontWeight: 400,
+        background: 'rgba(255, 255, 255, 0.08)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
         padding: '3px 8px',
         borderRadius: 4,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
       }}>
         RMS v{APP_VERSION}
       </div>

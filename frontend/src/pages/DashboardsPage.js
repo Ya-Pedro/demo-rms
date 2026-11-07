@@ -46,9 +46,9 @@ const STATUS_COLOR = {
   'Согласование фин условий': '#0891b2',
 };
 
-const CS  = { borderRadius: 10, border: `1px solid ${T.border}`, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', height: '100%' };
-const CBS = { padding: '14px 18px' };
-const CHS = { borderBottom: `1px solid ${T.border}`, padding: '12px 20px', minHeight: 'unset', fontSize: 14, fontWeight: 700, color: T.text };
+const CS  = { borderRadius: 10, border: `1px solid ${T.border}`, boxShadow: 'none', height: '100%' };
+const CBS = { padding: '16px 20px' };
+const CHS = { borderBottom: `1px solid ${T.border}`, padding: '12px 20px', minHeight: 'unset', fontSize: 14, fontWeight: 600, color: T.text };
 
 // Unified typography standards across all dashboard charts
 const FS_AXIS_LABEL = 13; // Category labels on axes (recruiter, status, company, level, stage)
@@ -396,12 +396,10 @@ const ExcelFilterSelect = ({ title, allLabel, value, onChange, options = [], isM
     <div style={{ display: 'inline-flex', flexDirection: 'column', ...style }}>
       {title && (
         <span style={{
-          fontSize: 10,
-          fontWeight: 700,
+          fontSize: 11,
+          fontWeight: 500,
           color: isDarkMode ? '#8b949e' : '#64748b',
-          textTransform: 'uppercase',
-          letterSpacing: 0.5,
-          marginBottom: 2,
+          marginBottom: 4,
         }}>
           {title}
         </span>
@@ -432,7 +430,7 @@ const ExcelFilterSelect = ({ title, allLabel, value, onChange, options = [], isM
             gap: 6,
             outline: 'none',
             maxWidth: isMobile ? 140 : 180,
-            transition: 'all 0.2s',
+            transition: 'border-color 0.15s ease, background-color 0.15s ease',
           }}
         >
           <span style={{
@@ -612,13 +610,12 @@ const RecruiterLoadCard = ({
             <div style={{
               background: isDarkMode ? '#113565' : '#1677ff',
               color: '#ffffff',
-              fontWeight: 700,
+              fontWeight: 600,
               fontSize: 16,
               textAlign: 'center',
               padding: '12px 16px',
               borderRadius: '6px 6px 0 0',
-              letterSpacing: 0.5,
-              boxShadow: '0 2px 4px rgba(22, 119, 255, 0.2)',
+              letterSpacing: 0,
             }}>
               Всего активных вакансий в работе у рекрутера
             </div>
@@ -776,21 +773,21 @@ const SalaryCard = ({ data, isMobile, onFormulaClick }) => {
             <Statistic
               title={<Text style={{ fontSize: 13, color: T.muted, fontWeight: 500 }}>Медианная ЗП (Gross)</Text>}
               value={p50}
-              valueStyle={{ fontSize: isMobile ? 22 : 30, fontWeight: 700, color: T.purple }}
+              valueStyle={{ fontSize: isMobile ? 22 : 28, fontWeight: 600, color: T.purple, fontVariantNumeric: 'tabular-nums' }}
               suffix=" ₽"
             />
             {!isMobile && <Divider type="vertical" style={{ height: 48, margin: 0 }} />}
             <Statistic
               title={<Text style={{ fontSize: 13, color: T.muted, fontWeight: 500 }}>Q1 (25%)</Text>}
               value={p25}
-              valueStyle={{ fontSize: isMobile ? 18 : 24, fontWeight: 600, color: T.sub }}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, fontWeight: 600, color: T.sub, fontVariantNumeric: 'tabular-nums' }}
               suffix=" ₽"
             />
             {!isMobile && <Divider type="vertical" style={{ height: 48, margin: 0 }} />}
             <Statistic
               title={<Text style={{ fontSize: 13, color: T.muted, fontWeight: 500 }}>Q3 (75%)</Text>}
               value={p75}
-              valueStyle={{ fontSize: isMobile ? 18 : 24, fontWeight: 600, color: T.sub }}
+              valueStyle={{ fontSize: isMobile ? 18 : 22, fontWeight: 600, color: T.sub, fontVariantNumeric: 'tabular-nums' }}
               suffix=" ₽"
             />
           </div>
@@ -1573,12 +1570,10 @@ export default function DashboardsPage() {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
           <div style={{ display: 'inline-flex', flexDirection: 'column' }}>
             <span style={{
-              fontSize: 10,
-              fontWeight: 700,
+              fontSize: 11,
+              fontWeight: 500,
               color: isDarkMode ? '#8b949e' : '#64748b',
-              textTransform: 'uppercase',
-              letterSpacing: 0.5,
-              marginBottom: 2,
+              marginBottom: 4,
             }}>
               Период
             </span>

@@ -1479,7 +1479,7 @@ const VacancyTable = ({
           onClick={handleResetFilters}
           data-testid="reset-filters-button" data-tour="reset-filters-btn"
         >
-          {totalActiveCount > 0 ? `Активных фильтров по столбцам: ${totalActiveCount} Сбросить фильтры` : 'Сбросить фильтры'}
+          {totalActiveCount > 0 ? `Активных фильтров: ${totalActiveCount} · Сбросить` : 'Сбросить фильтры'}
         </Button>
         <Button icon={<ReloadOutlined />} size="small"
           onClick={() => fetchData()} title="Обновить" data-tour="reload-btn" />

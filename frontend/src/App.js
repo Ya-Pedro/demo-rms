@@ -167,33 +167,38 @@ const getThemeConfig = (isDark) => ({
     colorPrimary: '#58a6ff',
     colorInfo: '#58a6ff',
     colorSuccess: '#238636',
-    colorWarning: '#e3b341',
-    colorError: '#da3633',
-    colorTextBase: '#c9d1d9',
+    colorWarning: '#d29922',
+    colorError: '#f85149',
+    colorTextBase: '#e6edf3',
+    colorTextSecondary: '#8b949e',
     colorTextPlaceholder: 'rgba(255, 255, 255, 0.45)',
     colorBgBase: '#0d1117',
     colorBgLayout: '#0d1117',
     colorBgContainer: '#161b22',
     colorBgElevated: '#161b22',
-    colorBorder: '#30363d',
-    colorBorderSecondary: '#21262d',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    borderRadius: 8,
-    boxShadow: '0 8px 24px rgba(1,4,9,1)',
+    colorBorder: 'rgba(240, 246, 252, 0.1)',
+    colorBorderSecondary: 'rgba(240, 246, 252, 0.06)',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    borderRadius: 6,
+    boxShadow: 'none',
+    boxShadowSecondary: '0 2px 8px rgba(0, 0, 0, 0.3)',
   } : {
-    colorPrimary: '#6366f1',
+    colorPrimary: '#4f46e5',
     colorInfo: '#3b82f6',
-    colorSuccess: '#10b981',
-    colorWarning: '#f59e0b',
-    colorError: '#ef4444',
-    colorTextBase: '#1e293b',
+    colorSuccess: '#16a34a',
+    colorWarning: '#d97706',
+    colorError: '#dc2626',
+    colorTextBase: '#0f172a',
+    colorTextSecondary: '#475569',
     colorBgBase: '#ffffff',
-    colorBgLayout: '#f4f7fe',
-    colorBorder: '#e2e8f0',
-    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-    borderRadius: 12,
+    colorBgLayout: '#f8fafc',
+    colorBorder: 'rgba(15, 23, 42, 0.08)',
+    colorBorderSecondary: 'rgba(15, 23, 42, 0.04)',
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    borderRadius: 6,
     wireframe: false,
-    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.05)',
+    boxShadow: 'none',
+    boxShadowSecondary: '0 2px 8px rgba(15, 23, 42, 0.04)',
   },
   components: isDark ? {
     Layout: {
@@ -202,57 +207,75 @@ const getThemeConfig = (isDark) => ({
     },
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: 'rgba(88,166,255,0.15)',
+      itemSelectedBg: 'rgba(88, 166, 255, 0.12)',
       itemSelectedColor: '#58a6ff',
-      itemHoverBg: 'rgba(177,186,196,0.12)',
+      itemHoverBg: 'rgba(240, 246, 252, 0.06)',
+      itemBorderRadius: 6,
     },
     Table: {
       headerBg: '#161b22',
-      headerColor: '#c9d1d9',
-      rowHoverBg: 'rgba(177,186,196,0.12)',
-      borderColor: '#30363d',
+      headerColor: '#e6edf3',
+      rowHoverBg: 'rgba(240, 246, 252, 0.04)',
+      borderColor: 'rgba(240, 246, 252, 0.1)',
+      headerBorderRadius: 6,
     },
     Card: {
       colorBgContainer: '#161b22',
-      colorBorderSecondary: '#30363d',
+      colorBorderSecondary: 'rgba(240, 246, 252, 0.1)',
+      borderRadiusLG: 10,
+    },
+    Button: {
+      borderRadius: 6,
+      controlHeight: 36,
+      fontWeight: 500,
+    },
+    Input: {
+      borderRadius: 6,
+      controlHeight: 36,
+    },
+    Select: {
+      borderRadius: 6,
+      controlHeight: 36,
     }
   } : {
     Layout: {
       siderBg: '#ffffff',
-      headerBg: 'rgba(255, 255, 255, 0.8)',
+      headerBg: '#ffffff',
     },
     Menu: {
       itemBg: 'transparent',
-      itemSelectedBg: '#e0e7ff',
+      itemSelectedBg: 'rgba(79, 70, 229, 0.08)',
       itemSelectedColor: '#4f46e5',
-      itemBorderRadius: 8,
-      itemMarginInline: 12,
+      itemBorderRadius: 6,
+      itemMarginInline: 8,
     },
     Table: {
       headerBg: '#f8fafc',
-      headerColor: '#64748b',
+      headerColor: '#475569',
       rowHoverBg: '#f1f5f9',
-      cellPaddingBlock: 16,
-      borderColor: '#f1f5f9',
+      cellPaddingBlock: 12,
+      borderColor: 'rgba(15, 23, 42, 0.08)',
+      headerBorderRadius: 6,
     },
     Card: {
-      borderRadius: 16,
-      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
+      borderRadiusLG: 10,
+      boxShadow: 'none',
+      colorBorderSecondary: 'rgba(15, 23, 42, 0.08)',
     },
     Button: {
-      borderRadius: 8,
-      controlHeight: 40,
+      borderRadius: 6,
+      controlHeight: 36,
       fontWeight: 500,
     },
     Input: {
-      borderRadius: 8,
-      controlHeight: 40,
-      hoverBorderColor: '#6366f1',
-      activeBorderColor: '#6366f1',
+      borderRadius: 6,
+      controlHeight: 36,
+      hoverBorderColor: '#4f46e5',
+      activeBorderColor: '#4f46e5',
     },
     Select: {
-      borderRadius: 8,
-      controlHeight: 40,
+      borderRadius: 6,
+      controlHeight: 36,
     }
   }
 });
@@ -436,15 +459,16 @@ const MainLayout = ({ children }) => {
         top: 0,
         zIndex: 1000,
         width: '100%',
-        padding: isMobile ? '0 16px' : '0 48px', 
+        height: 56,
+        padding: isMobile ? '0 16px' : '0 32px', 
         background: 'var(--header-bg)', 
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between',
         borderBottom: '1px solid var(--border-color)',
-        boxShadow: '0 4px 20px var(--shadow-color)',
+        boxShadow: 'none',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 32, flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 28, flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {isMobile && (
               <Button
@@ -454,22 +478,22 @@ const MainLayout = ({ children }) => {
                 data-testid="sidebar-toggle"
               />
             )}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginRight: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginRight: 20 }}>
               <span style={{ 
-                fontSize: 28, 
-                fontWeight: 800, 
+                fontSize: 24, 
+                fontWeight: 700, 
                 background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
-                letterSpacing: '-1px'
+                letterSpacing: '-0.5px'
               }}>
                 RMS
               </span>
               <span style={{
-                fontSize: 12,
-                fontWeight: 600,
+                fontSize: 11,
+                fontWeight: 500,
                 color: isDarkMode ? '#8b949e' : '#64748b',
-                background: isDarkMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+                background: isDarkMode ? 'rgba(255, 255, 255, 0.06)' : 'rgba(15, 23, 42, 0.05)',
                 padding: '2px 6px',
                 borderRadius: 4,
                 lineHeight: 1.2
@@ -489,8 +513,8 @@ const MainLayout = ({ children }) => {
                 borderBottom: 0, 
                 flex: 1,
                 minWidth: 0,
-                lineHeight: '70px',
-                fontSize: 15,
+                lineHeight: '54px',
+                fontSize: 14,
                 fontWeight: 500
               }}
             />
@@ -500,11 +524,11 @@ const MainLayout = ({ children }) => {
         <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
           <Space style={{ cursor: 'pointer', paddingLeft: 16 }} data-testid="user-menu">
             <Avatar 
-              size={40}
-              style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)', boxShadow: '0 4px 10px rgba(79, 70, 229, 0.3)' }} 
+              size={36}
+              style={{ background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)' }} 
               icon={<UserOutlined />} 
             />
-            {!isMobile && <span style={{ fontWeight: 600, color: 'var(--text-color)' }}>{user?.full_name}</span>}
+            {!isMobile && <span style={{ fontWeight: 500, color: 'var(--text-color)', fontSize: 14 }}>{user?.full_name}</span>}
           </Space>
         </Dropdown>
       </Header>
@@ -518,7 +542,7 @@ const MainLayout = ({ children }) => {
           styles={{ body: { padding: 0 }, header: { padding: '16px 24px', borderBottom: 'none' } }}
           title={
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontSize: 28, fontWeight: 800, background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1px' }}>
+              <span style={{ fontSize: 24, fontWeight: 700, background: 'linear-gradient(135deg, #4f46e5 0%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-0.5px' }}>
                 RMS
               </span>
               <span style={{ fontSize: 12, fontWeight: 600, color: isDarkMode ? '#8b949e' : '#64748b' }}>

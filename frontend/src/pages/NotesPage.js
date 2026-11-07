@@ -185,7 +185,7 @@ const EditableCell = React.memo(function EditableCell({
         borderRadius: 4,
         backgroundColor: isDarkMode ? 'transparent' : '#ffffff',
         border: '1px dashed transparent',
-        transition: 'all 0.2s',
+        transition: 'border-color 0.15s ease',
         wordBreak: 'break-word',
         whiteSpace: 'pre-wrap',
       }}
