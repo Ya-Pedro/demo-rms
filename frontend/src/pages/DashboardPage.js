@@ -293,6 +293,18 @@ const DashboardPage = () => {
   const handleEdit = (record) => {
     setEditingVacancy(record);
 
+    let rejectionReasons = [];
+    if (record.offer_rejection_reason) {
+      if (Array.isArray(record.offer_rejection_reason)) {
+        rejectionReasons = record.offer_rejection_reason;
+      } else {
+        rejectionReasons = String(record.offer_rejection_reason)
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean);
+      }
+    }
+
     form.setFieldsValue({
       ...record,
       open_date: record.open_date ? dayjs(record.open_date) : null,
@@ -304,6 +316,7 @@ const DashboardPage = () => {
       interviews_plan:    record.interviews_plan    || 0,
       offer_made:         record.offer_made         || 0,
       offer_accepted:     record.offer_accepted     || record.offer_accepted_cnt || 0,
+      offer_rejection_reason: rejectionReasons,
       comment:            record.comment || '',
       feasibility_id:     record.feasibility_id || record.feasibility?.id || (
         (dictionaries.feasibility || []).find(d => 
@@ -324,6 +337,12 @@ const DashboardPage = () => {
         close_date: values.close_date ? values.close_date.format('YYYY-MM-DD') : null,
       };
       delete payload.vacancy_id;
+
+      if (Array.isArray(payload.offer_rejection_reason)) {
+        payload.offer_rejection_reason = payload.offer_rejection_reason.length > 0
+          ? payload.offer_rejection_reason.join(', ')
+          : null;
+      }
 
       if (isRecruiter) {
         if (editingVacancy) {
@@ -403,6 +422,12 @@ const DashboardPage = () => {
     });
     setReportModalVisible(true);
 
+    const parseRejectionReasons = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      return String(val).split(',').map(s => s.trim()).filter(Boolean);
+    };
+
     try {
       const res = await api.get(`/reports/vacancy/${vacancy.id}`);
       const reports = res.data.items || [];
@@ -416,7 +441,7 @@ const DashboardPage = () => {
           interviews_conducted: existing.interviews_conducted || 0,
           offer_made: existing.offer_made || 0,
           offer_accepted: existing.offer_accepted || 0,
-          offer_rejection_reason: existing.offer_rejection_reason || null,
+          offer_rejection_reason: parseRejectionReasons(existing.offer_rejection_reason),
         });
       }
     } catch {
@@ -427,6 +452,11 @@ const DashboardPage = () => {
   const handleWeekPeriodChange = async (value) => {
     if (!reportVacancy || !value) return;
     setIsReportWeekEditable(checkWeekEditable(value));
+    const parseRejectionReasons = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      return String(val).split(',').map(s => s.trim()).filter(Boolean);
+    };
     try {
       const [year, week] = value.split('-').map(Number);
       const res = await api.get(`/reports/vacancy/${reportVacancy.id}`);
@@ -441,7 +471,7 @@ const DashboardPage = () => {
           interviews_conducted: existing.interviews_conducted || 0,
           offer_made: existing.offer_made || 0,
           offer_accepted: existing.offer_accepted || 0,
-          offer_rejection_reason: existing.offer_rejection_reason || null,
+          offer_rejection_reason: parseRejectionReasons(existing.offer_rejection_reason),
         });
         message.info('Найден существующий отчёт за эту неделю — данные загружены для редактирования');
       } else {
@@ -453,7 +483,7 @@ const DashboardPage = () => {
           interviews_conducted: 0,
           offer_made: 0,
           offer_accepted: 0,
-          offer_rejection_reason: null,
+          offer_rejection_reason: [],
         });
       }
     } catch {
@@ -472,6 +502,13 @@ const DashboardPage = () => {
       
       const [year, week] = values.week_period.split('-').map(Number);
       
+      const formatRejectionReasons = (val) => {
+        if (Array.isArray(val)) {
+          return val.length > 0 ? val.join(', ') : null;
+        }
+        return val || null;
+      };
+
       const payload = {
         resumes_sent: values.resumes_sent || 0,
         candidates_agreed: values.candidates_agreed || 0,
@@ -479,7 +516,7 @@ const DashboardPage = () => {
         interviews_conducted: values.interviews_conducted || 0,
         offer_made: values.offer_made || 0,
         offer_accepted: values.offer_accepted || 0,
-        offer_rejection_reason: values.offer_rejection_reason || null,
+        offer_rejection_reason: formatRejectionReasons(values.offer_rejection_reason),
       };
 
       if (editingReportId) {
@@ -607,10 +644,11 @@ const DashboardPage = () => {
 
               <Form.Item name="offer_rejection_reason" label="Причина отказа от Оффера">
                 <Select
+                  mode="multiple"
                   disabled={!isReportWeekEditable}
                   allowClear
                   showSearch
-                  placeholder="Выберите причину отказа от оффера"
+                  placeholder="Выберите причину(ы) отказа от оффера"
                   options={rejectionReasonOptions}
                   filterOption={(input, option) =>
                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
@@ -791,6 +829,22 @@ const DashboardPage = () => {
               <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="ex_employee_name" label="ФИО бывшего сотр.">
                   <Input />
+                </HighlightFormItem>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={24}>
+                <HighlightFormItem editing={!!editingVacancy} name="offer_rejection_reason" label="Причина отказа от Оффера">
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    placeholder="Выберите причину(ы) отказа от оффера"
+                    options={rejectionReasonOptions}
+                    filterOption={(input, option) =>
+                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
+                  />
                 </HighlightFormItem>
               </Col>
             </Row>

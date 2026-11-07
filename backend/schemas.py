@@ -2,8 +2,8 @@
 \
 \
    
-from pydantic import BaseModel, EmailStr, ConfigDict, model_validator
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, ConfigDict, model_validator, field_validator
+from typing import Optional, List, Union
 from datetime import date, datetime
 from models import UserRole, DictionaryType
 
@@ -168,8 +168,18 @@ class VacancyBase(BaseModel):
     hold_days: int = 0
     salary_gross: Optional[int] = None                          
     offer_accepted: int = 0
-    offer_rejection_reason: Optional[str] = None
+    offer_rejection_reason: Optional[Union[str, List[str]]] = None
     comment: Optional[str] = None
+
+    @field_validator("offer_rejection_reason", mode="before")
+    @classmethod
+    def normalize_rejection_reason(cls, v):
+        if isinstance(v, list):
+            return ", ".join(str(item).strip() for item in v if str(item).strip()) or None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return v
 
 class VacancyCreate(VacancyBase):
     pass
@@ -190,8 +200,18 @@ class VacancyUpdate(BaseModel):
     interviews_plan: Optional[int] = None
     offer_made: Optional[int] = None
     offer_accepted: Optional[int] = None
-    offer_rejection_reason: Optional[str] = None
+    offer_rejection_reason: Optional[Union[str, List[str]]] = None
     comment: Optional[str] = None
+
+    @field_validator("offer_rejection_reason", mode="before")
+    @classmethod
+    def normalize_rejection_reason(cls, v):
+        if isinstance(v, list):
+            return ", ".join(str(item).strip() for item in v if str(item).strip()) or None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return v
     city_id: Optional[int] = None
     city_text: Optional[str] = None
     team_lead_text: Optional[str] = None
@@ -329,8 +349,18 @@ class WeeklyReportBase(BaseModel):
     interviews_conducted: int = 0
     offer_made: int = 0
     offer_accepted: int = 0
-    offer_rejection_reason: Optional[str] = None
+    offer_rejection_reason: Optional[Union[str, List[str]]] = None
     comment: Optional[str] = None
+
+    @field_validator("offer_rejection_reason", mode="before")
+    @classmethod
+    def normalize_rejection_reason(cls, v):
+        if isinstance(v, list):
+            return ", ".join(str(item).strip() for item in v if str(item).strip()) or None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return v
 
 class WeeklyReportCreate(WeeklyReportBase):
     vacancy_id: int
@@ -343,8 +373,18 @@ class WeeklyReportUpdate(BaseModel):
     interviews_conducted: Optional[int] = None
     offer_made: Optional[int] = None
     offer_accepted: Optional[int] = None
-    offer_rejection_reason: Optional[str] = None
+    offer_rejection_reason: Optional[Union[str, List[str]]] = None
     comment: Optional[str] = None
+
+    @field_validator("offer_rejection_reason", mode="before")
+    @classmethod
+    def normalize_rejection_reason(cls, v):
+        if isinstance(v, list):
+            return ", ".join(str(item).strip() for item in v if str(item).strip()) or None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return v
 
 class WeeklyReportResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -362,8 +402,18 @@ class WeeklyReportResponse(BaseModel):
     interviews_conducted: int
     offer_made: int
     offer_accepted: int = 0
-    offer_rejection_reason: Optional[str] = None
+    offer_rejection_reason: Optional[Union[str, List[str]]] = None
     comment: Optional[str] = None
+
+    @field_validator("offer_rejection_reason", mode="before")
+    @classmethod
+    def normalize_rejection_reason(cls, v):
+        if isinstance(v, list):
+            return ", ".join(str(item).strip() for item in v if str(item).strip()) or None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return v
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

@@ -14,17 +14,22 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import date as _date
+from datetime import date as _date, timedelta
+from io import BytesIO
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from database import get_db
 from models import Vacancy, WeeklyReport, Dictionary, DictionaryType, User, UserRole, VacancyHistory
 from auth import get_current_user
 from services.working_days_service import calculate_net_working_days
+from services.vacancy_service import get_current_week_monday
 from fastapi_cache.decorator import cache
 
 router = APIRouter(prefix="/dashboards", tags=["Дашборды"])
@@ -43,6 +48,199 @@ def _parse_ids(raw: Optional[str]) -> Optional[list[int]]:
         return [int(x.strip()) for x in raw.split(",") if x.strip()]
     except ValueError:
         return None
+
+def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
+    week_monday = get_current_week_monday()
+    week_sunday = week_monday + timedelta(days=6)
+    ACTIVE_STATUSES = [
+        "Выход",
+        "Открыта",
+        "Оффер",
+        "Подготовка документов",
+        "Проверка СБ",
+        "Согласование фин условий",
+    ]
+
+    recruiter_matrix_map: dict[str, dict] = {}
+    for r in recruiters_opts:
+        r_name = r["value"]
+        recruiter_matrix_map[r_name] = {
+            "recruiter": r_name,
+            "exit": 0,
+            "open": 0,
+            "offer": 0,
+            "docs_prep": 0,
+            "security_check": 0,
+            "fin_approval": 0,
+            "new_this_week": 0,
+            "total_open": 0,
+        }
+
+    for v in vacs:
+        s_name = status_map.get(v.status_id)
+        if not s_name or s_name not in ACTIVE_STATUSES:
+            continue
+
+        is_new_this_week = (
+            s_name == "Открыта"
+            and v.open_date is not None
+            and (week_monday <= v.open_date <= week_sunday)
+        )
+
+        rec_names = []
+        if v.recruiter_id:
+            name = next(
+                (r["value"] for r in recruiters_opts if r["id"] == v.recruiter_id),
+                f"ID {v.recruiter_id}"
+            )
+            rec_names.append(name)
+        if v.co_recruiter_id:
+            name_co = next(
+                (r["value"] for r in recruiters_opts if r["id"] == v.co_recruiter_id),
+                f"ID {v.co_recruiter_id}"
+            )
+            rec_names.append(name_co)
+
+        for name in rec_names:
+            if name not in recruiter_matrix_map:
+                recruiter_matrix_map[name] = {
+                    "recruiter": name,
+                    "exit": 0,
+                    "open": 0,
+                    "offer": 0,
+                    "docs_prep": 0,
+                    "security_check": 0,
+                    "fin_approval": 0,
+                    "new_this_week": 0,
+                    "total_open": 0,
+                }
+            entry = recruiter_matrix_map[name]
+            entry["total_open"] += 1
+
+            if is_new_this_week:
+                entry["new_this_week"] += 1
+            elif s_name == "Выход":
+                entry["exit"] += 1
+            elif s_name == "Открыта":
+                entry["open"] += 1
+            elif s_name == "Оффер":
+                entry["offer"] += 1
+            elif s_name == "Подготовка документов":
+                entry["docs_prep"] += 1
+            elif s_name == "Проверка СБ":
+                entry["security_check"] += 1
+            elif s_name == "Согласование фин условий":
+                entry["fin_approval"] += 1
+
+    recruiter_load_matrix = sorted(
+        [data for data in recruiter_matrix_map.values() if data["total_open"] > 0],
+        key=lambda x: x["recruiter"]
+    )
+
+    totals = {
+        "recruiter": "Итого",
+        "exit": sum(r["exit"] for r in recruiter_load_matrix),
+        "open": sum(r["open"] for r in recruiter_load_matrix),
+        "offer": sum(r["offer"] for r in recruiter_load_matrix),
+        "docs_prep": sum(r["docs_prep"] for r in recruiter_load_matrix),
+        "security_check": sum(r["security_check"] for r in recruiter_load_matrix),
+        "fin_approval": sum(r["fin_approval"] for r in recruiter_load_matrix),
+        "new_this_week": sum(r["new_this_week"] for r in recruiter_load_matrix),
+        "total_open": sum(r["total_open"] for r in recruiter_load_matrix),
+    }
+
+    return recruiter_load_matrix, totals
+
+
+def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Загрузка рекрутеров"
+    ws.views.sheetView[0].showGridLines = True
+
+    # 1. Заголовок таблицы (A1:I1)
+    ws.merge_cells("A1:I1")
+    t_cell = ws["A1"]
+    t_cell.value = "Всего активных вакансий в работе у рекрутера"
+    t_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    t_cell.fill = PatternFill(start_color="404040", end_color="404040", fill_type="solid")
+    t_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 24
+
+    # 2. Шапка колонок
+    headers = [
+        "рекрутер",
+        "Выход",
+        "Открыта",
+        "Оффер",
+        "Подготовка документов",
+        "Проверка СБ",
+        "Согласование фин условий",
+        "Новые вакансии за текущую отчетную неделю",
+        "Всего открыто на сегодня",
+    ]
+    thin_border_side = Side(style="thin", color="CCCCCC")
+    data_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+
+    for col_idx, h in enumerate(headers, 1):
+        c = ws.cell(row=2, column=col_idx, value=h)
+        c.font = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+        c.fill = PatternFill(start_color="595959", end_color="595959", fill_type="solid")
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[2].height = 36
+
+    yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    dark_yellow_fill = PatternFill(start_color="FFE599", end_color="FFE599", fill_type="solid")
+    fields = ["exit", "open", "offer", "docs_prep", "security_check", "fin_approval", "new_this_week", "total_open"]
+
+    for row_idx, r in enumerate(matrix, 3):
+        ws.row_dimensions[row_idx].height = 20
+        c_rec = ws.cell(row=row_idx, column=1, value=r["recruiter"])
+        c_rec.font = Font(name="Calibri", size=10)
+        c_rec.alignment = Alignment(horizontal="left", vertical="center")
+        c_rec.border = data_border
+
+        for col_idx, fld in enumerate(fields, 2):
+            val = r.get(fld, 0)
+            cell = ws.cell(row=row_idx, column=col_idx, value=val if val > 0 else "")
+            cell.font = Font(name="Calibri", size=10, bold=(fld == "total_open"))
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = data_border
+            if fld == "total_open":
+                cell.fill = yellow_fill
+
+    # Итоговая строка
+    tot_row = len(matrix) + 3
+    ws.row_dimensions[tot_row].height = 22
+    double_bottom_border = Border(
+        top=Side(style="thin", color="000000"),
+        bottom=Side(style="double", color="000000"),
+        left=thin_border_side,
+        right=thin_border_side,
+    )
+
+    c_tot_label = ws.cell(row=tot_row, column=1, value="Итого")
+    c_tot_label.font = Font(name="Calibri", size=10, bold=True)
+    c_tot_label.alignment = Alignment(horizontal="left", vertical="center")
+    c_tot_label.border = double_bottom_border
+
+    for col_idx, fld in enumerate(fields, 2):
+        val = totals.get(fld, 0)
+        cell = ws.cell(row=tot_row, column=col_idx, value=val if val > 0 else "")
+        cell.font = Font(name="Calibri", size=10, bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = double_bottom_border
+        if fld == "total_open":
+            cell.fill = dark_yellow_fill
+
+    col_widths = {1: 24, 2: 12, 3: 12, 4: 12, 5: 16, 6: 14, 7: 18, 8: 20, 9: 16}
+    for col_idx, width in col_widths.items():
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = width
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
 
 @router.get("/metrics")
 @cache(expire=30, namespace="dashboards")
@@ -445,6 +643,8 @@ async def get_dashboard_metrics(
         key=lambda x: -x["value"],
     )
 
+    recruiter_load_matrix, recruiter_load_totals = _calculate_recruiter_load(vacs, recruiters_opts, status_map)
+
     lvl_cnt: Counter = Counter()
     for v in vacs:
         label = level_map.get(v.level_id, "Не указан") if v.level_id else "Не указан"
@@ -487,17 +687,18 @@ async def get_dashboard_metrics(
     rejection_reason_map = await _dict_map(db, DictionaryType.OFFER_REJECTION_REASON)
     rejection_cnt: dict[str, int] = {name: 0 for name in rejection_reason_map.values()}
     for v in vacs:
-        reasons_from_reports = [
-            r.offer_rejection_reason.strip()
-            for r in reports_by_vac.get(v.id, [])
-            if getattr(r, 'offer_rejection_reason', None) and r.offer_rejection_reason.strip()
-        ]
-        if reasons_from_reports:
-            for rsn in reasons_from_reports:
-                rejection_cnt[rsn] = rejection_cnt.get(rsn, 0) + 1
-        elif v.offer_rejection_reason and v.offer_rejection_reason.strip():
-            rsn = v.offer_rejection_reason.strip()
-            rejection_cnt[rsn] = rejection_cnt.get(rsn, 0) + 1
+        raw_reasons = []
+        for r in reports_by_vac.get(v.id, []):
+            if getattr(r, 'offer_rejection_reason', None) and r.offer_rejection_reason.strip():
+                raw_reasons.append(r.offer_rejection_reason.strip())
+        if not raw_reasons and v.offer_rejection_reason and v.offer_rejection_reason.strip():
+            raw_reasons.append(v.offer_rejection_reason.strip())
+
+        for raw in raw_reasons:
+            for item in raw.split(','):
+                rsn = item.strip()
+                if rsn:
+                    rejection_cnt[rsn] = rejection_cnt.get(rsn, 0) + 1
 
     chart_rejections = sorted(
         [{"reason": k, "value": cnt} for k, cnt in rejection_cnt.items()],
@@ -693,6 +894,8 @@ async def get_dashboard_metrics(
         "chart6_statuses":         chart6,
         "chart7_jo_rate":          chart7,
         "chart8_recruiter_load":   chart8,
+        "recruiter_load_matrix":   recruiter_load_matrix,
+        "recruiter_load_totals":   recruiter_load_totals,
         "chart_levels":            chart_levels,
         "chart_replacement":       chart_replacement,
         "chart_employment":        chart_employment,
@@ -711,3 +914,104 @@ async def get_dashboard_metrics(
             "vacancies":      filter_vacancies,
         },
     }
+
+@router.get("/export/recruiter-load")
+async def export_recruiter_load(
+    start_date:         Optional[str] = Query(None),
+    end_date:           Optional[str] = Query(None),
+    it_role_ids:        Optional[str] = Query(None),
+    level_ids:          Optional[str] = Query(None),
+    admin_manager_ids:  Optional[str] = Query(None),
+    project_ids:        Optional[str] = Query(None),
+    recruiter_ids:      Optional[str] = Query(None),
+    block_ids:          Optional[str] = Query(None),
+    status_ids:         Optional[str] = Query(None),
+    vacancy_ids:        Optional[str] = Query(None),
+    block_id:           Optional[int] = Query(None),
+    project_id:         Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.RECRUITER):
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ запрещен",
+        )
+
+    dt_start: Optional[_date] = None
+    dt_end:   Optional[_date] = None
+    try:
+        if start_date: dt_start = _date.fromisoformat(start_date)
+        if end_date:   dt_end   = _date.fromisoformat(end_date)
+        if dt_start and dt_end and dt_start > dt_end:
+            dt_start, dt_end = dt_end, dt_start
+    except ValueError:
+        pass
+
+    f_it_roles   = _parse_ids(it_role_ids)
+    f_levels     = _parse_ids(level_ids)
+    f_admin_mgrs = _parse_ids(admin_manager_ids)
+    f_projects   = _parse_ids(project_ids)
+    f_recruiters = _parse_ids(recruiter_ids)
+    f_blocks     = _parse_ids(block_ids)
+    f_statuses   = _parse_ids(status_ids)
+    f_vac_tokens = set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None
+
+    if block_id   and not f_blocks:   f_blocks   = [block_id]
+    if project_id and not f_projects: f_projects = [project_id]
+
+    status_map = await _dict_map(db, DictionaryType.VACANCY_STATUS)
+
+    recruiter_rows = (await db.execute(
+        select(User.id, User.full_name).where(User.is_active == True)
+    )).all()
+    recruiters_opts = sorted(
+        [{"id": r.id, "value": r.full_name} for r in recruiter_rows],
+        key=lambda x: x["value"]
+    )
+
+    all_vacs = (await db.execute(
+        select(
+            Vacancy.id, Vacancy.vacancy_id, Vacancy.status_id,
+            Vacancy.block_id, Vacancy.project_id,
+            Vacancy.it_role_id, Vacancy.level_id,
+            Vacancy.admin_manager_id, Vacancy.recruiter_id,
+            Vacancy.co_recruiter_id,
+            Vacancy.open_date, Vacancy.close_date,
+        )
+    )).all()
+
+    vacs = []
+    for v in all_vacs:
+        if dt_start and v.open_date and v.open_date < dt_start:
+            continue
+        if dt_end and v.open_date and v.open_date > dt_end:
+            continue
+        if f_it_roles and v.it_role_id not in f_it_roles:
+            continue
+        if f_levels and v.level_id not in f_levels:
+            continue
+        if f_admin_mgrs and v.admin_manager_id not in f_admin_mgrs:
+            continue
+        if f_projects and v.project_id not in f_projects:
+            continue
+        if f_recruiters and (v.recruiter_id not in f_recruiters and v.co_recruiter_id not in f_recruiters):
+            continue
+        if f_blocks and v.block_id not in f_blocks:
+            continue
+        if f_statuses and v.status_id not in f_statuses:
+            continue
+        if f_vac_tokens:
+            v_id_str = str(v.id)
+            v_num_str = str(v.vacancy_id) if v.vacancy_id else ""
+            if v_id_str not in f_vac_tokens and v_num_str not in f_vac_tokens:
+                continue
+        vacs.append(v)
+
+    matrix, totals = _calculate_recruiter_load(vacs, recruiters_opts, status_map)
+    excel_stream = generate_recruiter_load_excel(matrix, totals)
+    return StreamingResponse(
+        excel_stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="recruiter_load.xlsx"'},
+    )

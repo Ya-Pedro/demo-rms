@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import dayjs from 'dayjs';
 import useIsMobile from '../hooks/useIsMobile';
 import {
   Row, Col, Card, Select, Skeleton, Typography, Statistic, Divider,
   DatePicker, Button, Spin, Space, Radio, Modal, Tooltip,
+  Popover, Checkbox, Input, Table, message,
 } from 'antd';
 import {
   ResponsiveContainer,
@@ -17,6 +18,7 @@ import {
   FunnelPlotOutlined, PieChartOutlined, FilterOutlined,
   ClearOutlined, FieldTimeOutlined, BankOutlined,
   FileTextOutlined, ReloadOutlined, InfoCircleOutlined, DollarOutlined,
+  DownOutlined, DownloadOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { api, ThemeContext } from '../App';
@@ -250,31 +252,428 @@ const FormulaModal = ({ formulaKey, onClose }) => {
   );
 };
 
-const MultiFlt = ({ value, onChange, options, placeholder, style, isMobile }) => (
-  <Select
-    mode="multiple"
-    value={value || []}
-    onChange={v => onChange(v.length ? v : null)}
-    placeholder={placeholder}
-    allowClear
-    size="small"
-    maxTagCount={1}
-    style={{ minWidth: isMobile ? 120 : 150, fontSize: 12, ...style }}
-    getPopupContainer={() => document.body}
-    showSearch
-    optionFilterProp="children"
-    filterOption={(input, option) => {
-      if (!input) return true;
-      const child = option?.children ? String(option.children).toLowerCase() : '';
-      const inp = input.toLowerCase().replace(/^№/, '').trim();
-      return child.includes(input.toLowerCase().trim()) || (inp && child.replace(/^№/, '').includes(inp));
-    }}
-  >
-    {(options || []).map(o => (
-      <Select.Option key={o.id} value={o.id}>{o.value}</Select.Option>
-    ))}
-  </Select>
-);
+const ExcelFilterSelect = ({ title, allLabel, value, onChange, options = [], isMobile, style }) => {
+  const { isDarkMode } = React.useContext(ThemeContext);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const allOptionIds = useMemo(() => (options || []).map(o => o.id), [options]);
+
+  const selectedSet = useMemo(() => {
+    if (value === null || value === undefined) return new Set(allOptionIds);
+    return new Set(value);
+  }, [value, allOptionIds]);
+
+  const [tempSelected, setTempSelected] = useState(() => new Set(selectedSet));
+
+  useEffect(() => {
+    if (open) {
+      setTempSelected(new Set(selectedSet));
+      setSearch('');
+    }
+  }, [open, selectedSet]);
+
+  const filteredOptions = useMemo(() => {
+    if (!search.trim()) return options || [];
+    const q = search.toLowerCase().trim();
+    return (options || []).filter(o => String(o.value || '').toLowerCase().includes(q));
+  }, [options, search]);
+
+  const tempIsAll = allOptionIds.length > 0 && tempSelected.size === allOptionIds.length;
+  const tempIsIndeterminate = tempSelected.size > 0 && tempSelected.size < allOptionIds.length;
+
+  const handleToggleAll = (e) => {
+    if (e.target.checked) {
+      setTempSelected(new Set(allOptionIds));
+    } else {
+      setTempSelected(new Set());
+    }
+  };
+
+  const handleToggleItem = (id) => {
+    setTempSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleApply = () => {
+    setOpen(false);
+    if (tempSelected.size === 0 || tempSelected.size === allOptionIds.length) {
+      onChange(null);
+    } else {
+      onChange(Array.from(tempSelected));
+    }
+  };
+
+  const handleReset = () => {
+    setTempSelected(new Set(allOptionIds));
+    onChange(null);
+    setOpen(false);
+  };
+
+  const hasFilter = value !== null && value !== undefined && value.length > 0 && value.length < allOptionIds.length;
+  let btnText = allLabel || `Все ${title ? title.toLowerCase() : ''}`;
+
+  if (hasFilter) {
+    if (value.length === 1) {
+      const opt = (options || []).find(o => o.id === value[0]);
+      btnText = opt ? opt.value : 'Выбрано: 1';
+    } else {
+      btnText = `Выбрано: ${value.length}`;
+    }
+  }
+
+  const activeBorderColor = '#fa541c';
+  const defaultBorderColor = isDarkMode ? '#30363d' : '#d9d9d9';
+  const defaultBg = isDarkMode ? '#161b22' : '#ffffff';
+  const activeBg = isDarkMode ? '#2d1b15' : '#fff7e6';
+
+  const content = (
+    <div style={{ width: isMobile ? 220 : 250, padding: 2 }}>
+      <div style={{ padding: '4px 6px', fontWeight: 600 }}>
+        <Checkbox
+          indeterminate={tempIsIndeterminate}
+          checked={tempIsAll}
+          onChange={handleToggleAll}
+          style={{ fontWeight: 600 }}
+        >
+          {allLabel || `Все ${title ? title.toLowerCase() : ''}`}
+        </Checkbox>
+      </div>
+
+      {options && options.length > 5 && (
+        <Input
+          size="small"
+          prefix={<SearchOutlined style={{ color: '#888', fontSize: 12 }} />}
+          placeholder="Поиск..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          allowClear
+          style={{ margin: '6px 0', fontSize: 12 }}
+        />
+      )}
+
+      <Divider style={{ margin: '4px 0' }} />
+
+      <div style={{ maxHeight: 220, overflowY: 'auto', padding: '2px 4px' }}>
+        {filteredOptions.length === 0 ? (
+          <div style={{ color: '#888', fontSize: 12, padding: 8, textAlign: 'center' }}>Ничего не найдено</div>
+        ) : (
+          filteredOptions.map(opt => (
+            <div key={opt.id} style={{ padding: '3px 2px' }}>
+              <Checkbox
+                checked={tempSelected.has(opt.id)}
+                onChange={() => handleToggleItem(opt.id)}
+                style={{ fontSize: 12 }}
+              >
+                <span title={opt.value} style={{ wordBreak: 'break-word' }}>{opt.value}</span>
+              </Checkbox>
+            </div>
+          ))
+        )}
+      </div>
+
+      <Divider style={{ margin: '6px 0 8px 0' }} />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Button size="small" type="link" onClick={handleReset} style={{ padding: 0, fontSize: 12 }}>
+          Сбросить
+        </Button>
+        <Button size="small" type="primary" onClick={handleApply} style={{ fontSize: 12, borderRadius: 4 }}>
+          Применить
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'inline-flex', flexDirection: 'column', ...style }}>
+      {title && (
+        <span style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: isDarkMode ? '#8b949e' : '#64748b',
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          marginBottom: 2,
+        }}>
+          {title}
+        </span>
+      )}
+      <Popover
+        content={content}
+        trigger="click"
+        open={open}
+        onOpenChange={setOpen}
+        placement="bottomLeft"
+        overlayInnerStyle={{ padding: 10 }}
+      >
+        <button
+          type="button"
+          style={{
+            height: 28,
+            padding: '0 10px',
+            borderRadius: 6,
+            border: `1px solid ${hasFilter ? activeBorderColor : defaultBorderColor}`,
+            background: hasFilter ? activeBg : defaultBg,
+            color: hasFilter ? (isDarkMode ? '#ff7a45' : '#d4380d') : 'var(--text-color)',
+            fontSize: 12,
+            fontWeight: hasFilter ? 600 : 400,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 6,
+            outline: 'none',
+            maxWidth: isMobile ? 140 : 180,
+            transition: 'all 0.2s',
+          }}
+        >
+          <span style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {btnText}
+          </span>
+          <DownOutlined style={{ fontSize: 9, opacity: 0.7 }} />
+        </button>
+      </Popover>
+    </div>
+  );
+};
+
+const RecruiterLoadCard = ({
+  matrix = [],
+  totals = {},
+  barData = [],
+  isMobile,
+  onFormulaClick,
+  onExportExcel,
+  exportLoading,
+}) => {
+  const { isDarkMode } = React.useContext(ThemeContext);
+  const [viewMode, setViewMode] = useState('table');
+
+  const columns = [
+    {
+      title: 'рекрутер',
+      dataIndex: 'recruiter',
+      key: 'recruiter',
+      width: isMobile ? 120 : 160,
+      fixed: isMobile ? 'left' : false,
+      render: (text) => <span style={{ fontWeight: 600 }}>{text}</span>,
+    },
+    {
+      title: 'Выход',
+      dataIndex: 'exit',
+      key: 'exit',
+      align: 'center',
+      width: 70,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Открыта',
+      dataIndex: 'open',
+      key: 'open',
+      align: 'center',
+      width: 80,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Оффер',
+      dataIndex: 'offer',
+      key: 'offer',
+      align: 'center',
+      width: 70,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Подготовка документов',
+      dataIndex: 'docs_prep',
+      key: 'docs_prep',
+      align: 'center',
+      width: 100,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Проверка СБ',
+      dataIndex: 'security_check',
+      key: 'security_check',
+      align: 'center',
+      width: 95,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Согласование фин условий',
+      dataIndex: 'fin_approval',
+      key: 'fin_approval',
+      align: 'center',
+      width: 110,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Новые вакансии за текущую отчетную неделю',
+      dataIndex: 'new_this_week',
+      key: 'new_this_week',
+      align: 'center',
+      width: 130,
+      render: (v) => v || '',
+    },
+    {
+      title: 'Всего открыто на сегодня',
+      dataIndex: 'total_open',
+      key: 'total_open',
+      align: 'center',
+      width: 110,
+      render: (v) => <span style={{ fontWeight: 700, color: isDarkMode ? '#ffeb3b' : '#000' }}>{v}</span>,
+      onCell: () => ({
+        style: {
+          background: isDarkMode ? 'rgba(255, 235, 59, 0.12)' : '#fff2cc',
+          fontWeight: 700,
+        },
+      }),
+    },
+  ];
+
+  return (
+    <Card
+      style={CS}
+      bodyStyle={{ padding: '14px 18px' }}
+      headStyle={CHS}
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <TeamOutlined style={{ color: T.purple }} />
+          <span>Загрузка рекрутеров</span>
+        </div>
+      }
+      extra={
+        <Space size={8} wrap>
+          <Button
+            size="small"
+            icon={<DownloadOutlined />}
+            onClick={onExportExcel}
+            loading={exportLoading}
+            style={{ borderRadius: 6, fontSize: 12, fontWeight: 500 }}
+          >
+            Выгрузить в Excel
+          </Button>
+          <Radio.Group
+            size="small"
+            value={viewMode}
+            onChange={e => setViewMode(e.target.value)}
+            buttonStyle="solid"
+          >
+            <Radio.Button value="table">Таблица</Radio.Button>
+            <Radio.Button value="chart">График</Radio.Button>
+          </Radio.Group>
+          <FormulaButton chartKey="recruiter_load" onOpen={onFormulaClick} isMobile={isMobile} />
+        </Space>
+      }
+    >
+      {viewMode === 'table' ? (
+        !matrix.length ? (
+          <NoData text="Нет активных вакансий в работе у рекрутеров" />
+        ) : (
+          <div>
+            <div style={{
+              background: '#404040',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: 13,
+              textAlign: 'center',
+              padding: '8px 12px',
+              borderRadius: '6px 6px 0 0',
+              letterSpacing: 0.3,
+            }}>
+              Всего активных вакансий в работе у рекрутера
+            </div>
+            <Table
+              size="small"
+              bordered
+              pagination={false}
+              columns={columns}
+              dataSource={matrix.map((r, i) => ({ ...r, key: r.recruiter || i }))}
+              scroll={{ x: 'max-content' }}
+              summary={() => (
+                <Table.Summary fixed>
+                  <Table.Summary.Row style={{
+                    background: isDarkMode ? '#262930' : '#f8f9fa',
+                    fontWeight: 700,
+                    borderTop: '2px solid #595959',
+                  }}>
+                    <Table.Summary.Cell index={0}><Text strong>Итого</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="center"><Text strong>{totals?.exit || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={2} align="center"><Text strong>{totals?.open || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={3} align="center"><Text strong>{totals?.offer || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} align="center"><Text strong>{totals?.docs_prep || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={5} align="center"><Text strong>{totals?.security_check || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={6} align="center"><Text strong>{totals?.fin_approval || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell index={7} align="center"><Text strong>{totals?.new_this_week || ''}</Text></Table.Summary.Cell>
+                    <Table.Summary.Cell
+                      index={8}
+                      align="center"
+                      style={{
+                        background: isDarkMode ? 'rgba(255, 235, 59, 0.25)' : '#ffe599',
+                        borderBottom: '3px double #000',
+                      }}
+                    >
+                      <Text strong style={{ fontSize: 13, color: isDarkMode ? '#ffeb3b' : '#000' }}>
+                        {totals?.total_open || 0}
+                      </Text>
+                    </Table.Summary.Cell>
+                  </Table.Summary.Row>
+                </Table.Summary>
+              )}
+            />
+          </div>
+        )
+      ) : (
+        !barData.length ? (
+          <NoData text="Нет данных — возможно не заполнен рекрутер у вакансий" />
+        ) : (
+          <ResponsiveContainer width="100%" height={Math.max(200, barData.length * 42 + 20)}>
+            <BarChart
+              data={barData}
+              layout="vertical"
+              barSize={18}
+              margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+              <XAxis type="number" axisLine={false} tickLine={false}
+                style={{ fontSize: FS_AXIS_NUM, fill: T.muted }}
+                domain={[0, dataMax => Math.round((barData[0]?.value || dataMax) * 1.2)]} />
+              <YAxis type="category" dataKey="recruiter" width={isMobile ? 100 : 175}
+                axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+              <RTooltip
+                cursor={{ fill: 'rgba(128,128,128,0.15)' }}
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length) return null;
+                  return (
+                    <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                      <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
+                      <div style={{ color: T.sub }}>Вакансий: <b style={{ color: T.purple }}>{payload[0].value}</b></div>
+                    </div>
+                  );
+                }}
+              />
+              <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+                {barData.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                <LabelList dataKey="value" position="right"
+                  style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )
+      )}
+    </Card>
+  );
+};
 
 const PieTip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
@@ -945,6 +1344,7 @@ const saveSavedDashboardsFilters = (filters) => {
 
 export default function DashboardsPage() {
   const isMobile = useIsMobile();
+  const { isDarkMode } = React.useContext(ThemeContext);
   const savedDashboardsFilters = React.useMemo(() => loadSavedDashboardsFilters(), []);
 
   const [period,         setPeriod]        = useState(() => {
@@ -962,6 +1362,8 @@ export default function DashboardsPage() {
   const [statusIds,      setStatusIds]     = useState(() => savedDashboardsFilters?.statusIds ?? null);
   const [vacancyIds,     setVacancyIds]    = useState(() => savedDashboardsFilters?.vacancyIds ?? null);
   const [groupBy,        setGroupBy]       = useState(() => savedDashboardsFilters?.groupBy ?? 'it_role');
+
+  const [exportingRecruiterLoad, setExportingRecruiterLoad] = useState(false);
 
   // Active formula modal
   const [activeFormulaKey, setActiveFormulaKey] = useState(null);
@@ -1002,6 +1404,30 @@ export default function DashboardsPage() {
     params.append('_t', Date.now());
     const res = await api.get(`/dashboards/metrics?${params.toString()}`);
     return res.data;
+  };
+
+  const handleExportRecruiterLoad = async () => {
+    setExportingRecruiterLoad(true);
+    try {
+      const params = buildParams();
+      const res = await api.get(`/dashboards/export/recruiter-load?${params.toString()}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'recruiter_load.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      message.success('Файл успешно выгружен');
+    } catch (err) {
+      console.error('Export error:', err);
+      message.error('Ошибка при выгрузке в Excel');
+    } finally {
+      setExportingRecruiterLoad(false);
+    }
   };
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -1058,6 +1484,8 @@ export default function DashboardsPage() {
   const chart5 = data?.chart5_avg_days  || [];
   const chart6 = data?.chart6_statuses  || [];
   const chart8 = data?.chart8_recruiter_load || [];
+  const recruiterMatrix = data?.recruiter_load_matrix || [];
+  const recruiterTotals = data?.recruiter_load_totals || {};
   const chartLevels      = data?.chart_levels      || [];
   const chartReplacement = data?.chart_replacement || [];
   const chartEmployment  = data?.chart_employment  || [];
@@ -1100,35 +1528,44 @@ export default function DashboardsPage() {
         style={{ borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 20 }}
         bodyStyle={{ padding: '14px 20px' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, flexWrap: 'wrap' }}>
-          <FilterOutlined style={{ color: T.sub, fontSize: 14 }} />
-          <Text style={{ fontSize: 13, color: T.text, marginRight: 4, whiteSpace: 'nowrap' }}>Фильтры:</Text>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'inline-flex', flexDirection: 'column' }}>
+            <span style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: isDarkMode ? '#8b949e' : '#64748b',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              marginBottom: 2,
+            }}>
+              Период
+            </span>
+            <RangePicker
+              size="small"
+              value={period}
+              onChange={val => setPeriod(val || null)}
+              format="DD.MM.YYYY"
+              placeholder={['Дата от', 'до']}
+              allowClear
+              style={{ width: isMobile ? 180 : 210, height: 28 }}
+            />
+          </div>
 
-          <RangePicker
-            size="small"
-            value={period}
-            onChange={val => setPeriod(val || null)}
-            format="DD.MM.YYYY"
-            placeholder={['Дата от', 'до']}
-            allowClear
-            style={{ width: isMobile ? 180 : 230 }}
-          />
-
-          <MultiFlt value={itRoleIds} onChange={setItRoleIds} options={f.it_roles} placeholder="ИТ роль" isMobile={isMobile} />
-          <MultiFlt value={levelIds} onChange={setLevelIds} options={f.levels} placeholder="Уровень" isMobile={isMobile} />
-          <MultiFlt value={adminMgrIds} onChange={setAdminMgrIds} options={f.admin_managers} placeholder="Адм. руководитель" isMobile={isMobile} style={{ minWidth: isMobile ? 140 : 180 }} />
-          <MultiFlt value={projectIds} onChange={setProjectIds} options={f.projects} placeholder="Проект" isMobile={isMobile} />
-          <MultiFlt value={recruiterIds} onChange={setRecruiterIds} options={f.recruiters} placeholder="Рекрутер" isMobile={isMobile} />
-          <MultiFlt value={blockIds} onChange={setBlockIds} options={f.blocks} placeholder="ИТ Блок" isMobile={isMobile} />
-          <MultiFlt value={statusIds} onChange={setStatusIds} options={f.statuses} placeholder="Статус вакансии" isMobile={isMobile} style={{ minWidth: isMobile ? 130 : 160 }} />
-          <MultiFlt value={vacancyIds} onChange={setVacancyIds} options={f.vacancies} placeholder="ID вакансии" isMobile={isMobile} style={{ minWidth: isMobile ? 110 : 130 }} />
+          <ExcelFilterSelect title="ИТ роль" allLabel="Все ИТ роли" value={itRoleIds} onChange={setItRoleIds} options={f.it_roles} isMobile={isMobile} />
+          <ExcelFilterSelect title="Уровень" allLabel="Все уровни" value={levelIds} onChange={setLevelIds} options={f.levels} isMobile={isMobile} />
+          <ExcelFilterSelect title="Адм. руководитель" allLabel="Все руководители" value={adminMgrIds} onChange={setAdminMgrIds} options={f.admin_managers} isMobile={isMobile} style={{ minWidth: isMobile ? 130 : 160 }} />
+          <ExcelFilterSelect title="Проект" allLabel="Все проекты" value={projectIds} onChange={setProjectIds} options={f.projects} isMobile={isMobile} />
+          <ExcelFilterSelect title="Рекрутер" allLabel="Все рекрутеры" value={recruiterIds} onChange={setRecruiterIds} options={f.recruiters} isMobile={isMobile} />
+          <ExcelFilterSelect title="ИТ Блок" allLabel="Все блоки" value={blockIds} onChange={setBlockIds} options={f.blocks} isMobile={isMobile} />
+          <ExcelFilterSelect title="Статус" allLabel="Все статусы" value={statusIds} onChange={setStatusIds} options={f.statuses} isMobile={isMobile} style={{ minWidth: isMobile ? 120 : 140 }} />
+          <ExcelFilterSelect title="ID вакансии" allLabel="Все вакансии" value={vacancyIds} onChange={setVacancyIds} options={f.vacancies} isMobile={isMobile} style={{ minWidth: isMobile ? 110 : 130 }} />
 
           {hasFilters && (
-            <Button size="small" icon={<ClearOutlined />} onClick={clearFilters} style={{ color: T.red, borderColor: T.red, fontSize: 12 }}>
+            <Button size="small" icon={<ClearOutlined />} onClick={clearFilters} style={{ color: T.red, borderColor: T.red, fontSize: 12, height: 28, alignSelf: 'flex-end' }}>
               Сбросить
             </Button>
           )}
-          {isFetching && <Spin size="small" style={{ marginLeft: 8 }} />}
+          {isFetching && <Spin size="small" style={{ marginLeft: 8, alignSelf: 'flex-end', marginBottom: 4 }} />}
         </div>
       </Card>
 
@@ -1238,48 +1675,16 @@ export default function DashboardsPage() {
           </Col>
 
           {/* 6. Загрузка рекрутеров */}
-          <Col xs={24} lg={12}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><TeamOutlined style={{ marginRight: 8, color: T.purple }} />Загрузка рекрутеров</>}
-              extra={<FormulaButton chartKey="recruiter_load" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {!chart8.length ? (
-                <NoData text="Нет данных — возможно не заполнен рекрутер у вакансий" />
-              ) : (
-                <ResponsiveContainer width="100%" height={Math.max(200, chart8.length * 42 + 20)}>
-                  <BarChart
-                    data={chart8}
-                    layout="vertical"
-                    barSize={18}
-                    margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                    <XAxis type="number" axisLine={false} tickLine={false}
-                      style={{ fontSize: FS_AXIS_NUM, fill: T.muted }}
-                      domain={[0, dataMax => Math.round((chart8[0]?.value || dataMax) * 1.2)]} />
-                    <YAxis type="category" dataKey="recruiter" width={isMobile ? 100 : 175}
-                      axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                    <RTooltip
-                      cursor={{ fill: 'rgba(128,128,128,0.15)' }}
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        return (
-                          <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
-                            <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
-                            <div style={{ color: T.sub }}>Вакансий: <b style={{ color: T.purple }}>{payload[0].value}</b></div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
-                      {chart8.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                      <LabelList dataKey="value" position="right"
-                        style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
+          <Col xs={24} lg={24}>
+            <RecruiterLoadCard
+              matrix={recruiterMatrix}
+              totals={recruiterTotals}
+              barData={chart8}
+              isMobile={isMobile}
+              onFormulaClick={setActiveFormulaKey}
+              onExportExcel={handleExportRecruiterLoad}
+              exportLoading={exportingRecruiterLoad}
+            />
           </Col>
 
           {/* 7. Детализация «Открытых» вакансий */}

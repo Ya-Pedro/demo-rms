@@ -187,7 +187,7 @@ class Vacancy(Base):
     interviews_planned_cnt = Column(Integer, default=0, comment="Кол-во запланированных интервью")
     interviews_conducted_cnt = Column(Integer, default=0, comment="Кол-во проведенных интервью")
     offer_accepted_cnt = Column(Integer, default=0, comment="Кол-во принятых офферов")
-    offer_rejection_reason = Column(String(255), nullable=True, comment="Причина отказа от оффера")
+    offer_rejection_reason = Column(Text, nullable=True, comment="Причина отказа от оффера")
     comment = Column(Text, nullable=True, comment="Комментарий")
     
                                                                            
@@ -264,7 +264,7 @@ class WeeklyReport(Base):
     interviews_conducted = Column(Integer, default=0, comment="Собеседования факт")
     offer_made = Column(Integer, default=0, comment="Оффер сделан")
     offer_accepted = Column(Integer, default=0, comment="Оффер принят")
-    offer_rejection_reason = Column(String(255), nullable=True, comment="Причина отказа от оффера")
+    offer_rejection_reason = Column(Text, nullable=True, comment="Причина отказа от оффера")
     comment = Column(Text, nullable=True, comment="Комментарий")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
