@@ -36,6 +36,9 @@ from routers.export_router import router as export_router
 from routers.delegation_router import router as delegation_router
 from routers.dashboards_router import router as dashboards_router
 from routers.notes_router import router as notes_router
+from routers.notifications_router import router as notifications_router
+from services.scheduler_service import WeeklyReminderScheduler
+import services.scheduler_service as scheduler_module
 
                    
 logging.basicConfig(
@@ -82,8 +85,15 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
                                    
-                                                           
+    # Initialize and start Weekly Reminder Scheduler (Friday 13:00 MSK)
+    scheduler_module.scheduler_instance = WeeklyReminderScheduler(redis_client=redis_client)
+    scheduler_module.scheduler_instance.start()
+
     yield
+
+    # Shutdown scheduler
+    if scheduler_module.scheduler_instance:
+        scheduler_module.scheduler_instance.stop()
     logger.info("Shutting down RMS application...")
 
                             
@@ -166,6 +176,7 @@ app.include_router(export_router, prefix="/api")
 app.include_router(delegation_router, prefix="/api")
 app.include_router(dashboards_router, prefix="/api")
 app.include_router(notes_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
 
                            
 app.add_middleware(AuditMiddleware)
