@@ -449,6 +449,28 @@ const ExcelFilterSelect = ({ title, allLabel, value, onChange, options = [], isM
   );
 };
 
+const getHeatmapBg = (val, maxVal, isDarkMode) => {
+  if (!val || val <= 0) {
+    return isDarkMode ? 'transparent' : '#ffffff';
+  }
+  const max = Math.max(maxVal || 1, 10);
+  const t = Math.min(1.0, Math.max(0.0, val / max));
+  const factor = Math.pow(t, 0.65);
+
+  if (isDarkMode) {
+    const r = Math.round(40 + factor * 170);
+    const g = Math.round(35 + factor * 105);
+    const b = 20;
+    const a = (0.15 + factor * 0.7).toFixed(2);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  } else {
+    const r = 255;
+    const g = Math.round(255 - factor * 85);
+    const b = Math.round(255 - factor * 215);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+};
+
 const RecruiterLoadCard = ({
   matrix = [],
   totals = {},
@@ -460,6 +482,8 @@ const RecruiterLoadCard = ({
 }) => {
   const { isDarkMode } = React.useContext(ThemeContext);
   const [viewMode, setViewMode] = useState('table');
+
+  const maxTotal = totals?.total_open || 100;
 
   const columns = [
     {
@@ -532,13 +556,16 @@ const RecruiterLoadCard = ({
       key: 'total_open',
       align: 'center',
       width: 110,
-      render: (v) => <span style={{ fontWeight: 700, color: isDarkMode ? '#ffeb3b' : '#000' }}>{v}</span>,
-      onCell: () => ({
-        style: {
-          background: isDarkMode ? 'rgba(255, 235, 59, 0.12)' : '#fff2cc',
-          fontWeight: 700,
-        },
-      }),
+      render: (v) => <span style={{ fontWeight: 700, color: '#000000' }}>{v}</span>,
+      onCell: (record) => {
+        const val = record?.total_open || 0;
+        return {
+          style: {
+            background: getHeatmapBg(val, maxTotal, isDarkMode),
+            fontWeight: 700,
+          },
+        };
+      },
     },
   ];
 
@@ -583,14 +610,15 @@ const RecruiterLoadCard = ({
         ) : (
           <div>
             <div style={{
-              background: '#404040',
+              background: isDarkMode ? '#113565' : '#1677ff',
               color: '#ffffff',
               fontWeight: 700,
               fontSize: 13,
               textAlign: 'center',
-              padding: '8px 12px',
+              padding: '9px 12px',
               borderRadius: '6px 6px 0 0',
-              letterSpacing: 0.3,
+              letterSpacing: 0.4,
+              boxShadow: '0 2px 4px rgba(22, 119, 255, 0.2)',
             }}>
               Всего активных вакансий в работе у рекрутера
             </div>
@@ -620,11 +648,11 @@ const RecruiterLoadCard = ({
                       index={8}
                       align="center"
                       style={{
-                        background: isDarkMode ? 'rgba(255, 235, 59, 0.25)' : '#ffe599',
+                        background: getHeatmapBg(totals?.total_open || 0, maxTotal, isDarkMode),
                         borderBottom: '3px double #000',
                       }}
                     >
-                      <Text strong style={{ fontSize: 13, color: isDarkMode ? '#ffeb3b' : '#000' }}>
+                      <Text strong style={{ fontSize: 13, color: '#000000' }}>
                         {totals?.total_open || 0}
                       </Text>
                     </Table.Summary.Cell>
@@ -1649,32 +1677,7 @@ export default function DashboardsPage() {
             />
           </Col>
 
-          {/* 5. Распределение вакансий по уровню ИТ роли */}
-          <Col xs={24} lg={12}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><TeamOutlined style={{ marginRight: 8, color: T.blue }} />Распределение вакансий по уровню ИТ роли</>}
-              extra={<FormulaButton chartKey="levels" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {!chartLevels.length ? <NoData text="Нет данных по уровням" /> : (
-                <ResponsiveContainer width="100%" height={Math.max(200, chartLevels.length * 42 + 20)}>
-                  <BarChart data={chartLevels} layout="vertical" barSize={22}
-                    margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <YAxis type="category" dataKey="level" width={isMobile ? 90 : 140} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
-                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
-                      {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          </Col>
-
-          {/* 6. Загрузка рекрутеров */}
+          {/* 5. Загрузка рекрутеров */}
           <Col xs={24} lg={24}>
             <RecruiterLoadCard
               matrix={recruiterMatrix}
@@ -1874,6 +1877,31 @@ export default function DashboardsPage() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+              )}
+            </Card>
+          </Col>
+
+          {/* 13. Распределение вакансий по уровню ИТ роли */}
+          <Col xs={24} lg={24}>
+            <Card
+              style={CS} bodyStyle={CBS} headStyle={CHS}
+              title={<><TeamOutlined style={{ marginRight: 8, color: T.blue }} />Распределение вакансий по уровню ИТ роли</>}
+              extra={<FormulaButton chartKey="levels" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
+            >
+              {!chartLevels.length ? <NoData text="Нет данных по уровням" /> : (
+                <ResponsiveContainer width="100%" height={Math.max(220, chartLevels.length * 42 + 20)}>
+                  <BarChart data={chartLevels} layout="vertical" barSize={24}
+                    margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+                    <YAxis type="category" dataKey="level" width={isMobile ? 100 : 160} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
+                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+                      {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               )}
             </Card>
           </Col>

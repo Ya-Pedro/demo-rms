@@ -152,6 +152,19 @@ def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
     return recruiter_load_matrix, totals
 
 
+def _get_recruiter_heatmap_hex(val: int, max_val: int) -> str:
+    if not val or val <= 0:
+        return "FFFFFF"
+    import math
+    max_v = max(max_val or 1, 10)
+    t = min(1.0, max(0.0, val / max_v))
+    factor = math.pow(t, 0.65)
+    r = 255
+    g = round(255 - factor * 85)
+    b = round(255 - factor * 215)
+    return f"{r:02X}{g:02X}{b:02X}"
+
+
 def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -163,7 +176,7 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
     t_cell = ws["A1"]
     t_cell.value = "Всего активных вакансий в работе у рекрутера"
     t_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-    t_cell.fill = PatternFill(start_color="404040", end_color="404040", fill_type="solid")
+    t_cell.fill = PatternFill(start_color="1677FF", end_color="1677FF", fill_type="solid")
     t_cell.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 24
 
@@ -189,8 +202,7 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[2].height = 36
 
-    yellow_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
-    dark_yellow_fill = PatternFill(start_color="FFE599", end_color="FFE599", fill_type="solid")
+    max_total_open = totals.get("total_open", 100)
     fields = ["exit", "open", "offer", "docs_prep", "security_check", "fin_approval", "new_this_week", "total_open"]
 
     for row_idx, r in enumerate(matrix, 3):
@@ -207,7 +219,8 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
             cell.alignment = Alignment(horizontal="center", vertical="center")
             cell.border = data_border
             if fld == "total_open":
-                cell.fill = yellow_fill
+                hex_fill = _get_recruiter_heatmap_hex(val, max_total_open)
+                cell.fill = PatternFill(start_color=hex_fill, end_color=hex_fill, fill_type="solid")
 
     # Итоговая строка
     tot_row = len(matrix) + 3
@@ -231,7 +244,8 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = double_bottom_border
         if fld == "total_open":
-            cell.fill = dark_yellow_fill
+            hex_tot = _get_recruiter_heatmap_hex(val, max_total_open)
+            cell.fill = PatternFill(start_color=hex_tot, end_color=hex_tot, fill_type="solid")
 
     col_widths = {1: 24, 2: 12, 3: 12, 4: 12, 5: 16, 6: 14, 7: 18, 8: 20, 9: 16}
     for col_idx, width in col_widths.items():
