@@ -321,7 +321,7 @@ const LoginPage = () => {
         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
         backdropFilter: 'blur(8px)',
       }}>
-        RMS v{APP_VERSION}
+        RMS {APP_VERSION}
       </div>
     </div>
   );

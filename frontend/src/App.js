@@ -76,7 +76,8 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-export const APP_VERSION = process.env.REACT_APP_VERSION || 'v0.3.0';
+const rawVersion = process.env.REACT_APP_VERSION || 'v0.3.0';
+export const APP_VERSION = rawVersion.startsWith('v') ? rawVersion : `v${rawVersion}`;
 
 const forceLogout = () => {
   if (window.location.pathname === '/login') return;
@@ -510,7 +511,7 @@ const MainLayout = ({ children }) => {
                 borderRadius: 4,
                 lineHeight: 1.2
               }}>
-                v{APP_VERSION}
+                {APP_VERSION}
               </span>
             </div>
           </div>
@@ -558,7 +559,7 @@ const MainLayout = ({ children }) => {
                 RMS
               </span>
               <span style={{ fontSize: 12, fontWeight: 600, color: isDarkMode ? '#8b949e' : '#64748b' }}>
-                v{APP_VERSION}
+                {APP_VERSION}
               </span>
             </div>
           }
