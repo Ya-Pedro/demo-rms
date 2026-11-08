@@ -2,16 +2,18 @@
 \
 \
    
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from typing import Optional
+from urllib.parse import urlparse
 
 from database import get_db
 from models import User, UserRole
 from schemas import UserCreate, UserCreateWithPassword, UserUpdate, UserResponse, UserListResponse, CompleteTourRequest
 from auth import get_current_user, get_current_active_admin, get_current_superadmin, get_password_hash, generate_random_password
+from email_service import send_registration_email, send_password_reset_email
 
 router = APIRouter(prefix="/users", tags=["Пользователи"])
 
@@ -65,6 +67,8 @@ async def get_users(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreateWithPassword,
+    background_tasks: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_admin)
 ):
@@ -122,6 +126,23 @@ async def create_user(
     await db.commit()
     await db.refresh(new_user)
     
+    # Динамически определяем базовый URL фронтенда из заголовков запроса
+    base_url = None
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    if origin:
+        parsed = urlparse(origin)
+        if parsed.scheme and parsed.netloc:
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Отправляем официальное письмо о регистрации с учетными данными в фоне
+    background_tasks.add_task(
+        send_registration_email,
+        email=new_user.email,
+        full_name=new_user.full_name,
+        password=password,
+        base_url=base_url
+    )
+
     return new_user
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -235,6 +256,8 @@ async def delete_user(
 @router.post("/{user_id}/reset-password-admin")
 async def reset_password_admin(
     user_id: int,
+    background_tasks: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_superadmin)
 ):
@@ -260,6 +283,22 @@ async def reset_password_admin(
     user.is_temporary_password = True
     
     await db.commit()
+
+    # Динамически определяем базовый URL
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    base_url = None
+    if origin:
+        parsed = urlparse(origin)
+        if parsed.scheme and parsed.netloc:
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+
+    background_tasks.add_task(
+        send_password_reset_email,
+        email=user.email,
+        full_name=user.full_name,
+        password=password,
+        base_url=base_url
+    )
     
     return {"new_password": password}
 

@@ -250,6 +250,309 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
     output.seek(0)
     return output
 
+
+def _calculate_ivakhin_statuses(
+    vacs,
+    block_map: dict[int, str],
+    status_map: dict[int, str],
+    hold_exits: dict[int, _date],
+    dt_start: Optional[_date],
+    dt_end: Optional[_date],
+) -> list[dict]:
+    import calendar
+    now = _date.today()
+
+    if not dt_start and not dt_end:
+        curr_year = now.year
+        months = [(curr_year, m) for m in range(1, 13)]
+    else:
+        start_y = dt_start.year if dt_start else now.year
+        start_m = dt_start.month if dt_start else 1
+        end_y = dt_end.year if dt_end else now.year
+        end_m = dt_end.month if dt_end else (now.month if end_y == now.year else 12)
+        months = []
+        y, m = start_y, start_m
+        while (y < end_y) or (y == end_y and m <= end_m):
+            months.append((y, m))
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+
+    MONTH_NAMES_RU = {
+        1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+        5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+        9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
+    }
+
+    result = []
+    multiple_years = len({y for y, _ in months}) > 1
+
+    for y, m in months:
+        m_start = _date(y, m, 1)
+        last_day = calendar.monthrange(y, m)[1]
+        m_end = _date(y, m, last_day)
+
+        m_short = MONTH_NAMES_RU.get(m, str(m))
+        m_label = f"{m_short} {y}" if multiple_years else m_short
+
+        block_counts = defaultdict(lambda: {"open": 0, "closed": 0, "hold": 0, "cancel": 0})
+        m_open = 0
+        m_closed = 0
+        m_hold = 0
+        m_cancel = 0
+
+        for v in vacs:
+            st_name = status_map.get(v.status_id, "")
+            b_name = block_map.get(v.block_id, "Прочее") if v.block_id else "Прочее"
+
+            o_d = v.open_date
+            c_d = v.close_date
+            st_d = v.status_changed_at.date() if hasattr(v.status_changed_at, "date") else v.status_changed_at
+
+            eff_c_date = c_d or st_d
+            eff_cancel_date = st_d or c_d
+
+            # 1. Closed in this month (flow)
+            if st_name == "Закрыта":
+                if eff_c_date and m_start <= eff_c_date <= m_end:
+                    block_counts[b_name]["closed"] += 1
+                    m_closed += 1
+
+            # 2. Cancelled in this month (flow)
+            if st_name == "Отмена":
+                if eff_cancel_date and m_start <= eff_cancel_date <= m_end:
+                    block_counts[b_name]["cancel"] += 1
+                    m_cancel += 1
+
+            # 3. Hold on m_end (balance)
+            is_hold = False
+            if o_d and o_d <= m_end:
+                if st_name == "Hold":
+                    h_date = st_d
+                    if not h_date or h_date <= m_end:
+                        is_hold = True
+                elif v.id in hold_exits and hold_exits[v.id] > m_end:
+                    is_hold = True
+            if is_hold:
+                block_counts[b_name]["hold"] += 1
+                m_hold += 1
+
+            # 4. Open on m_end (balance)
+            if not is_hold and o_d and o_d <= m_end:
+                was_open = False
+                if st_name not in ("Закрыта", "Отмена", "Hold"):
+                    was_open = True
+                elif st_name == "Закрыта":
+                    if eff_c_date and eff_c_date > m_end:
+                        was_open = True
+                elif st_name == "Отмена":
+                    if eff_cancel_date and eff_cancel_date > m_end:
+                        was_open = True
+                if was_open:
+                    block_counts[b_name]["open"] += 1
+                    m_open += 1
+
+        m_total_val = m_open + m_hold
+
+        # Skip months that have zero activity if no period is selected and month is in the future
+        if not dt_start and not dt_end and (m_open + m_closed + m_hold + m_cancel == 0) and (y > now.year or (y == now.year and m > now.month)):
+            continue
+
+        blocks_list = []
+        for b_name, s in block_counts.items():
+            b_total = s["open"] + s["hold"]
+            if s["open"] > 0 or s["closed"] > 0 or s["hold"] > 0 or s["cancel"] > 0:
+                blocks_list.append({
+                    "id": f"{y}-{m:02d}_{b_name}",
+                    "block": b_name,
+                    "open": s["open"],
+                    "closed": s["closed"],
+                    "hold": s["hold"],
+                    "cancel": s["cancel"],
+                    "total": b_total,
+                })
+
+        blocks_list.sort(key=lambda x: (-x["open"], -x["total"], x["block"]))
+
+        result.append({
+            "id": f"{y}-{m:02d}",
+            "month": m_label,
+            "month_short": m_short,
+            "year": y,
+            "month_num": m,
+            "open": m_open,
+            "closed": m_closed,
+            "hold": m_hold,
+            "cancel": m_cancel,
+            "total": m_total_val,
+            "blocks": blocks_list,
+        })
+
+    return result
+
+
+def generate_ivakhin_statuses_excel(months_data: list[dict]) -> BytesIO:
+    wb = openpyxl.Workbook()
+
+    # Лист 1: Детализация по блокам с группировкой (как в Excel)
+    ws1 = wb.active
+    ws1.title = "Детализация по блокам"
+    ws1.views.sheetView[0].showGridLines = True
+    ws1.sheet_properties.outlinePr.summaryBelow = True
+
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    month_total_fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
+    bold_font = Font(name="Calibri", size=11, bold=True)
+    regular_font = Font(name="Calibri", size=11)
+
+    thin_side = Side(style="thin", color="D9D9D9")
+    thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    total_border = Border(
+        left=thin_side,
+        right=thin_side,
+        top=Side(style="thin", color="366092"),
+        bottom=Side(style="thin", color="366092"),
+    )
+    double_border = Border(
+        left=thin_side,
+        right=thin_side,
+        top=Side(style="thin", color="366092"),
+        bottom=Side(style="double", color="366092"),
+    )
+
+    headers = ["Месяц", "Ит Блок", "Открыто", "Закрыто", "Hold", "Отмена", "Всего вакансий"]
+    ws1.row_dimensions[1].height = 24
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws1.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center" if col_idx > 2 else "left", vertical="center")
+        cell.border = thin_border
+
+    current_row = 2
+    for m in months_data:
+        m_name = m.get("month_short") or m.get("month")
+        blocks = m.get("blocks", [])
+
+        for b in blocks:
+            ws1.row_dimensions[current_row].height = 20
+            ws1.row_dimensions[current_row].outlineLevel = 1
+
+            c1 = ws1.cell(row=current_row, column=1, value=m_name)
+            c2 = ws1.cell(row=current_row, column=2, value=b["block"])
+            c3 = ws1.cell(row=current_row, column=3, value=b["open"])
+            c4 = ws1.cell(row=current_row, column=4, value=b["closed"])
+            c5 = ws1.cell(row=current_row, column=5, value=b["hold"])
+            c6 = ws1.cell(row=current_row, column=6, value=b["cancel"])
+            c7 = ws1.cell(row=current_row, column=7, value=b["total"])
+
+            for c in [c1, c2]:
+                c.font = regular_font
+                c.alignment = Alignment(horizontal="left", vertical="center")
+                c.border = thin_border
+            for c in [c3, c4, c5, c6, c7]:
+                c.font = regular_font
+                c.alignment = Alignment(horizontal="right", vertical="center")
+                c.border = thin_border
+            current_row += 1
+
+        ws1.row_dimensions[current_row].height = 22
+        t1 = ws1.cell(row=current_row, column=1, value=m_name)
+        t2 = ws1.cell(row=current_row, column=2, value="")
+        t3 = ws1.cell(row=current_row, column=3, value=m["open"])
+        t4 = ws1.cell(row=current_row, column=4, value=m["closed"])
+        t5 = ws1.cell(row=current_row, column=5, value=m["hold"])
+        t6 = ws1.cell(row=current_row, column=6, value=m["cancel"])
+        t7 = ws1.cell(row=current_row, column=7, value=m["total"])
+
+        for c in [t1, t2]:
+            c.font = bold_font
+            c.fill = month_total_fill
+            c.alignment = Alignment(horizontal="left", vertical="center")
+            c.border = total_border
+        for c in [t3, t4, t5, t6, t7]:
+            c.font = bold_font
+            c.fill = month_total_fill
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.border = total_border
+        current_row += 1
+
+    ws1.auto_filter.ref = f"A1:G{current_row - 1}"
+    for ci, w in enumerate([16, 30, 14, 14, 14, 14, 18], 1):
+        ws1.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+
+    # Лист 2: Свод по месяцам (итоги прописываются снизу подряд, точно как в example_dorabotka_3.jpg)
+    ws2 = wb.create_sheet(title="Свод по месяцам")
+    ws2.views.sheetView[0].showGridLines = True
+    ws2.row_dimensions[1].height = 24
+    for col_idx, h in enumerate(headers, 1):
+        cell = ws2.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center" if col_idx > 2 else "left", vertical="center")
+        cell.border = thin_border
+
+    curr_row2 = 2
+    tot_open = sum(m.get("open", 0) for m in months_data)
+    tot_closed = sum(m.get("closed", 0) for m in months_data)
+    tot_hold = sum(m.get("hold", 0) for m in months_data)
+    tot_cancel = sum(m.get("cancel", 0) for m in months_data)
+    tot_total = tot_open + tot_hold
+
+    for m in months_data:
+        m_name = m.get("month_short") or m.get("month")
+        ws2.row_dimensions[curr_row2].height = 21
+
+        c1 = ws2.cell(row=curr_row2, column=1, value=m_name)
+        c2 = ws2.cell(row=curr_row2, column=2, value="")
+        c3 = ws2.cell(row=curr_row2, column=3, value=m.get("open", 0))
+        c4 = ws2.cell(row=curr_row2, column=4, value=m.get("closed", 0))
+        c5 = ws2.cell(row=curr_row2, column=5, value=m.get("hold", 0))
+        c6 = ws2.cell(row=curr_row2, column=6, value=m.get("cancel", 0))
+        c7 = ws2.cell(row=curr_row2, column=7, value=m.get("total", 0))
+
+        for c in [c1, c2]:
+            c.font = regular_font
+            c.alignment = Alignment(horizontal="left", vertical="center")
+            c.border = thin_border
+        for c in [c3, c4, c5, c6, c7]:
+            c.font = regular_font
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.border = thin_border
+        curr_row2 += 1
+
+    # Итоговая строка за период
+    ws2.row_dimensions[curr_row2].height = 24
+    t1 = ws2.cell(row=curr_row2, column=1, value="Итого")
+    t2 = ws2.cell(row=curr_row2, column=2, value="")
+    t3 = ws2.cell(row=curr_row2, column=3, value=tot_open)
+    t4 = ws2.cell(row=curr_row2, column=4, value=tot_closed)
+    t5 = ws2.cell(row=curr_row2, column=5, value=tot_hold)
+    t6 = ws2.cell(row=curr_row2, column=6, value=tot_cancel)
+    t7 = ws2.cell(row=curr_row2, column=7, value=tot_total)
+
+    for c in [t1, t2]:
+        c.font = bold_font
+        c.fill = month_total_fill
+        c.alignment = Alignment(horizontal="left", vertical="center")
+        c.border = double_border
+    for c in [t3, t4, t5, t6, t7]:
+        c.font = bold_font
+        c.fill = month_total_fill
+        c.alignment = Alignment(horizontal="right", vertical="center")
+        c.border = double_border
+
+    ws2.auto_filter.ref = f"A1:G{curr_row2}"
+    for ci, w in enumerate([16, 30, 14, 14, 14, 14, 18], 1):
+        ws2.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
 @router.get("/metrics")
 @cache(expire=30, namespace="dashboards")
 async def get_dashboard_metrics(
@@ -334,30 +637,29 @@ async def get_dashboard_metrics(
         )
     )).all()
 
-    # Загружаем историю вакансий, выходивших из статуса Hold после даты среза dt_end
+    # Загружаем историю вакансий, выходивших из статуса Hold
     hold_exits: dict[int, _date] = {}
-    if dt_end:
-        hist_hold_rows = (await db.execute(
-            select(
-                VacancyHistory.vacancy_id,
-                VacancyHistory.created_at,
-                VacancyHistory.changes,
-            ).where(
-                VacancyHistory.changes.ilike('%Hold%'),
-                VacancyHistory.action_type == "UPDATE",
-            )
-        )).all()
-        import json as _json
-        for hr in hist_hold_rows:
-            try:
-                ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
-                st_ch = ch.get("Статус вакансии") or ch.get("status")
-                if st_ch and st_ch.get("old") == "Hold":
-                    exit_d = hr.created_at.date()
-                    if hr.vacancy_id not in hold_exits or exit_d > hold_exits[hr.vacancy_id]:
-                        hold_exits[hr.vacancy_id] = exit_d
-            except Exception:
-                pass
+    hist_hold_rows = (await db.execute(
+        select(
+            VacancyHistory.vacancy_id,
+            VacancyHistory.created_at,
+            VacancyHistory.changes,
+        ).where(
+            VacancyHistory.changes.ilike('%Hold%'),
+            VacancyHistory.action_type == "UPDATE",
+        )
+    )).all()
+    import json as _json
+    for hr in hist_hold_rows:
+        try:
+            ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
+            st_ch = ch.get("Статус вакансии") or ch.get("status")
+            if st_ch and st_ch.get("old") == "Hold":
+                exit_d = hr.created_at.date() if hasattr(hr.created_at, "date") else hr.created_at
+                if hr.vacancy_id not in hold_exits or exit_d > hold_exits[hr.vacancy_id]:
+                    hold_exits[hr.vacancy_id] = exit_d
+        except Exception:
+            pass
 
     def get_effective_status(v) -> Optional[str]:
         if v.quantity == 0.001:
@@ -888,6 +1190,24 @@ async def get_dashboard_metrics(
     filter_vacancies = sorted(vac_items, key=_vac_sort_key)
     filter_vacancies = [{"id": x["id"], "value": x["value"]} for x in filter_vacancies]
 
+    # График «Вакансии по статусам для Ивахина А»:
+    # Уникальное количество вакансий, исключая дублирование доп. рекрутерами и замещающими
+    ivakhin_vacs = [
+        v for v in all_vacs
+        if (v.quantity != 0.001) and
+        (not f_vac_tokens or str(v.id) in f_vac_tokens or (v.vacancy_id and str(v.vacancy_id).strip() in f_vac_tokens)) and
+        (not f_it_roles or v.it_role_id in f_it_roles) and
+        (not f_levels or v.level_id in f_levels) and
+        (not f_admin_mgrs or v.admin_manager_id in f_admin_mgrs) and
+        (not f_projects or v.project_id in f_projects) and
+        (not f_recruiters or v.recruiter_id in f_recruiters) and
+        (not f_blocks or v.block_id in f_blocks) and
+        (not f_statuses or v.status_id in f_statuses)
+    ]
+    chart_ivakhin_statuses = _calculate_ivakhin_statuses(
+        ivakhin_vacs, block_map, status_map, hold_exits, dt_start, dt_end
+    )
+
     return {
         "chart1_source":           chart1,
         "chart2_open_closed":      chart2,
@@ -906,6 +1226,7 @@ async def get_dashboard_metrics(
         "chart_rejections":        chart_rejections,
         "chart_jo_conversion":     chart_jo_conversion,
         "chart_avg_days_timeline": chart_avg_days_timeline,
+        "chart_ivakhin_statuses":  chart_ivakhin_statuses,
         "filters": {
             "blocks":         filter_blocks,
             "projects":       filter_projects,
@@ -1017,4 +1338,111 @@ async def export_recruiter_load(
         excel_stream,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="recruiter_load.xlsx"'},
+    )
+
+
+@router.get("/export/ivakhin-statuses")
+async def export_ivakhin_statuses(
+    start_date:         Optional[str] = Query(None),
+    end_date:           Optional[str] = Query(None),
+    it_role_ids:        Optional[str] = Query(None),
+    level_ids:          Optional[str] = Query(None),
+    admin_manager_ids:  Optional[str] = Query(None),
+    project_ids:        Optional[str] = Query(None),
+    recruiter_ids:      Optional[str] = Query(None),
+    block_ids:          Optional[str] = Query(None),
+    status_ids:         Optional[str] = Query(None),
+    vacancy_ids:        Optional[str] = Query(None),
+    block_id:           Optional[int] = Query(None),
+    project_id:         Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.RECRUITER):
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ запрещен",
+        )
+
+    dt_start: Optional[_date] = None
+    dt_end:   Optional[_date] = None
+    try:
+        if start_date: dt_start = _date.fromisoformat(start_date)
+        if end_date:   dt_end   = _date.fromisoformat(end_date)
+        if dt_start and dt_end and dt_start > dt_end:
+            dt_start, dt_end = dt_end, dt_start
+    except ValueError:
+        pass
+
+    f_it_roles   = _parse_ids(it_role_ids)
+    f_levels     = _parse_ids(level_ids)
+    f_admin_mgrs = _parse_ids(admin_manager_ids)
+    f_projects   = _parse_ids(project_ids)
+    f_recruiters = _parse_ids(recruiter_ids)
+    f_blocks     = _parse_ids(block_ids)
+    f_statuses   = _parse_ids(status_ids)
+    f_vac_tokens = set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None
+
+    if block_id   and not f_blocks:   f_blocks   = [block_id]
+    if project_id and not f_projects: f_projects = [project_id]
+
+    status_map = await _dict_map(db, DictionaryType.VACANCY_STATUS)
+    block_map  = await _dict_map(db, DictionaryType.BLOCK)
+
+    # Load hold exits
+    hist_hold_rows = (await db.execute(
+        select(
+            VacancyHistory.vacancy_id,
+            VacancyHistory.created_at,
+            VacancyHistory.changes,
+        ).where(
+            VacancyHistory.changes.ilike('%Hold%'),
+            VacancyHistory.action_type == "UPDATE",
+        )
+    )).all()
+    import json as _json
+    hold_exits = {}
+    for hr in hist_hold_rows:
+        try:
+            ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
+            st_ch = ch.get("Статус вакансии") or ch.get("status")
+            if st_ch and st_ch.get("old") == "Hold":
+                exit_d = hr.created_at.date() if hasattr(hr.created_at, "date") else hr.created_at
+                if hr.vacancy_id not in hold_exits or exit_d > hold_exits[hr.vacancy_id]:
+                    hold_exits[hr.vacancy_id] = exit_d
+        except Exception:
+            pass
+
+    all_vacs = (await db.execute(
+        select(
+            Vacancy.id, Vacancy.vacancy_id, Vacancy.status_id,
+            Vacancy.block_id, Vacancy.project_id,
+            Vacancy.it_role_id, Vacancy.level_id,
+            Vacancy.admin_manager_id, Vacancy.recruiter_id,
+            Vacancy.open_date, Vacancy.close_date,
+            Vacancy.status_changed_at, Vacancy.quantity,
+        )
+    )).all()
+
+    ivakhin_vacs = [
+        v for v in all_vacs
+        if (v.quantity != 0.001) and
+        (not f_vac_tokens or str(v.id) in f_vac_tokens or (v.vacancy_id and str(v.vacancy_id).strip() in f_vac_tokens)) and
+        (not f_it_roles or v.it_role_id in f_it_roles) and
+        (not f_levels or v.level_id in f_levels) and
+        (not f_admin_mgrs or v.admin_manager_id in f_admin_mgrs) and
+        (not f_projects or v.project_id in f_projects) and
+        (not f_recruiters or v.recruiter_id in f_recruiters) and
+        (not f_blocks or v.block_id in f_blocks) and
+        (not f_statuses or v.status_id in f_statuses)
+    ]
+
+    months_data = _calculate_ivakhin_statuses(
+        ivakhin_vacs, block_map, status_map, hold_exits, dt_start, dt_end
+    )
+    excel_stream = generate_ivakhin_statuses_excel(months_data)
+    return StreamingResponse(
+        excel_stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="vacancies_by_status_ivakhin.xlsx"'},
     )

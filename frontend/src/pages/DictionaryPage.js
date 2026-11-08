@@ -63,17 +63,26 @@ const DictionaryPage = () => {
     {
       title: 'ID',
       dataIndex: 'id',
-      width: 60,
+      width: 95,
+      align: 'center',
+      render: (id) => <span style={{ whiteSpace: 'nowrap', fontWeight: 500 }}>{id}</span>,
     },
     {
       title: 'Значение',
       dataIndex: 'value',
-      width: 300,
+      ellipsis: true,
+      render: (val) => <span style={{ fontWeight: 500 }}>{val}</span>,
     },
     {
       title: 'Описание',
       dataIndex: 'description',
+      width: 220,
       ellipsis: true,
+      render: (desc) => (
+        <span style={{ color: '#8c8c8c' }} title={desc || ''}>
+          {desc || '—'}
+        </span>
+      ),
     },
     {
       title: 'Порядок',

@@ -135,8 +135,11 @@ async def run_tests():
         test_vac_id = test_vac["id"]
         print(f"  ✓ Created vacancy #{test_vac_id} with primary recruiter=7 and co-recruiter=3")
 
+        curr_week = date.today().isocalendar()[1]
+        curr_year = date.today().isocalendar()[0]
+
         # 2.2 Primary recruiter (7) fetches their vacancies
-        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number=42&year=2026", headers=h_rec1)
+        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number={curr_week}&year={curr_year}", headers=h_rec1)
         assert r.status_code == 200
         items1 = r.json().get("items", [])
         rec1_vac_ids = [v["id"] for v in items1]
@@ -144,7 +147,7 @@ async def run_tests():
         print("  ✓ Vacancy is visible in primary recruiter list")
 
         # 2.3 Co-recruiter (3) fetches their vacancies
-        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number=42&year=2026", headers=h_rec2)
+        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number={curr_week}&year={curr_year}", headers=h_rec2)
         assert r.status_code == 200
         items2 = r.json().get("items", [])
         rec2_vac_ids = [v["id"] for v in items2]
@@ -152,18 +155,18 @@ async def run_tests():
         print("  ✓ Vacancy is visible in co-recruiter list")
 
         # 2.4 Other recruiter (4) fetches their vacancies
-        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number=42&year=2026", headers=h_rec3)
+        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number={curr_week}&year={curr_year}", headers=h_rec3)
         assert r.status_code == 200
         items3 = r.json().get("items", [])
         rec3_vac_ids = [v["id"] for v in items3]
         assert test_vac_id not in rec3_vac_ids, "Vacancy wrongly visible to unrelated recruiter!"
         print("  ✓ Vacancy is NOT visible to unrelated recruiter")
 
-        # 2.5 Primary recruiter saves report for week 42
+        # 2.5 Primary recruiter saves report for current week
         rep_p1 = {
             "vacancy_id": test_vac_id,
-            "week_number": 42,
-            "year": 2026,
+            "week_number": curr_week,
+            "year": curr_year,
             "resumes_sent": 10,
             "candidates_agreed": 6,
             "interviews_conducted": 4,
@@ -176,11 +179,11 @@ async def run_tests():
         assert r.status_code in (200, 201), f"Primary recruiter report failed: {r.status_code} {r.text}"
         rep1_id = r.json()["id"]
 
-        # 2.6 Co-recruiter saves report for week 42
+        # 2.6 Co-recruiter saves report for current week
         rep_p2 = {
             "vacancy_id": test_vac_id,
-            "week_number": 42,
-            "year": 2026,
+            "week_number": curr_week,
+            "year": curr_year,
             "resumes_sent": 5,
             "candidates_agreed": 3,
             "interviews_conducted": 2,
@@ -194,20 +197,20 @@ async def run_tests():
 
         # 2.7 Verify Vacancies table displays each recruiter's OWN weekly report numbers:
         # Recruiter 1: resume_at_customer=10
-        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number=42&year=2026", headers=h_rec1)
+        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number={curr_week}&year={curr_year}", headers=h_rec1)
         v1_row = next(v for v in r.json().get("items", []) if v["id"] == test_vac_id)
         assert v1_row.get("resume_at_customer") == 10, f"Expected 10 resumes for Rec1, got {v1_row.get('resume_at_customer')}"
         print("  ✓ Primary recruiter sees their own weekly report in Vacancy table (10 resumes)")
 
         # Recruiter 2: resume_at_customer=5
-        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number=42&year=2026", headers=h_rec2)
+        r = await client.get(f"/api/vacancies?skip=0&limit=100&week_number={curr_week}&year={curr_year}", headers=h_rec2)
         v2_row = next(v for v in r.json().get("items", []) if v["id"] == test_vac_id)
         assert v2_row.get("resume_at_customer") == 5, f"Expected 5 resumes for Rec2, got {v2_row.get('resume_at_customer')}"
         print("  ✓ Co-recruiter sees their own weekly report in Vacancy table (5 resumes)")
 
         # 2.8 Verify Reports table (Отчеты) COLLAPSES / COMBINES the joint funnel:
         # Sum resumes_sent: 10 + 5 = 15, agreed: 6 + 3 = 9, interviews: 4 + 2 = 6, offers: 2 + 1 = 3, accepted: 1 + 1 = 2
-        r = await client.get(f"/api/reports/all?week_number=42&year=2026", headers=h_sa1)
+        r = await client.get(f"/api/reports/all?week_number={curr_week}&year={curr_year}", headers=h_sa1)
         assert r.status_code == 200
         reports_list = r.json().get("items", [])
         rep_row = next((r for r in reports_list if r["id"] == test_vac_id), None)

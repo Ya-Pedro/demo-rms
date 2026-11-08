@@ -938,7 +938,7 @@ const VacancyTable = ({
     return [
       {
         title: '№', dataIndex: '_rowIndex', key: '_rowIndex',
-        width: 50, fixed: 'left', align: 'center',
+        width: 70, fixed: 'left', align: 'center',
         hideInSetting: true,
         render: (_, __, index) => (
           <span style={{ color: '#8c8c8c' }}>{(curPage - 1) * pageSize + index + 1}</span>

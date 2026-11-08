@@ -234,7 +234,7 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
   const getFilteredRecords = (tab) => {
     if (tab === 'ALL') return records;
     if (tab === 'OFFER_REJECTION') return records.filter(isOfferRejectionRecord);
-    if (tab === 'UPDATE') return records.filter(r => r.action_type === 'UPDATE' && !isOfferRejectionRecord(r));
+    if (tab === 'UPDATE') return records.filter(r => r.action_type === 'UPDATE');
     if (tab === 'REPORT') return records.filter(r => r.action_type === 'REPORT');
     if (tab === 'CREATE') return records.filter(r => r.action_type === 'CREATE');
     return records.filter(r => r.action_type === tab);
@@ -243,7 +243,7 @@ const VacancyHistoryDrawer = ({ vacancy, open, onClose }) => {
   const filteredRecords = getFilteredRecords(activeTab);
 
   const countAll = records.length;
-  const countUpdate = records.filter(r => r.action_type === 'UPDATE' && !isOfferRejectionRecord(r)).length;
+  const countUpdate = records.filter(r => r.action_type === 'UPDATE').length;
   const countReport = records.filter(r => r.action_type === 'REPORT').length;
   const countCreate = records.filter(r => r.action_type === 'CREATE').length;
   const countRejection = records.filter(isOfferRejectionRecord).length;

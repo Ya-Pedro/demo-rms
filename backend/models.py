@@ -339,5 +339,24 @@ class Note(Base):
 
     updated_by = relationship("User", foreign_keys=[updated_by_id])
 
+class IntegrationToken(Base):
+    """
+    API-токены для интеграции с внешними системами.
+    Создаются суперадминистраторами и администраторами системы.
+    Внешние системы используют токен в заголовке X-API-Key или Bearer для выгрузки данных.
+    """
+    __tablename__ = "integration_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(120), nullable=False) # Название системы, e.g. "1С:ЗУП", "HR BI", "Внутренний портал"
+    token = Column(String(128), unique=True, index=True, nullable=False) # e.g. "rms_live_..."
+    description = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_by = relationship("User", foreign_keys=[created_by_id])
+
 from middleware.audit import AuditLog                                         
 from services.refresh_token import RefreshToken                                        

@@ -368,16 +368,31 @@ class VacancyService:
 
         if "offer_accepted" in update_data:
             vacancy.offer_accepted_cnt = update_data["offer_accepted"]
+        elif "offer_accepted_cnt" in update_data:
+            vacancy.offer_accepted_cnt = update_data["offer_accepted_cnt"]
 
         funnel_updates = {}
         for vacancy_field, report_field in FUNNEL_MAP.items():
             if vacancy_field in update_data:
-                funnel_updates[report_field] = update_data.pop(vacancy_field)
+                val = update_data.pop(vacancy_field)
+                funnel_updates[report_field] = val
+                if vacancy_field == "offer_accepted":
+                    vacancy.offer_accepted_cnt = val
+                elif hasattr(vacancy, vacancy_field):
+                    setattr(vacancy, vacancy_field, val)
+        if "offer_accepted_cnt" in update_data:
+            val = update_data.pop("offer_accepted_cnt")
+            vacancy.offer_accepted_cnt = val
+            funnel_updates["offer_accepted"] = val
 
         if "comment" in update_data:
-            funnel_updates["comment"] = update_data["comment"]
+            val = update_data["comment"]
+            funnel_updates["comment"] = val
+            vacancy.comment = val
         if "offer_rejection_reason" in update_data:
-            funnel_updates["offer_rejection_reason"] = update_data["offer_rejection_reason"]
+            val = update_data["offer_rejection_reason"]
+            funnel_updates["offer_rejection_reason"] = val
+            vacancy.offer_rejection_reason = val
 
         if "feasibility_id" in update_data:
             fid = update_data["feasibility_id"]

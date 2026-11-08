@@ -285,15 +285,16 @@ const ReportsPage = () => {
         const types = [
           'specialist_level', 'vacancy_status', 'it_role', 'admin_manager',
           'project', 'source', 'internal_transfer', 'replacement_type',
-          'employment_type', 'block', 'offer_rejection_reason', 'recruiter'
+          'employment_type', 'block', 'offer_rejection_reason'
         ];
+        const [dictResponses, usersResp] = await Promise.all([
+          Promise.all(types.map(t => api.get(`/dictionaries/by-type/${t}`).catch(() => ({ data: [] })))),
+          api.get('/users?limit=1000').catch(() => ({ data: { items: [] } })),
+        ]);
         const results = {};
-        for (const type of types) {
-          if (type === 'recruiter') continue;
-          const response = await api.get(`/dictionaries/by-type/${type}`);
-          results[type] = response.data;
-        }
-        const usersResp = await api.get('/users?limit=1000');
+        types.forEach((type, idx) => {
+          results[type] = dictResponses[idx]?.data || [];
+        });
         results['recruiter'] = (usersResp.data.items || []).map(u => ({ id: u.id, value: u.full_name }));
         setDictionaries(results);
       } catch (error) {
@@ -646,7 +647,7 @@ const ReportsPage = () => {
     const fi = filteredInfo;
     const rawColumns = [
       {
-        title:'№', key:'_idx', width:50, fixed:'left', align:'center',
+        title:'№', key:'_idx', width:70, fixed:'left', align:'center',
         render:(_,__,i) => (curPage-1)*pageSize + i + 1,
       },
       {
@@ -944,7 +945,7 @@ const ReportsPage = () => {
       
       const updatedCol = {
         ...col,
-        width: col.key === '_idx' ? 50 : widthVal,
+        width: col.key === '_idx' ? 70 : widthVal,
       };
 
       if (!col.key || col.key === '_idx') return updatedCol;
@@ -1104,7 +1105,7 @@ const ReportsPage = () => {
             showTotal: t => `Всего: ${t}`,
           }}
           onChange={handleTableChange}
-          scroll={{ x: tableWidth, y: 'calc(100vh - 350px)' }}
+          scroll={{ x: tableWidth, y: activeTableFiltersCount > 0 ? 'calc(100vh - 300px)' : 'calc(100vh - 268px)' }}
         />
       </div>
 

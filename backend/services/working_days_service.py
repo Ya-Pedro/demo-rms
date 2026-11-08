@@ -25,6 +25,8 @@ from typing import List, Optional
 
 import holidays as _holidays
 
+from functools import lru_cache
+
 logger = logging.getLogger(__name__)
 
                                        
@@ -35,11 +37,15 @@ def _is_hold_status(status_value: str) -> bool:
     low = (status_value or "").lower()
     return any(s in low for s in _HOLD_SUBSTRINGS)
 
+@lru_cache(maxsize=64)
+def _get_year_holidays(year: int) -> frozenset[date]:
+    return frozenset(_holidays.RU(years=year).keys())
+
 def _ru_holidays(years: set[int]) -> set[date]:
                                                              
     result: set[date] = set()
     for y in years:
-        result.update(_holidays.RU(years=y).keys())
+        result.update(_get_year_holidays(y))
     return result
 
 def _count_workdays(start: date, end: date, ru_hols: set[date]) -> int:

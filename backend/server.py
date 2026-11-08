@@ -15,6 +15,12 @@ from slowapi.errors import RateLimitExceeded
 from starlette.requests import Request as StarletteRequest
 from starlette.responses import JSONResponse
 
+import hashlib
+from typing import Optional, Any, Dict, Tuple
+from starlette.responses import Response
+from sqlalchemy.ext.asyncio import AsyncSession
+from models import User
+
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from redis import asyncio as aioredis
@@ -37,6 +43,7 @@ from routers.delegation_router import router as delegation_router
 from routers.dashboards_router import router as dashboards_router
 from routers.notes_router import router as notes_router
 from routers.notifications_router import router as notifications_router
+from routers.integration_router import router as integration_router
 from services.scheduler_service import WeeklyReminderScheduler
 import services.scheduler_service as scheduler_module
 
@@ -71,15 +78,39 @@ async def _check_redis() -> None:
                 "В dev-режиме rate limiting работает in-memory (не шарится между воркерами)."
             )
 
+def rms_key_builder(
+    func,
+    namespace: str = "",
+    *,
+    request: Optional[Request] = None,
+    response: Optional[Response] = None,
+    args: Tuple[Any, ...] = (),
+    kwargs: Dict[str, Any] = None,
+) -> str:
+    clean_kwargs = {}
+    user_role = ""
+    for k, v in (kwargs or {}).items():
+        if isinstance(v, User):
+            user_role = str(v.role.value if hasattr(v.role, 'value') else v.role)
+        elif not isinstance(v, (AsyncSession, Request, Response)):
+            clean_kwargs[k] = v
+    query_str = ""
+    if request:
+        qp = sorted((k, v) for k, v in request.query_params.multi_items() if k != "_t")
+        query_str = "&".join(f"{k}={v}" for k, v in qp)
+    raw = f"{func.__module__}:{func.__name__}:{user_role}:{query_str}:{sorted(str(x) for x in clean_kwargs.items())}"
+    cache_key = hashlib.md5(raw.encode()).hexdigest()
+    return f"{namespace}:{cache_key}"
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
                                       
     logger.info("Starting RMS application...")
     await _check_redis()
     
-    # Initialize Redis Cache
+    # Initialize Redis Cache with custom key builder that ignores transient dependencies like db session
     redis_client = aioredis.from_url(REDIS_URL, encoding="utf8", decode_responses=False)
-    FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache")
+    FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache", key_builder=rms_key_builder)
     logger.info("FastAPI cache initialized with Redis")
     
     await init_db()
@@ -97,12 +128,15 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down RMS application...")
 
                             
-APP_VERSION = os.environ.get("APP_VERSION", "0.2.1")
+APP_VERSION = os.environ.get("APP_VERSION", "v0.3.0")
 
 app = FastAPI(
     title="RMS - Recruitment Management System",
     description="Внутренняя HR система для управления вакансиями",
     version=APP_VERSION,
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    redoc_url="/api/redoc",
     lifespan=lifespan
 )
 
@@ -177,6 +211,7 @@ app.include_router(delegation_router, prefix="/api")
 app.include_router(dashboards_router, prefix="/api")
 app.include_router(notes_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
+app.include_router(integration_router, prefix="/api")
 
                            
 app.add_middleware(AuditMiddleware)

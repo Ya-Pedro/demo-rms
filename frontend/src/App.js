@@ -16,6 +16,7 @@ import {
   CloseOutlined,
   BulbOutlined,
   EditOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
 
 export const ThemeContext = createContext({
@@ -36,6 +37,7 @@ import UsersPage from './pages/UsersPage';
 import ReportsPage from './pages/ReportsPage';
 import DashboardsPage from './pages/DashboardsPage';
 import NotesPage from './pages/NotesPage';
+import IntegrationsPage from './pages/IntegrationsPage';
 import ChangePasswordModal from './pages/ChangePasswordModal';
 import TwoFactorSettings from './components/TwoFactorSettings';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -74,7 +76,7 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-export const APP_VERSION = process.env.REACT_APP_VERSION || '0.2.0';
+export const APP_VERSION = process.env.REACT_APP_VERSION || 'v0.3.0';
 
 const forceLogout = () => {
   if (window.location.pathname === '/login') return;
@@ -317,6 +319,7 @@ const MainLayout = ({ children }) => {
     if (path === '/reports') return 'reports';
     if (path === '/notes') return 'notes';
     if (path === '/dashboards') return 'dashboards';
+    if (path === '/integrations') return 'integrations';
     return 'dashboard';
   };
 
@@ -403,6 +406,15 @@ const MainLayout = ({ children }) => {
       icon: <UserOutlined />,
       label: 'Пользователи',
       onClick: () => navigate('/users'),
+    });
+  }
+
+  if (isAdmin) {
+    menuItems.push({
+      key: 'integrations',
+      icon: <ApiOutlined />,
+      label: 'Интеграции API',
+      onClick: () => navigate('/integrations'),
     });
   }
 
@@ -702,6 +714,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <DashboardsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/integrations"
+                element={
+                  <ProtectedRoute>
+                    <IntegrationsPage />
                   </ProtectedRoute>
                 }
               />

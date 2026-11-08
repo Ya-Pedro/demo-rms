@@ -1,6 +1,6 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +66,7 @@ async def trigger_weekly_reminder(
 
 @router.post("/test-email")
 async def send_test_email(
+    request: Request,
     body: TestEmailRequest,
     current_user: User = Depends(get_current_active_admin),
 ):
@@ -73,7 +74,14 @@ async def send_test_email(
     Тестовая отправка напоминания на конкретный указанный email.
     """
     logger.info(f"Тестовая отправка напоминания на {body.recipient} от {current_user.email}")
-    result = await send_recruiter_weekly_reminder([body.recipient])
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    base_url = None
+    if origin:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        if parsed.scheme and parsed.netloc:
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+    result = await send_recruiter_weekly_reminder([body.recipient], base_url=base_url)
     return {
         "success": True,
         "recipient": body.recipient,

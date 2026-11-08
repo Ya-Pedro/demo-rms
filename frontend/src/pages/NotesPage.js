@@ -26,6 +26,8 @@ import {
   QuestionCircleOutlined,
   SyncOutlined,
   CheckCircleOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from '@ant-design/icons';
 import { ThemeContext, api } from '../App';
 import { tokenStorage } from '../tokenStorage';
@@ -207,6 +209,76 @@ const EditableCell = React.memo(function EditableCell({
     </div>
   );
 });
+
+const RowDragContext = React.createContext({
+  draggingId: null,
+  dragOverState: null,
+  activeHandleRowId: null,
+  isDarkMode: false,
+  handleDragStart: () => {},
+  handleDragOver: () => {},
+  handleDragLeave: () => {},
+  handleDrop: () => {},
+  handleDragEnd: () => {},
+});
+
+const DraggableRow = React.memo(function DraggableRow({ children, className, style, ...restProps }) {
+  const {
+    draggingId,
+    dragOverState,
+    activeHandleRowId,
+    isDarkMode,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+  } = useContext(RowDragContext);
+
+  const rowId = restProps['data-row-id'];
+  const isDragging = draggingId === rowId;
+  const isOver = dragOverState?.id === rowId;
+  const pos = isOver ? dragOverState.position : null;
+
+  const rowStyle = {
+    ...style,
+    transition: 'background-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease',
+  };
+
+  if (isDragging) {
+    rowStyle.opacity = 0.45;
+    rowStyle.backgroundColor = isDarkMode ? '#1f242c' : '#f0f5ff';
+  } else if (isOver) {
+    rowStyle.backgroundColor = isDarkMode ? 'rgba(22, 119, 255, 0.12)' : '#f0f7ff';
+    if (pos === 'top') {
+      rowStyle.boxShadow = 'inset 0 3px 0 0 #1677ff';
+    } else if (pos === 'bottom') {
+      rowStyle.boxShadow = 'inset 0 -3px 0 0 #1677ff';
+    }
+  }
+
+  return (
+    <tr
+      {...restProps}
+      className={className}
+      style={rowStyle}
+      draggable={activeHandleRowId === rowId}
+      onDragStart={(e) => handleDragStart(e, rowId)}
+      onDragOver={(e) => handleDragOver(e, rowId)}
+      onDragLeave={(e) => handleDragLeave(e, rowId)}
+      onDrop={(e) => handleDrop(e, rowId)}
+      onDragEnd={handleDragEnd}
+    >
+      {children}
+    </tr>
+  );
+});
+
+const TABLE_COMPONENTS = {
+  body: {
+    row: DraggableRow,
+  },
+};
 const normalizeSheet = (s, idx = 0) => {
   if (!s || typeof s !== 'object') {
     return {
@@ -466,6 +538,20 @@ export default function NotesPage() {
 
   const [searchFilter, setSearchFilter] = useState('');
   const [columnSearch, setColumnSearch] = useState({});
+
+  // Row Drag-and-Drop state and pagination
+  const [draggingId, setDraggingId] = useState(null);
+  const [dragOverState, setDragOverState] = useState(null); // { id: string, position: 'top' | 'bottom' }
+  const [activeHandleRowId, setActiveHandleRowId] = useState(null);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 25 });
+
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      setActiveHandleRowId(null);
+    };
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+  }, []);
 
   // Column management modal
   const [colModalVisible, setColModalVisible] = useState(false);
@@ -778,6 +864,135 @@ export default function NotesPage() {
     message.success(`Экспортировано ${rowsToExport.length} строк в формате CSV`);
   }, [activeSheet, filteredRows]);
 
+  // Move row via drag and drop
+  const handleMoveRow = useCallback((sourceId, targetId, position = 'before') => {
+    if (sourceId === targetId) return;
+    updateActiveSheet((sheet) => {
+      const rows = [...sheet.rows];
+      const sourceIndex = rows.findIndex((r) => r.id === sourceId);
+      if (sourceIndex === -1) return sheet;
+
+      const [movedRow] = rows.splice(sourceIndex, 1);
+      const targetIndex = rows.findIndex((r) => r.id === targetId);
+      if (targetIndex === -1) {
+        rows.push(movedRow);
+      } else {
+        const insertIndex = position === 'after' ? targetIndex + 1 : targetIndex;
+        rows.splice(insertIndex, 0, movedRow);
+      }
+      return { ...sheet, rows };
+    });
+    message.success('Порядок строк изменен');
+  }, [updateActiveSheet]);
+
+  // Move row one step up or down
+  const handleMoveRowStep = useCallback((rowId, direction) => {
+    updateActiveSheet((sheet) => {
+      const rows = [...sheet.rows];
+      if (hasFilter) {
+        const filteredIdx = filteredRows.findIndex((r) => r.id === rowId);
+        if (filteredIdx === -1) return sheet;
+        const targetFilteredIdx = direction === 'up' ? filteredIdx - 1 : filteredIdx + 1;
+        if (targetFilteredIdx < 0 || targetFilteredIdx >= filteredRows.length) return sheet;
+        const targetNeighbor = filteredRows[targetFilteredIdx];
+
+        const sourceIndex = rows.findIndex((r) => r.id === rowId);
+        if (sourceIndex === -1) return sheet;
+        const [moved] = rows.splice(sourceIndex, 1);
+
+        const targetIndex = rows.findIndex((r) => r.id === targetNeighbor.id);
+        if (targetIndex === -1) {
+          rows.push(moved);
+        } else {
+          const insertIndex = direction === 'up' ? targetIndex : targetIndex + 1;
+          rows.splice(insertIndex, 0, moved);
+        }
+        return { ...sheet, rows };
+      }
+
+      const index = rows.findIndex((r) => r.id === rowId);
+      if (index === -1) return sheet;
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= rows.length) return sheet;
+
+      const temp = rows[index];
+      rows[index] = rows[targetIndex];
+      rows[targetIndex] = temp;
+
+      return { ...sheet, rows };
+    });
+  }, [updateActiveSheet, hasFilter, filteredRows]);
+
+  const handleDragStart = useCallback((e, rowId) => {
+    e.stopPropagation();
+    setDraggingId(rowId);
+    e.dataTransfer.setData('text/plain', rowId);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleDragOver = useCallback((e, rowId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    if (!draggingId || draggingId === rowId) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isTop = e.clientY < rect.top + rect.height / 2;
+    const position = isTop ? 'top' : 'bottom';
+
+    setDragOverState((prev) => {
+      if (prev?.id === rowId && prev?.position === position) return prev;
+      return { id: rowId, position };
+    });
+  }, [draggingId]);
+
+  const handleDragLeave = useCallback((e, rowId) => {
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDragOverState((prev) => (prev?.id === rowId ? null : prev));
+  }, []);
+
+  const handleDrop = useCallback((e, targetRowId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceId = draggingId || e.dataTransfer.getData('text/plain');
+    if (sourceId && targetRowId && sourceId !== targetRowId) {
+      const position = dragOverState?.position === 'top' ? 'before' : 'after';
+      handleMoveRow(sourceId, targetRowId, position);
+    }
+    setDraggingId(null);
+    setDragOverState(null);
+    setActiveHandleRowId(null);
+  }, [draggingId, dragOverState, handleMoveRow]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null);
+    setDragOverState(null);
+    setActiveHandleRowId(null);
+  }, []);
+
+  const dragContextValue = useMemo(() => ({
+    draggingId,
+    dragOverState,
+    activeHandleRowId,
+    isDarkMode,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+  }), [
+    draggingId,
+    dragOverState,
+    activeHandleRowId,
+    isDarkMode,
+    handleDragStart,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleDragEnd,
+  ]);
+
   // Dynamic table columns configuration
   const tableColumns = useMemo(() => {
     if (!activeSheet || !Array.isArray(activeSheet.columns)) return [];
@@ -848,39 +1063,95 @@ export default function NotesPage() {
       ),
     }));
 
+    // Row order column (compact static column for row number)
+    cols.unshift({
+      title: '№',
+      key: '_row_order',
+      width: 52,
+      minWidth: 52,
+      maxWidth: 52,
+      fixed: 'left',
+      align: 'center',
+      className: 'static-row-num-col',
+      render: (_, record, index) => {
+        const rowNumber = (pagination.current - 1) * pagination.pageSize + index + 1;
+        return (
+          <span
+            style={{
+              color: isDarkMode ? '#8b949e' : '#64748b',
+              fontWeight: 500,
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+              display: 'inline-block',
+            }}
+          >
+            {rowNumber}
+          </span>
+        );
+      },
+    });
+
     // Actions column
     cols.push({
       title: 'Действия',
       key: 'actions',
-      width: 80,
+      width: 136,
       fixed: 'right',
-      render: (_, record) => (
-        <Space size={4}>
-          <Tooltip title="Дублировать строку">
-            <Button
-              type="text"
-              icon={<CopyOutlined style={{ color: '#1890ff' }} />}
-              size="small"
-              onClick={() => handleDuplicateRow(record)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="Удалить эту строку?"
-            onConfirm={() => handleDeleteRow(record.id)}
-            okText="Да"
-            cancelText="Нет"
-          >
-            <Tooltip title="Удалить строку">
+      align: 'center',
+      render: (_, record, index) => {
+        const globalIndex = (pagination.current - 1) * pagination.pageSize + index;
+        const isFirst = globalIndex === 0;
+        const isLast = globalIndex === (filteredRows.length - 1);
+        return (
+          <Space size={2}>
+            <Tooltip title="Переместить выше">
               <Button
                 type="text"
-                danger
-                icon={<DeleteOutlined />}
                 size="small"
+                icon={<ArrowUpOutlined style={{ fontSize: 12 }} />}
+                disabled={isFirst}
+                onClick={() => handleMoveRowStep(record.id, 'up')}
+                style={{ width: 24, height: 24, padding: 0 }}
               />
             </Tooltip>
-          </Popconfirm>
-        </Space>
-      ),
+            <Tooltip title="Переместить ниже">
+              <Button
+                type="text"
+                size="small"
+                icon={<ArrowDownOutlined style={{ fontSize: 12 }} />}
+                disabled={isLast}
+                onClick={() => handleMoveRowStep(record.id, 'down')}
+                style={{ width: 24, height: 24, padding: 0 }}
+              />
+            </Tooltip>
+            <Tooltip title="Дублировать строку">
+              <Button
+                type="text"
+                icon={<CopyOutlined style={{ color: '#1890ff', fontSize: 12 }} />}
+                size="small"
+                onClick={() => handleDuplicateRow(record)}
+                style={{ width: 24, height: 24, padding: 0 }}
+              />
+            </Tooltip>
+            <Popconfirm
+              title="Удалить эту строку?"
+              onConfirm={() => handleDeleteRow(record.id)}
+              okText="Да"
+              cancelText="Нет"
+            >
+              <Tooltip title="Удалить строку">
+                <Button
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined style={{ fontSize: 12 }} />}
+                  size="small"
+                  style={{ width: 24, height: 24, padding: 0 }}
+                />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
+        );
+      },
     });
 
     return cols;
@@ -888,11 +1159,14 @@ export default function NotesPage() {
     activeSheet,
     columnSearch,
     isDarkMode,
+    pagination,
+    filteredRows,
     handleOpenRenameCol,
     handleDeleteColumn,
     handleCellSave,
     handleDuplicateRow,
     handleDeleteRow,
+    handleMoveRowStep,
   ]);
 
   const tabItems = sheets.map((s) => ({
@@ -914,91 +1188,79 @@ export default function NotesPage() {
           marginBottom: 16,
           background: isDarkMode ? '#161b22' : '#ffffff',
           borderRadius: 12,
-          position: 'relative',
         }}
         bodyStyle={{
-          position: 'relative',
           padding: '16px 20px',
         }}
       >
+        {/* Top row: Title, status tags, and last updated info */}
+        <div>
+          <Space align="center" wrap size={10}>
+            <Title level={4} style={{ margin: 0 }}>
+              Рабочие заметки
+            </Title>
+            {!isAdminRole && (
+              <Tag color="default" style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
+                Личные заметки
+              </Tag>
+            )}
+            {syncStatus === 'syncing' && (
+              <Tag icon={<SyncOutlined spin />} color="processing" style={{ margin: 0, borderRadius: 4 }}>
+                Сохранение...
+              </Tag>
+            )}
+            {syncStatus === 'saved' && (
+              <Tag icon={<CheckCircleOutlined />} color="success" style={{ margin: 0, borderRadius: 4 }}>
+                Сохранено
+              </Tag>
+            )}
+            {syncStatus === 'error' && (
+              <Tag color="error" style={{ margin: 0, borderRadius: 4 }}>
+                Ошибка сохранения
+              </Tag>
+            )}
+            {lastUpdatedInfo?.by && (
+              <span style={{ fontSize: 13, color: isDarkMode ? '#8b949e' : '#64748b', fontStyle: 'italic' }}>
+                (посл. изменение: {lastUpdatedInfo.by}
+                {lastUpdatedInfo.at
+                  ? `, ${new Date(lastUpdatedInfo.at).toLocaleDateString('ru-RU', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`
+                  : ''}
+                )
+              </span>
+            )}
+          </Space>
+          {!isAdminRole && (
+            <div style={{ marginTop: 4, color: isDarkMode ? '#8b949e' : '#64748b', fontSize: 13 }}>
+              Персональная электронная таблица для ведения оперативных заметок, списков кандидатов и задач. Данные сохраняются автоматически.
+            </div>
+          )}
+        </div>
+
+        {/* Second row: Toolbar with search & actions starting under the title, and reload button at the far right */}
         <div
           style={{
+            marginTop: 14,
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             flexWrap: 'wrap',
-            gap: 16,
-            paddingRight: isRecruiter ? 44 : 0,
+            gap: 12,
           }}
         >
-          <div>
-            <Space align="center" wrap>
-              <Title level={4} style={{ margin: 0 }}>
-                Рабочие заметки
-              </Title>
-              {isAdminRole ? (
-                <Tag color="blue" style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
-                  Общие заметки администраторов
-                </Tag>
-              ) : (
-                <Tag color="default" style={{ margin: 0, fontWeight: 500, borderRadius: 4 }}>
-                  Личные заметки
-                </Tag>
-              )}
-              {syncStatus === 'syncing' && (
-                <Tag icon={<SyncOutlined spin />} color="processing" style={{ margin: 0, borderRadius: 4 }}>
-                  Сохранение...
-                </Tag>
-              )}
-              {syncStatus === 'saved' && (
-                <Tag icon={<CheckCircleOutlined />} color="success" style={{ margin: 0, borderRadius: 4 }}>
-                  Сохранено
-                </Tag>
-              )}
-              {syncStatus === 'error' && (
-                <Tag color="error" style={{ margin: 0, borderRadius: 4 }}>
-                  Ошибка сохранения
-                </Tag>
-              )}
-            </Space>
-            <div style={{ marginTop: 4, color: isDarkMode ? '#8b949e' : '#64748b', fontSize: 13 }}>
-              {isAdminRole
-                ? 'Общие рабочие заметки для администраторов и суперадминистраторов системы. Изменения видны всем администраторам.'
-                : 'Персональная электронная таблица для ведения оперативных заметок, списков кандидатов и задач. Данные сохраняются автоматически.'}
-              {lastUpdatedInfo?.by && (
-                <span style={{ marginLeft: 8, fontStyle: 'italic', fontSize: 12, opacity: 0.85 }}>
-                  (посл. изменение: {lastUpdatedInfo.by}
-                  {lastUpdatedInfo.at
-                    ? `, ${new Date(lastUpdatedInfo.at).toLocaleDateString('ru-RU', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}`
-                    : ''}
-                  )
-                </span>
-              )}
-            </div>
-          </div>
-
-          <Space wrap>
-            <Tooltip title="Синхронизировать с сервером и загрузить актуальные данные">
-              <Button
-                icon={<ReloadOutlined spin={refreshLoading} />}
-                loading={refreshLoading}
-                onClick={() => fetchNotes(true)}
-              >
-                Обновить
-              </Button>
-            </Tooltip>
+          {/* Left side actions (starts right under 'Рабочие заметки') */}
+          <Space wrap size={8}>
             <Input
               placeholder="Поиск по всему листу..."
               prefix={<SearchOutlined />}
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               allowClear
-              style={{ width: 220 }}
+              style={{ width: 240 }}
               data-tour-notes="search"
             />
             {hasFilter && (
@@ -1039,22 +1301,31 @@ export default function NotesPage() {
               Экспорт CSV
             </Button>
           </Space>
-        </div>
 
-        {/* Tour / Help button only for recruiters */}
-        {isRecruiter && (
-          <div style={{ position: 'absolute', bottom: 16, right: 20 }}>
-            <Tooltip title="Обучение по работе с разделом Заметки">
+          {/* Right side: Reload button at the far right end of this row */}
+          <Space size={8}>
+            <Tooltip title="Синхронизировать с сервером и загрузить актуальные данные">
               <Button
-                icon={<QuestionCircleOutlined style={{ fontSize: 16 }} />}
-                style={{ width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                onClick={() => setTourOpen(true)}
-                data-testid="notes-tour-button"
-                data-tour-notes="tour-btn"
-              />
+                icon={<ReloadOutlined spin={refreshLoading} />}
+                loading={refreshLoading}
+                onClick={() => fetchNotes(true)}
+              >
+                Обновить
+              </Button>
             </Tooltip>
-          </div>
-        )}
+            {isRecruiter && (
+              <Tooltip title="Обучение по работе с разделом Заметки">
+                <Button
+                  icon={<QuestionCircleOutlined style={{ fontSize: 16 }} />}
+                  style={{ width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                  onClick={() => setTourOpen(true)}
+                  data-testid="notes-tour-button"
+                  data-tour-notes="tour-btn"
+                />
+              </Tooltip>
+            )}
+          </Space>
+        </div>
       </Card>
 
       {/* Sheet Tabs */}
@@ -1091,20 +1362,29 @@ export default function NotesPage() {
         }}
         bodyStyle={{ padding: 0 }}
       >
-        <Table
-          dataSource={filteredRows}
-          columns={tableColumns}
-          rowKey="id"
-          pagination={{
-            pageSize: 25,
-            showSizeChanger: true,
-            pageSizeOptions: ['10', '25', '50', '100'],
-            showTotal: (total) => `Всего строк: ${total}`,
-          }}
-          scroll={{ x: 'max-content', y: 600 }}
-          size="middle"
-          bordered
-        />
+        <RowDragContext.Provider value={dragContextValue}>
+          <Table
+            components={TABLE_COMPONENTS}
+            onRow={(record, index) => ({
+              'data-row-id': record.id,
+              'data-row-index': index,
+            })}
+            dataSource={filteredRows}
+            columns={tableColumns}
+            rowKey="id"
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '25', '50', '100'],
+              showTotal: (total) => `Всего строк: ${total}`,
+              onChange: (page, pageSize) => setPagination({ current: page, pageSize }),
+            }}
+            scroll={{ x: 'max-content', y: 600 }}
+            size="middle"
+            bordered
+          />
+        </RowDragContext.Provider>
       </Card>
 
       {/* Modal: Add Column */}

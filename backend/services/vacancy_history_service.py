@@ -20,35 +20,56 @@ logger = logging.getLogger(__name__)
                                                                                 
 
 FIELD_LABELS: dict[str, str] = {
-    "vacancy_id":           "ID вакансии",
-    "open_date":            "Дата открытия",
-    "quantity":             "Количество вакансий",
-    "position_name":        "Должность",
-    "hold_days":            "Дней в холде",
-    "salary_gross":         "Зарплата (Gross)",
-    "candidate_name":       "ФИО кандидата",
-    "candidate_company":    "Компания кандидата",
-    "ex_employee_name":     "ФИО бывшего сотрудника",
-    "unit_id":              "ID ШЕ",
-    "iqhr_link":            "Ссылка IQHR",
-    "close_date":           "Дата закрытия",
-    "status_changed_at":    "Дата изменения статуса",
-    "city_text":            "Город (текст)",
-    "status_id":            "Статус вакансии",
-    "level_id":             "Уровень специалиста",
-    "it_role_id":           "ИТ роль",
-    "admin_manager_id":     "Административный руководитель",
-    "team_lead_id":         "Тимлид",
-    "project_id":           "Проект",
-    "city_id":              "Город",
-    "source_id":            "Источник найма",
-    "internal_transfer_id": "Внутренний перевод",
-    "replacement_type_id":  "Новая/Замена",
-    "employment_type_id":   "Вид занятости",
-    "feasibility_id":       "ТЭО проекта",
-    "block_id":             "Блок",
-    "recruiter_id":         "Рекрутер",
-    "co_recruiter_id":      "Дополнительный рекрутер",
+    # Основная информация
+    "vacancy_id":              "ID вакансии",
+    "open_date":               "Дата открытия",
+    "quantity":                "Количество вакансий",
+    "position_name":           "Должность",
+    "status_id":               "Статус вакансии",
+    "level_id":                "Уровень специалиста",
+    "it_role_id":              "ИТ роль",
+    "project_id":              "Проект",
+    "block_id":                "Блок",
+    "status_changed_at":       "Дата изменения статуса",
+    "close_date":              "Дата закрытия",
+    "hold_days":               "Дней в холде",
+
+    # Руководство и локация
+    "admin_manager_id":        "Административный руководитель",
+    "team_lead_text":          "Тимлид",
+    "team_lead_id":            "Тимлид (справочник)",
+    "city_text":               "Город",
+    "city_id":                 "Город (справочник)",
+
+    # Кандидат и условия
+    "candidate_name":          "ФИО кандидата",
+    "candidate_company":       "Компания кандидата",
+    "ex_employee_name":        "ФИО бывшего сотрудника",
+    "salary_gross":            "Зарплата (Gross)",
+    "source_id":               "Источник найма",
+    "internal_transfer_id":    "Внутренний перевод",
+    "replacement_type_id":     "Новая/Замена",
+    "employment_type_id":      "Вид занятости",
+    "feasibility_id":          "ТЭО проекта",
+    "feasibility_text":        "ТЭО проекта (текст)",
+    "unit_id":                 "ID ШЕ",
+    "iqhr_link":               "Ссылка IQHR",
+
+    # Рекрутеры
+    "recruiter_id":            "Рекрутер",
+    "co_recruiter_id":         "Дополнительный рекрутер",
+
+    # Воронка и действия (из карточки вакансии)
+    "resume_at_customer":      "Передано заказчику",
+    "resume_approved":         "Резюме одобрено",
+    "interviews_plan":         "Собеседования план",
+    "interviews_fact":         "Собеседования факт",
+    "offer_made":              "Оффер сделан",
+    "offer_accepted_cnt":      "Оффер принят",
+
+    # Причина отказа и комментарий
+    "offer_rejection_reason":  "Причина отказа от оффера",
+    "comment":                 "Комментарий",
 }
 
 SKIP_FIELDS = {
@@ -101,7 +122,8 @@ def _serialize_value(value: Any) -> str:
         return value.strftime("%d.%m.%Y %H:%M")
     if isinstance(value, date):
         return value.strftime("%d.%m.%Y")
-    return str(value)
+    s = str(value).strip()
+    return s if s else "—"
 
 def _user_label(user: User) -> str:
                                               
@@ -118,13 +140,7 @@ def _resolve_fk(vacancy: Vacancy, field: str) -> Optional[str]:
         if obj is not None:
             val = getattr(obj, disp_attr, None)
             if val:
-                return str(val)
-        if field == "feasibility_id" and getattr(vacancy, "feasibility_text", None):
-            return str(vacancy.feasibility_text)
-        if field == "city_id" and getattr(vacancy, "city_text", None):
-            return str(vacancy.city_text)
-        if field == "team_lead_id" and getattr(vacancy, "team_lead_text", None):
-            return str(vacancy.team_lead_text)
+                return str(val).strip() or None
         return None
     except Exception:
         return None
@@ -285,12 +301,16 @@ class VacancyHistoryService:
         metrics: dict,
         user: User,
         offer_rejection_reason: Optional[str] = None,
+        comment: Optional[str] = None,
     ) -> None:
         changes: dict = {}
         for field, label in REPORT_FIELD_LABELS.items():
             v = metrics.get(field, 0) or 0
             if v:
                 changes[label] = {"old": "—", "new": str(v)}
+
+        if comment and str(comment).strip():
+            changes["Комментарий"] = {"old": "—", "new": str(comment).strip()}
 
         if not changes:
             changes["Неделя"] = {"old": "—", "new": f"Неделя {week_number}, {year}"}
@@ -305,13 +325,13 @@ class VacancyHistoryService:
         logger.debug("history REPORT vacancy_id=%s week=%s/%s", vacancy_id, week_number, year)
 
         # Track offer rejection reason separately if provided
-        if offer_rejection_reason:
+        if offer_rejection_reason and str(offer_rejection_reason).strip():
             self._add(VacancyHistory(
                 vacancy_id=vacancy_id,
                 user_id=user.id,
                 action_type="OFFER_REJECTION",
                 changes=json.dumps({
-                    "Причина отказа от оффера": {"old": "—", "new": offer_rejection_reason},
+                    "Причина отказа от оффера": {"old": "—", "new": str(offer_rejection_reason).strip()},
                     "Неделя": {"old": "—", "new": f"Неделя {week_number}, {year}"},
                 }, ensure_ascii=False),
                 vacancy_snapshot=vacancy_name,
@@ -328,6 +348,8 @@ class VacancyHistoryService:
         user: User,
         old_offer_rejection_reason: Optional[str] = None,
         new_offer_rejection_reason: Optional[str] = None,
+        old_comment: Optional[str] = None,
+        new_comment: Optional[str] = None,
     ) -> None:
         changes: dict = {}
         for field, label in REPORT_FIELD_LABELS.items():
@@ -335,6 +357,14 @@ class VacancyHistoryService:
             new_v = new_metrics.get(field, 0) or 0
             if old_v != new_v:
                 changes[label] = {"old": str(old_v), "new": str(new_v)}
+
+        norm_old_comment = (old_comment or "").strip()
+        norm_new_comment = (new_comment or "").strip()
+        if new_comment is not None and norm_new_comment != norm_old_comment:
+            changes["Комментарий"] = {
+                "old": norm_old_comment or "—",
+                "new": norm_new_comment or "—",
+            }
 
         if changes:
             self._add(VacancyHistory(
@@ -346,15 +376,17 @@ class VacancyHistoryService:
             ))
 
         # Track offer rejection reason separately if changed
-        if new_offer_rejection_reason is not None and new_offer_rejection_reason != old_offer_rejection_reason:
+        norm_old_reason = (old_offer_rejection_reason or "").strip()
+        norm_new_reason = (new_offer_rejection_reason or "").strip()
+        if new_offer_rejection_reason is not None and norm_new_reason != norm_old_reason:
             self._add(VacancyHistory(
                 vacancy_id=vacancy_id,
                 user_id=user.id,
                 action_type="OFFER_REJECTION",
                 changes=json.dumps({
                     "Причина отказа от оффера": {
-                        "old": old_offer_rejection_reason or "—",
-                        "new": new_offer_rejection_reason or "—",
+                        "old": norm_old_reason or "—",
+                        "new": norm_new_reason or "—",
                     },
                     "Неделя": {"old": "—", "new": f"Неделя {week_number}, {year}"},
                 }, ensure_ascii=False),

@@ -120,9 +120,11 @@ async def create_report(
     new_report = WeeklyReport(**report_dict)
     db.add(new_report)
 
-    # If offer_rejection_reason provided, update vacancy-level reason as well
+    # If offer_rejection_reason or comment provided, update vacancy-level as well
     if getattr(report_data, 'offer_rejection_reason', None):
         vacancy.offer_rejection_reason = report_data.offer_rejection_reason
+    if getattr(report_data, 'comment', None):
+        vacancy.comment = report_data.comment
 
     await db.commit()
     await db.refresh(new_report)
@@ -145,6 +147,7 @@ async def create_report(
             },
             user=current_user,
             offer_rejection_reason=getattr(report_data, 'offer_rejection_reason', None),
+            comment=getattr(report_data, 'comment', None),
         )
         await db.commit()
         await FastAPICache.clear(namespace="dashboards")
@@ -1187,6 +1190,7 @@ async def update_report(
     }
 
     _old_reason = report.offer_rejection_reason
+    _old_comment = report.comment
 
     if report.user_id is None:
         report.user_id = current_user.id
@@ -1194,9 +1198,11 @@ async def update_report(
     for field, value in update_data.items():
         setattr(report, field, value)
 
-    # If offer_rejection_reason was updated, reflect on vacancy level as well
+    # If offer_rejection_reason or comment was updated, reflect on vacancy level as well
     if "offer_rejection_reason" in update_data and report.vacancy:
         report.vacancy.offer_rejection_reason = report.offer_rejection_reason
+    if "comment" in update_data and report.vacancy:
+        report.vacancy.comment = report.comment
 
     await db.commit()
     await db.refresh(report)
@@ -1222,6 +1228,8 @@ async def update_report(
             user=current_user,
             old_offer_rejection_reason=_old_reason,
             new_offer_rejection_reason=report.offer_rejection_reason,
+            old_comment=_old_comment,
+            new_comment=report.comment,
         )
         await db.commit()
         await FastAPICache.clear(namespace="dashboards")
@@ -1262,7 +1270,7 @@ async def delete_report(
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к этому отчету")
     
     from fastapi_cache import FastAPICache
-    db.delete(report)
+    await db.delete(report)
     await db.commit()
     await FastAPICache.clear(namespace="dashboards")
     return None

@@ -4,7 +4,7 @@ import useIsMobile from '../hooks/useIsMobile';
 import {
   Row, Col, Card, Select, Skeleton, Typography, Statistic, Divider,
   DatePicker, Button, Spin, Space, Radio, Modal, Tooltip,
-  Popover, Checkbox, Input, Table, message,
+  Popover, Checkbox, Input, Table, message, Tabs, Alert,
 } from 'antd';
 import {
   ResponsiveContainer,
@@ -19,6 +19,8 @@ import {
   ClearOutlined, FieldTimeOutlined, BankOutlined,
   FileTextOutlined, ReloadOutlined, InfoCircleOutlined, DollarOutlined,
   DownOutlined, DownloadOutlined, SearchOutlined,
+  TableOutlined, SettingOutlined, HolderOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, UndoOutlined, CheckOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { api, ThemeContext } from '../App';
@@ -112,6 +114,12 @@ const CHART_FORMULAS = {
     description: 'Общий баланс всех вакансий компании по ключевым группам статусов.',
     rules: '«Всего» = Открыта + Закрыта + Hold + Отмена. «Открыта» и «Hold» — остаток на дату конца периода (включая вакансии, ушедшие в Hold до начала периода). «Закрыта» и «Отмена» — поток переходов внутри периода. Статус «Выход» включён в «Открыта».',
   },
+  statuses_ivakhin: {
+    title: 'Вакансии по статусам для Ивахина А',
+    formula: 'Открыта + Hold (остаток на конец месяца) с детализацией по ИТ-блокам',
+    description: 'Уникальное количество вакансий компании в разрезе месяцев и ИТ-блоков.',
+    rules: 'Учитываются только основные рекрутеры (дополнительные и замещающие не дублируют вакансии). «Открыта» и «Hold» — остаток на конец месяца. «Закрыта» и «Отмена» — поток за месяц. «Всего вакансий» = Открыта + Hold.',
+  },
   funnel: {
     title: 'Воронка найма',
     formula: 'Сумма показателей из еженедельных отчётов и % перехода с этапа на этап',
@@ -142,6 +150,110 @@ const CHART_FORMULAS = {
     description: 'Динамика чистого времени закрытия вакансий в рабочих днях по месяцам, кварталам и годам.',
     rules: 'Выходные и праздники исключены; дни нахождения в «Hold» автоматически вычитаются.',
   },
+};
+
+const DASHBOARD_CARDS_MAP = {
+  salary: { id: 'salary', title: 'Медианная ЗП (Gross)', defaultSize: 24 },
+  donut_source: { id: 'donut_source', title: 'Источник найма', defaultSize: 8 },
+  donut_replacement: { id: 'donut_replacement', title: 'Тип вакансии (Новая/Замена)', defaultSize: 8 },
+  donut_employment: { id: 'donut_employment', title: 'Вид занятости', defaultSize: 8 },
+  avg_timeline: { id: 'avg_timeline', title: 'Динамика среднего срока закрытия', defaultSize: 24 },
+  jo_conversion: { id: 'jo_conversion', title: 'Конверсия принятия JO', defaultSize: 24 },
+  recruiter_load: { id: 'recruiter_load', title: 'Загрузка рекрутеров', defaultSize: 24 },
+  ivakhin_statuses: { id: 'ivakhin_statuses', title: 'Вакансии по статусам для Ивахина А', defaultSize: 24 },
+  statuses_chart: { id: 'statuses_chart', title: 'Вакансии по статусам', defaultSize: 12 },
+  open_details: { id: 'open_details', title: 'Детализация «Открытых» вакансий', defaultSize: 12 },
+  funnel: { id: 'funnel', title: 'Воронка найма', defaultSize: 14 },
+  rejections: { id: 'rejections', title: 'Причины отказа', defaultSize: 10 },
+  companies: { id: 'companies', title: 'Топ-15 компаний кандидатов', defaultSize: 24 },
+  avg_days_role: { id: 'avg_days_role', title: 'Средний срок закрытия', defaultSize: 12 },
+  levels: { id: 'levels', title: 'Распределение вакансий по уровню ИТ роли', defaultSize: 12 },
+};
+
+const DEFAULT_TAB_LAYOUTS = {
+  all: [
+    { id: 'salary', size: 24 },
+    { id: 'donut_source', size: 8 },
+    { id: 'donut_replacement', size: 8 },
+    { id: 'donut_employment', size: 8 },
+    { id: 'avg_timeline', size: 24 },
+    { id: 'jo_conversion', size: 24 },
+    { id: 'recruiter_load', size: 24 },
+    { id: 'ivakhin_statuses', size: 24 },
+    { id: 'statuses_chart', size: 12 },
+    { id: 'open_details', size: 12 },
+    { id: 'funnel', size: 14 },
+    { id: 'rejections', size: 10 },
+    { id: 'companies', size: 24 },
+    { id: 'avg_days_role', size: 12 },
+    { id: 'levels', size: 12 },
+  ],
+  statuses: [
+    { id: 'recruiter_load', size: 24 },
+    { id: 'ivakhin_statuses', size: 24 },
+    { id: 'statuses_chart', size: 12 },
+    { id: 'open_details', size: 12 },
+  ],
+  funnel: [
+    { id: 'jo_conversion', size: 24 },
+    { id: 'funnel', size: 14 },
+    { id: 'rejections', size: 10 },
+    { id: 'companies', size: 24 },
+  ],
+  analytics: [
+    { id: 'salary', size: 24 },
+    { id: 'donut_source', size: 8 },
+    { id: 'donut_replacement', size: 8 },
+    { id: 'donut_employment', size: 8 },
+    { id: 'avg_timeline', size: 24 },
+    { id: 'avg_days_role', size: 12 },
+    { id: 'levels', size: 12 },
+  ],
+};
+
+const CUSTOM_LAYOUTS_KEY = 'rms_dashboards_custom_layouts_v2';
+
+const sanitizeLayout = (savedList, defaultList) => {
+  if (!Array.isArray(savedList) || !savedList.length) return defaultList;
+  const savedIds = new Set();
+  const validCards = [];
+  for (const item of savedList) {
+    if (item && item.id && DASHBOARD_CARDS_MAP[item.id] && !savedIds.has(item.id)) {
+      savedIds.add(item.id);
+      validCards.push({
+        id: item.id,
+        size: Number(item.size) || DASHBOARD_CARDS_MAP[item.id]?.defaultSize || 24,
+      });
+    }
+  }
+  for (const def of defaultList) {
+    if (!savedIds.has(def.id)) {
+      validCards.push(def);
+    }
+  }
+  return validCards.length ? validCards : defaultList;
+};
+
+const loadCustomLayouts = () => {
+  try {
+    const raw = localStorage.getItem(CUSTOM_LAYOUTS_KEY);
+    if (!raw) return DEFAULT_TAB_LAYOUTS;
+    const parsed = JSON.parse(raw);
+    return {
+      all: sanitizeLayout(parsed.all, DEFAULT_TAB_LAYOUTS.all),
+      statuses: sanitizeLayout(parsed.statuses, DEFAULT_TAB_LAYOUTS.statuses),
+      funnel: sanitizeLayout(parsed.funnel, DEFAULT_TAB_LAYOUTS.funnel),
+      analytics: sanitizeLayout(parsed.analytics, DEFAULT_TAB_LAYOUTS.analytics),
+    };
+  } catch {
+    return DEFAULT_TAB_LAYOUTS;
+  }
+};
+
+const saveCustomLayouts = (layouts) => {
+  try {
+    localStorage.setItem(CUSTOM_LAYOUTS_KEY, JSON.stringify(layouts));
+  } catch {}
 };
 
 // Subtle and elegant formula button
@@ -587,7 +699,7 @@ const RecruiterLoadCard = ({
             loading={exportLoading}
             style={{ borderRadius: 6, fontSize: 12, fontWeight: 500 }}
           >
-            Выгрузить в Excel
+            Экспорт в Excel
           </Button>
           <Radio.Group
             size="small"
@@ -700,6 +812,202 @@ const RecruiterLoadCard = ({
   );
 };
 
+const IvakhinStatusesCard = ({
+  monthsData = [],
+  isMobile,
+  onFormulaClick,
+  onExportExcel,
+  exportLoading,
+}) => {
+  const { isDarkMode } = React.useContext(ThemeContext);
+
+  const tableData = useMemo(() => {
+    return (monthsData || []).map((m) => ({
+      key: m.id,
+      month: m.month,
+      block: '',
+      open: m.open,
+      closed: m.closed,
+      hold: m.hold,
+      cancel: m.cancel,
+      total: m.total,
+      isMonthSummary: true,
+      children: (m.blocks || []).map((b) => ({
+        key: b.id,
+        month: m.month,
+        block: b.block,
+        open: b.open,
+        closed: b.closed,
+        hold: b.hold,
+        cancel: b.cancel,
+        total: b.total,
+        isMonthSummary: false,
+      })),
+    }));
+  }, [monthsData]);
+
+  const allKeys = useMemo(() => tableData.map((d) => d.key), [tableData]);
+  const [expandedRowKeys, setExpandedRowKeys] = useState([]);
+
+  useEffect(() => {
+    if (allKeys.length && !expandedRowKeys.length) {
+      setExpandedRowKeys(allKeys);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allKeys]);
+
+  const handleExpandAll = () => setExpandedRowKeys(allKeys);
+  const handleCollapseAll = () => setExpandedRowKeys([]);
+
+  const columns = [
+    {
+      title: 'Месяц',
+      dataIndex: 'month',
+      key: 'month',
+      width: isMobile ? 100 : 130,
+      render: (text, record) => {
+        if (record.isMonthSummary) {
+          return <span style={{ fontWeight: 700, color: '#1677ff' }}>{text}</span>;
+        }
+        return <span style={{ color: '#8c8c8c' }}>{text}</span>;
+      },
+    },
+    {
+      title: 'Ит Блок',
+      dataIndex: 'block',
+      key: 'block',
+      width: isMobile ? 140 : 200,
+      ellipsis: true,
+      render: (text, record) => {
+        if (record.isMonthSummary) {
+          return <span style={{ fontWeight: 600, color: '#8c8c8c', fontStyle: 'italic' }}>Итого</span>;
+        }
+        return <span style={{ fontWeight: 500 }}>{text}</span>;
+      },
+    },
+    {
+      title: 'Открыто',
+      dataIndex: 'open',
+      key: 'open',
+      width: 78,
+      align: 'right',
+      render: (val, record) => (
+        <span style={{ fontWeight: record.isMonthSummary ? 700 : 400, color: '#1677ff' }}>
+          {val}
+        </span>
+      ),
+    },
+    {
+      title: 'Закрыто',
+      dataIndex: 'closed',
+      key: 'closed',
+      width: 78,
+      align: 'right',
+      render: (val, record) => (
+        <span style={{ fontWeight: record.isMonthSummary ? 700 : 400, color: '#16a34a' }}>
+          {val}
+        </span>
+      ),
+    },
+    {
+      title: 'Hold',
+      dataIndex: 'hold',
+      key: 'hold',
+      width: 70,
+      align: 'right',
+      render: (val, record) => (
+        <span style={{ fontWeight: record.isMonthSummary ? 700 : 400, color: '#d97706' }}>
+          {val}
+        </span>
+      ),
+    },
+    {
+      title: 'Отмена',
+      dataIndex: 'cancel',
+      key: 'cancel',
+      width: 72,
+      align: 'right',
+      render: (val, record) => (
+        <span style={{ fontWeight: record.isMonthSummary ? 700 : 400, color: '#dc2626' }}>
+          {val}
+        </span>
+      ),
+    },
+    {
+      title: 'Всего вакансий',
+      dataIndex: 'total',
+      key: 'total',
+      width: 115,
+      align: 'right',
+      render: (val) => (
+        <span style={{ fontWeight: 700 }}>
+          {val}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <Card
+      style={CS}
+      bodyStyle={{ ...CBS, padding: '12px 16px' }}
+      headStyle={CHS}
+      title={
+        <Space size={8}>
+          <TableOutlined style={{ color: T.blue }} />
+          <span>Вакансии по статусам для Ивахина А</span>
+        </Space>
+      }
+      extra={
+        <Space size={8}>
+          <Space size={4} style={{ marginRight: 6 }}>
+            <Button size="small" type="link" onClick={handleExpandAll} style={{ padding: '0 4px', fontSize: 12 }}>
+              Развернуть всё
+            </Button>
+            <span style={{ color: '#8c8c8c' }}>|</span>
+            <Button size="small" type="link" onClick={handleCollapseAll} style={{ padding: '0 4px', fontSize: 12 }}>
+              Свернуть всё
+            </Button>
+          </Space>
+          <Button
+            size="small"
+            icon={<DownloadOutlined />}
+            onClick={onExportExcel}
+            loading={exportLoading}
+            style={{ borderRadius: 6, fontSize: 12, fontWeight: 500 }}
+          >
+            Экспорт в Excel
+          </Button>
+          <FormulaButton chartKey="statuses_ivakhin" onOpen={onFormulaClick} isMobile={isMobile} />
+        </Space>
+      }
+    >
+      {!tableData.length ? (
+        <NoData text="Нет данных по статусам" />
+      ) : (
+        <Table
+          columns={columns}
+          dataSource={tableData}
+          rowKey="key"
+          size="small"
+          bordered
+          pagination={false}
+          scroll={{ x: 740, y: 380 }}
+          expandedRowKeys={expandedRowKeys}
+          onExpandedRowsChange={setExpandedRowKeys}
+          onRow={(record) => ({
+            style: record.isMonthSummary
+              ? {
+                  backgroundColor: isDarkMode ? 'rgba(56, 139, 253, 0.12)' : '#f0f5ff',
+                }
+              : {},
+          })}
+        />
+      )}
+    </Card>
+  );
+};
+
 const PieTip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -731,16 +1039,53 @@ const NoData = ({ text = 'Нет данных' }) => (
 );
 
 const renderPieLabel = (props) => {
-  const { cx, cy, midAngle, outerRadius, percent } = props;
-  if (percent < 0.05) return null;
+  const { cx, cy, midAngle, outerRadius, payload, percent } = props;
   const RADIAN = Math.PI / 180;
-  const radius = outerRadius + 16;
-  const x = cx + radius * Math.cos(-midAngle * RADIAN);
-  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  const sin = Math.sin(-RADIAN * midAngle);
+  const cos = Math.cos(-RADIAN * midAngle);
+
+  // Start just outside slice boundary
+  const sx = cx + (outerRadius + 3) * cos;
+  const sy = cy + (outerRadius + 3) * sin;
+
+  // Diagonal elbow
+  const mx = cx + (outerRadius + 14) * cos;
+  const my = cy + (outerRadius + 14) * sin;
+
+  // Horizontal line tip
+  const isRight = cos >= 0;
+  const ex = mx + (isRight ? 1 : -1) * 12;
+  const ey = my;
+
+  // Clean 6px margin between pointer tip and number
+  const tx = ex + (isRight ? 1 : -1) * 6;
+  const ty = ey;
+
+  const pctVal = payload?.pct !== undefined
+    ? payload.pct
+    : Math.round((percent || 0) * 1000) / 10;
+  const labelText = `${pctVal}%`;
+
   return (
-    <text x={x} y={y} fill={T.text} fontSize={FS_AXIS_LABEL} fontWeight={600} textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
-      {`${(percent * 100).toFixed(0)}%`}
-    </text>
+    <g>
+      <path
+        d={`M${sx},${sy}L${mx},${my}L${ex},${ey}`}
+        stroke="#8c8c8c"
+        fill="none"
+        strokeWidth={1.2}
+      />
+      <text
+        x={tx}
+        y={ty}
+        fill={T.text}
+        fontSize={11}
+        fontWeight={600}
+        textAnchor={isRight ? 'start' : 'end'}
+        dominantBaseline="central"
+      >
+        {labelText}
+      </text>
+    </g>
   );
 };
 
@@ -821,13 +1166,13 @@ const DonutCard = ({ title, icon, data, color, chartKey, onFormulaClick, isMobil
       }
     >
       {!data?.length ? <NoData /> : (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-          <div style={{ width: '100%', height: 200 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: '100%', height: 215 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={data} dataKey="value" nameKey="name"
-                  cx="50%" cy="50%" outerRadius={55}
-                  labelLine={true} label={renderPieLabel}>
+                  cx="50%" cy="50%" outerRadius={50}
+                  labelLine={false} label={renderPieLabel}>
                   {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} stroke={strokeColor} strokeWidth={2} />)}
                 </Pie>
                 <RTooltip content={<PieTip />} />
@@ -864,14 +1209,16 @@ const ConversionDot = ({ cx, cy, payload, maxVal, minVal, hasDiff, isDarkMode })
   const red   = isDarkMode ? '#f85149' : '#dc2626';
   const blue  = isDarkMode ? '#4096ff' : '#1677ff';
   const color = isMax ? green : isMin ? red : blue;
-  const r = (isMax || isMin) ? 7 : 4.5;
+  const r = (isMax || isMin) ? 6 : 4;
+
+  const yPos = cy < 20 ? cy + 18 : cy - 10;
 
   return (
     <g key={`dot-${payload.label || payload.name}`}>
       <circle cx={cx} cy={cy} r={r} fill={color} stroke={color} strokeWidth={2} />
       <text
         x={cx}
-        y={isMin ? cy + 18 : cy - 12}
+        y={yPos}
         textAnchor="middle"
         fill={color}
         fontSize={FS_BAR_VAL}
@@ -951,10 +1298,10 @@ const JOConversionCard = ({ data, isMobile, onFormulaClick }) => {
       ) : mode === 'year' ? (
         <div style={{ width: '100%', height: 260 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={list} barSize={64} margin={{ top: 24, right: 24, bottom: 8, left: 8 }}>
+            <BarChart data={list} barSize={64} margin={{ top: 24, right: 24, bottom: 8, left: 16 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
               <XAxis dataKey="label" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-              <YAxis domain={[0, 100]} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <YAxis domain={[0, 100]} width={isMobile ? 42 : 50} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
               <RTooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
@@ -984,10 +1331,10 @@ const JOConversionCard = ({ data, isMobile, onFormulaClick }) => {
       ) : (
         <div style={{ width: '100%', height: 260 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={list} margin={{ top: 24, right: isMobile ? 20 : 36, bottom: 8, left: 8 }}>
+            <LineChart data={list} margin={{ top: 24, right: isMobile ? 24 : 36, bottom: 8, left: 16 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
-              <XAxis dataKey="label" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-              <YAxis domain={yDomain} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <XAxis dataKey="label" axisLine={false} tickLine={false} padding={{ left: 36, right: 36 }} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+              <YAxis domain={yDomain} width={isMobile ? 42 : 50} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
               <RTooltip
                 content={({ active, payload }) => {
                   if (!active || !payload?.length) return null;
@@ -1039,9 +1386,6 @@ const JOConversionCard = ({ data, isMobile, onFormulaClick }) => {
             Остальные
           </span>
         </div>
-        <span style={{ fontSize: 12, color: T.muted }}>
-          {mode === 'month' ? 'Ось Y сужена, чтобы были видны колебания.' : mode === 'quarter' ? 'Квартал — кумулятивно по итогам квартала.' : 'Год — кумулятивный показатель за год; ось Y от 0 до 100%.'}
-        </span>
       </div>
     </Card>
   );
@@ -1055,14 +1399,16 @@ const AvgDaysDot = ({ cx, cy, payload, maxVal, minVal, hasDiff, isDarkMode }) =>
   const red   = isDarkMode ? '#f85149' : '#dc2626';
   const blue  = isDarkMode ? '#4096ff' : '#1677ff';
   const color = isBest ? green : isWorst ? red : blue;
-  const r = (isBest || isWorst) ? 7 : 4.5;
+  const r = (isBest || isWorst) ? 6 : 4;
+
+  const yPos = cy < 20 ? cy + 18 : cy - 10;
 
   return (
     <g key={`dot-avg-${payload.label || payload.name}`}>
       <circle cx={cx} cy={cy} r={r} fill={color} stroke={color} strokeWidth={2} />
       <text
         x={cx}
-        y={cy < 18 ? cy + 16 : cy - 12}
+        y={yPos}
         textAnchor="middle"
         fill={color}
         fontSize={FS_BAR_VAL}
@@ -1214,10 +1560,10 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
         <div style={{ position: 'relative' }}>
           <ResponsiveContainer width="100%" height={240}>
             {mode === 'year' ? (
-              <BarChart data={list} barSize={54} margin={{ top: 22, right: 24, bottom: 4, left: 4 }}>
+              <BarChart data={list} barSize={54} margin={{ top: 22, right: 24, bottom: 4, left: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridColor} />
                 <XAxis dataKey="label" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                <YAxis domain={yDomain} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+                <YAxis domain={yDomain} width={isMobile ? 40 : 48} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
                 <RTooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null;
@@ -1236,10 +1582,10 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
                 </Bar>
               </BarChart>
             ) : (
-              <LineChart data={list} margin={{ top: 24, right: 24, bottom: 18, left: 4 }}>
+              <LineChart data={list} margin={{ top: 24, right: 24, bottom: 18, left: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="label" axisLine={false} tickLine={false} dy={6} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                <YAxis domain={yDomain} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} dy={6} padding={{ left: 36, right: 36 }} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+                <YAxis domain={yDomain} width={isMobile ? 40 : 48} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
                 <RTooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null;
@@ -1298,9 +1644,6 @@ const AvgDaysTimelineCard = ({ data, isMobile, onFormulaClick }) => {
             Остальные
           </span>
         </div>
-        <span style={{ fontSize: 12, color: T.muted }}>
-          {mode === 'month' ? 'Данные по месяцам выбранного года. Рассчитано по производственному календарю РФ.' : mode === 'quarter' ? 'Квартал — средний срок закрытия за квартал.' : 'Год — средний срок закрытия за год; ось Y от 0.'}
-        </span>
       </div>
     </Card>
   );
@@ -1403,9 +1746,90 @@ export default function DashboardsPage() {
   const [groupBy,        setGroupBy]       = useState(() => savedDashboardsFilters?.groupBy ?? 'it_role');
 
   const [exportingRecruiterLoad, setExportingRecruiterLoad] = useState(false);
+  const [exportingIvakhinStatuses, setExportingIvakhinStatuses] = useState(false);
 
   // Active formula modal
   const [activeFormulaKey, setActiveFormulaKey] = useState(null);
+
+  // Dashboards tabs
+  const [activeTab, setActiveTab] = useState('all');
+
+  // Config mode & layout customization state
+  const [isConfigMode, setIsConfigMode] = useState(false);
+  const [tabLayouts, setTabLayouts] = useState(() => loadCustomLayouts());
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+
+  const currentCards = useMemo(() => {
+    return tabLayouts[activeTab] || DEFAULT_TAB_LAYOUTS[activeTab] || DEFAULT_TAB_LAYOUTS.all;
+  }, [tabLayouts, activeTab]);
+
+  const updateCurrentCards = (newCards) => {
+    const newLayouts = {
+      ...tabLayouts,
+      [activeTab]: newCards,
+    };
+    setTabLayouts(newLayouts);
+    saveCustomLayouts(newLayouts);
+  };
+
+  const moveCard = (fromIndex, toIndex) => {
+    if (toIndex < 0 || toIndex >= currentCards.length) return;
+    const newCards = [...currentCards];
+    const [removed] = newCards.splice(fromIndex, 1);
+    newCards.splice(toIndex, 0, removed);
+    updateCurrentCards(newCards);
+  };
+
+  const updateCardSize = (index, newSize) => {
+    const newCards = [...currentCards];
+    newCards[index] = { ...newCards[index], size: newSize };
+    updateCurrentCards(newCards);
+  };
+
+  const resetCurrentTabLayout = () => {
+    const defaultForTab = DEFAULT_TAB_LAYOUTS[activeTab] || DEFAULT_TAB_LAYOUTS.all;
+    const newLayouts = {
+      ...tabLayouts,
+      [activeTab]: defaultForTab,
+    };
+    setTabLayouts(newLayouts);
+    saveCustomLayouts(newLayouts);
+    message.success('Расположение дашбордов сброшено по умолчанию');
+  };
+
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', String(index));
+    } catch {}
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDrop = (e, dropIndex) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === undefined) return;
+    if (draggedIndex !== dropIndex) {
+      moveCard(draggedIndex, dropIndex);
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
   React.useEffect(() => {
     saveSavedDashboardsFilters({
@@ -1466,6 +1890,30 @@ export default function DashboardsPage() {
       message.error('Ошибка при выгрузке в Excel');
     } finally {
       setExportingRecruiterLoad(false);
+    }
+  };
+
+  const handleExportIvakhinStatuses = async () => {
+    setExportingIvakhinStatuses(true);
+    try {
+      const params = buildParams();
+      const res = await api.get(`/dashboards/export/ivakhin-statuses?${params.toString()}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'vacancies_by_status_ivakhin.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      message.success('Файл успешно выгружен');
+    } catch (err) {
+      console.error('Export error:', err);
+      message.error('Ошибка при выгрузке в Excel');
+    } finally {
+      setExportingIvakhinStatuses(false);
     }
   };
 
@@ -1532,6 +1980,7 @@ export default function DashboardsPage() {
   const chartJoConv      = data?.chart_jo_conversion || { month: [], quarter: [], year: [] };
   const chartAvgDaysTimeline = data?.chart_avg_days_timeline || { month: [], quarter: [], year: [] };
   const chartSalaries    = data?.chart_salaries    || { p25: 0, p50: 0, p75: 0, count: 0 };
+  const chartIvakhinStatuses = data?.chart_ivakhin_statuses || [];
 
   const bar2data = [
     { name: 'Всего',   value: chart2.total,  fill: T.sub   },
@@ -1544,27 +1993,315 @@ export default function DashboardsPage() {
   const DRILL_DOWN_EXCLUDE = new Set(['Закрыта', 'Hold', 'Отмена', 'Всего']);
   const chart6Details = chart6.filter(r => !DRILL_DOWN_EXCLUDE.has(r.status));
 
+  const cardRenderers = {
+    salary: () => (
+      <SalaryCard
+        data={chartSalaries}
+        isMobile={isMobile}
+        onFormulaClick={setActiveFormulaKey}
+      />
+    ),
+    donut_source: () => (
+      <DonutCard 
+        title="Источник найма" 
+        icon={<PieChartOutlined />} 
+        color={T.purple} 
+        data={chart1}
+        chartKey="source"
+        onFormulaClick={setActiveFormulaKey}
+        isMobile={isMobile}
+      />
+    ),
+    donut_replacement: () => (
+      <DonutCard 
+        title="Тип вакансии (Новая/Замена)" 
+        icon={<PieChartOutlined />} 
+        color={T.amber} 
+        data={chartReplacement}
+        chartKey="replacement"
+        onFormulaClick={setActiveFormulaKey}
+        isMobile={isMobile}
+      />
+    ),
+    donut_employment: () => (
+      <DonutCard 
+        title="Вид занятости" 
+        icon={<PieChartOutlined />} 
+        color={T.teal} 
+        data={chartEmployment}
+        chartKey="employment"
+        onFormulaClick={setActiveFormulaKey}
+        isMobile={isMobile}
+      />
+    ),
+    avg_timeline: () => (
+      <AvgDaysTimelineCard
+        data={chartAvgDaysTimeline}
+        isMobile={isMobile}
+        onFormulaClick={setActiveFormulaKey}
+      />
+    ),
+    jo_conversion: () => (
+      <JOConversionCard
+        data={chartJoConv}
+        isMobile={isMobile}
+        onFormulaClick={setActiveFormulaKey}
+      />
+    ),
+    recruiter_load: () => (
+      <RecruiterLoadCard
+        matrix={recruiterMatrix}
+        totals={recruiterTotals}
+        barData={chart8}
+        isMobile={isMobile}
+        onFormulaClick={setActiveFormulaKey}
+        onExportExcel={handleExportRecruiterLoad}
+        exportLoading={exportingRecruiterLoad}
+      />
+    ),
+    ivakhin_statuses: () => (
+      <IvakhinStatusesCard
+        monthsData={chartIvakhinStatuses}
+        isMobile={isMobile}
+        onFormulaClick={() => setActiveFormulaKey('statuses_ivakhin')}
+        onExportExcel={handleExportIvakhinStatuses}
+        exportLoading={exportingIvakhinStatuses}
+      />
+    ),
+    statuses_chart: () => (
+      <Card
+        style={CS} bodyStyle={CBS} headStyle={CHS}
+        title={<><PieChartOutlined style={{ marginRight: 8, color: T.blue }} />Вакансии по статусам</>}
+        extra={<FormulaButton chartKey="statuses" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
+      >
+        {bar2data.length === 0 ? <NoData /> : (
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={bar2data} barSize={52} margin={{ top: 16, right: 20, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+              <YAxis axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
+              <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                {bar2data.map((b, i) => <BCell key={i} fill={b.fill} />)}
+                <LabelList dataKey="value" position="top" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
+    ),
+    open_details: () => (
+      <Card
+        style={CS} bodyStyle={CBS} headStyle={CHS}
+        title={<><PieChartOutlined style={{ marginRight: 8 }} />Детализация «Открытых» вакансий</>}
+        extra={<FormulaButton chartKey="open_details" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
+      >
+        {!chart6Details.length ? (
+          <NoData text="Нет промежуточных статусов" />
+        ) : (
+          <ResponsiveContainer width="100%" height={Math.max(200, chart6Details.length * 48 + 24)}>
+            <BarChart data={chart6Details} layout="vertical" barSize={26}
+              margin={{ top: 4, right: isMobile ? 16 : 80, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+              <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <YAxis type="category" dataKey="status" width={isMobile ? 100 : 210} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+              <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
+              <Bar dataKey="value" radius={[0, 6, 6, 0]}>
+                {chart6Details.map((r, i) => (
+                  <BCell key={i} fill={STATUS_COLOR[r.status] || PALETTE[i % PALETTE.length]} />
+                ))}
+                <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
+    ),
+    funnel: () => (
+      <Card
+        style={CS} bodyStyle={CBS} headStyle={CHS}
+        title={<><FunnelPlotOutlined style={{ marginRight: 8, color: T.teal }} />Воронка найма</>}
+        extra={<FormulaButton chartKey="funnel" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
+      >
+        {chart3.every(r => r.value === 0) ? <NoData /> : (
+          <ResponsiveContainer width="100%" height={Math.max(260, chart3.length * 42 + 20)}>
+            <BarChart data={chart3} layout="vertical" barSize={24} margin={{ top: 4, right: isMobile ? 40 : 115, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+              <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <YAxis type="category" dataKey="stage" width={isMobile ? 110 : 175} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub, fontWeight: 500 }} />
+              <RTooltip
+                cursor={{ fill: 'rgba(128,128,128,0.15)' }}
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                      <div style={{ color: T.sub }}>Кандидатов: <b style={{ color: T.teal }}>{d.value}</b></div>
+                      {d.conv_step !== undefined && d.stage !== 'Передано заказчику' && (
+                        <div style={{ color: T.sub, marginTop: 2 }}>Конверсия с пред. этапа: <b style={{ color: T.text }}>{d.conv_step}%</b></div>
+                      )}
+                      {d.conv_total !== undefined && (
+                        <div style={{ color: T.sub, marginTop: 2 }}>Общая конверсия от старта: <b style={{ color: T.text }}>{d.conv_total}%</b></div>
+                      )}
+                    </div>
+                  );
+                }}
+              />
+              <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+                {chart3.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                <LabelList
+                  dataKey="value"
+                  position="right"
+                  formatter={(val, entry) => {
+                    const d = entry?.payload || {};
+                    if (d.conv_step !== undefined && d.stage !== 'Передано заказчику') {
+                      return `${val} (${d.conv_step}%)`;
+                    }
+                    return `${val}`;
+                  }}
+                  style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
+    ),
+    rejections: () => (
+      <RejectionReasonsCard
+        data={chartRejections}
+        isMobile={isMobile}
+        onFormulaClick={setActiveFormulaKey}
+      />
+    ),
+    companies: () => (
+      <Card
+        style={CS} bodyStyle={CBS} headStyle={CHS}
+        title={<><BankOutlined style={{ marginRight: 8, color: T.blue }} />Топ-15 компаний кандидатов</>}
+        extra={<FormulaButton chartKey="companies" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
+      >
+        {!chart4.length ? <NoData text="Нет данных о компаниях кандидатов" /> : (
+          <ResponsiveContainer width="100%" height={Math.max(220, chart4.length * 36 + 40)}>
+            <BarChart data={chart4} layout="vertical" barSize={22}
+              margin={{ top: 4, right: isMobile ? 16 : 72, bottom: 4, left: 16 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+              <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <YAxis type="category" dataKey="company" width={isMobile ? 90 : 150} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+              <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
+              <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+                {chart4.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
+    ),
+    avg_days_role: () => (
+      <Card
+        style={CS} bodyStyle={CBS} headStyle={CHS}
+        title={<><FieldTimeOutlined style={{ marginRight: 8, color: T.amber }} />Средний срок закрытия (раб. дни)</>}
+        extra={
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Radio.Group size="small" value={groupBy} onChange={e => setGroupBy(e.target.value)} buttonStyle="solid">
+              <Radio.Button value="it_role">По ИТ ролям</Radio.Button>
+              <Radio.Button value="level">По Уровням</Radio.Button>
+            </Radio.Group>
+            <FormulaButton chartKey="avg_days" onOpen={setActiveFormulaKey} isMobile={isMobile} />
+          </div>
+        }
+      >
+        {!chart5.length ? <NoData text="Нет данных по закрытым вакансиям" /> : (
+          <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+            <div style={{ height: Math.max(220, chart5.length * 36 + 30) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chart5} layout="vertical" barSize={20}
+                  margin={{ top: 4, right: isMobile ? 16 : 90, bottom: 4, left: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+                  <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+                  <YAxis type="category" dataKey="label" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+                  <RTooltip
+                    cursor={{ fill: 'rgba(128,128,128,0.15)' }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const d = payload[0].payload;
+                      return (
+                        <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
+                          <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
+                          <div style={{ color: T.sub }}>Средний срок: <b style={{ color: T.amber }}>{d.avg_days} раб. дн.</b></div>
+                          <div style={{ color: T.sub }}>Вакансий: <b>{d.count}</b></div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="avg_days" fill={T.amber} radius={[0, 5, 5, 0]}>
+                    <LabelList dataKey="avg_days" position="right"
+                      formatter={v => `${v} д.`}
+                      style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+      </Card>
+    ),
+    levels: () => (
+      <Card
+        style={CS} bodyStyle={CBS} headStyle={CHS}
+        title={<><TeamOutlined style={{ marginRight: 8, color: T.blue }} />Распределение вакансий по уровню ИТ роли</>}
+        extra={<FormulaButton chartKey="levels" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
+      >
+        {!chartLevels.length ? <NoData text="Нет данных по уровням" /> : (
+          <ResponsiveContainer width="100%" height={Math.max(260, chartLevels.length * 42 + 20)}>
+            <BarChart data={chartLevels} layout="vertical" barSize={24}
+              margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 16 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
+              <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
+              <YAxis type="category" dataKey="level" width={isMobile ? 100 : 160} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
+              <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
+              <Bar dataKey="value" radius={[0, 5, 5, 0]}>
+                {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
+    ),
+  };
+
   return (
     <div style={{ padding: isMobile ? '12px 8px' : '20px 24px', background: T.bg, minHeight: '100vh' }}>
 
-      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <Title level={4} style={{ margin: 0, fontWeight: 700, color: T.text }}>Аналитика и дашборды</Title>
-          <Text style={{ color: T.muted, fontSize: 13 }}>Агрегированная статистика по всем вакансиям</Text>
         </div>
-        <Button 
-          type="primary" 
-          icon={<ReloadOutlined />} 
-          onClick={() => refetch()} 
-          loading={isFetching}
-          style={{ borderRadius: 6 }}
-        >
-          Обновить
-        </Button>
+        <Space>
+          <Button 
+            type="primary" 
+            icon={<ReloadOutlined />} 
+            onClick={() => refetch()} 
+            loading={isFetching}
+            style={{ borderRadius: 6 }}
+          >
+            Обновить
+          </Button>
+          <Tooltip title={isConfigMode ? 'Завершить настройку' : 'Настройка дашбордов'}>
+            <Button 
+              icon={<SettingOutlined />}
+              type={isConfigMode ? 'primary' : 'default'}
+              onClick={() => setIsConfigMode(!isConfigMode)}
+              style={{ borderRadius: 6 }}
+            />
+          </Tooltip>
+        </Space>
       </div>
 
       <Card
-        style={{ borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 20 }}
+        style={{ borderRadius: 10, border: `1px solid ${T.border}`, marginBottom: 16 }}
         bodyStyle={{ padding: '14px 20px' }}
       >
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
@@ -1606,6 +2343,50 @@ export default function DashboardsPage() {
         </div>
       </Card>
 
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        style={{ marginBottom: 16 }}
+        items={[
+          { key: 'all', label: 'Все' },
+          { key: 'statuses', label: 'Статусы и загрузка' },
+          { key: 'funnel', label: 'Воронка и конверсия' },
+          { key: 'analytics', label: 'Сроки и структура' },
+        ]}
+      />
+
+      {isConfigMode && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16, borderRadius: 8 }}
+          message={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <span style={{ fontSize: 13 }}>
+                <b>Режим настройки активен:</b> перетаскивайте карточки мышью за маркер <b>⠿</b> или меняйте порядок кнопками <b>← / →</b>, а также настраивайте ширину. Изменения сохраняются автоматически.
+              </span>
+              <Space>
+                <Button
+                  size="small"
+                  icon={<UndoOutlined />}
+                  onClick={resetCurrentTabLayout}
+                >
+                  Сбросить по умолчанию
+                </Button>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<CheckOutlined />}
+                  onClick={() => setIsConfigMode(false)}
+                >
+                  Готово
+                </Button>
+              </Space>
+            </div>
+          }
+        />
+      )}
+
       {isLoading && !data ? (
         <Row gutter={[20, 20]}>
           <Col xs={24} lg={24}><Card style={CS}><Skeleton active paragraph={{ rows: 2 }} /></Card></Col>
@@ -1619,302 +2400,109 @@ export default function DashboardsPage() {
         </Row>
       ) : (
         <Row gutter={[20, 20]}>
+          {currentCards.map((card, index) => {
+            const renderer = cardRenderers[card.id];
+            if (!renderer) return null;
+            const isDragging = draggedIndex === index;
+            const isOver = dragOverIndex === index;
 
-          {/* 0. Медианная ЗП (Gross) */}
-          <Col xs={24} lg={24}>
-            <SalaryCard
-              data={chartSalaries}
-              isMobile={isMobile}
-              onFormulaClick={setActiveFormulaKey}
-            />
-          </Col>
-
-          {/* 1. Источник найма */}
-          <Col xs={24} lg={8}>
-            <DonutCard 
-              title="Источник найма" 
-              icon={<PieChartOutlined />} 
-              color={T.purple} 
-              data={chart1}
-              chartKey="source"
-              onFormulaClick={setActiveFormulaKey}
-              isMobile={isMobile}
-            />
-          </Col>
-
-          {/* 2. Тип вакансии (Новая/Замена) */}
-          <Col xs={24} lg={8}>
-            <DonutCard 
-              title="Тип вакансии (Новая/Замена)" 
-              icon={<PieChartOutlined />} 
-              color={T.amber} 
-              data={chartReplacement}
-              chartKey="replacement"
-              onFormulaClick={setActiveFormulaKey}
-              isMobile={isMobile}
-            />
-          </Col>
-
-          {/* 3. Вид занятости */}
-          <Col xs={24} lg={8}>
-            <DonutCard 
-              title="Вид занятости" 
-              icon={<PieChartOutlined />} 
-              color={T.teal} 
-              data={chartEmployment}
-              chartKey="employment"
-              onFormulaClick={setActiveFormulaKey}
-              isMobile={isMobile}
-            />
-          </Col>
-
-          {/* 4. Вторая линия — Конверсия принятия JO */}
-          <Col xs={24} lg={24}>
-            <JOConversionCard
-              data={chartJoConv}
-              isMobile={isMobile}
-              onFormulaClick={setActiveFormulaKey}
-            />
-          </Col>
-
-          {/* Динамика среднего срока закрытия (раб. дни) */}
-          <Col xs={24} lg={24}>
-            <AvgDaysTimelineCard
-              data={chartAvgDaysTimeline}
-              isMobile={isMobile}
-              onFormulaClick={setActiveFormulaKey}
-            />
-          </Col>
-
-          {/* 5. Загрузка рекрутеров */}
-          <Col xs={24} lg={24}>
-            <RecruiterLoadCard
-              matrix={recruiterMatrix}
-              totals={recruiterTotals}
-              barData={chart8}
-              isMobile={isMobile}
-              onFormulaClick={setActiveFormulaKey}
-              onExportExcel={handleExportRecruiterLoad}
-              exportLoading={exportingRecruiterLoad}
-            />
-          </Col>
-
-          {/* 7. Детализация «Открытых» вакансий */}
-          <Col xs={24} lg={12}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><PieChartOutlined style={{ marginRight: 8 }} />Детализация «Открытых» вакансий</>}
-              extra={<FormulaButton chartKey="open_details" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {!chart6Details.length ? (
-                <NoData text="Нет промежуточных статусов" />
-              ) : (
-                <ResponsiveContainer width="100%" height={Math.max(200, chart6Details.length * 48 + 24)}>
-                  <BarChart data={chart6Details} layout="vertical" barSize={26}
-                    margin={{ top: 4, right: isMobile ? 16 : 80, bottom: 4, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <YAxis type="category" dataKey="status" width={isMobile ? 100 : 210} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
-                    <Bar dataKey="value" radius={[0, 6, 6, 0]}>
-                      {chart6Details.map((r, i) => (
-                        <BCell key={i} fill={STATUS_COLOR[r.status] || PALETTE[i % PALETTE.length]} />
-                      ))}
-                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          </Col>
-
-          {/* 8. Вакансии по статусам */}
-          <Col xs={24} lg={12}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><PieChartOutlined style={{ marginRight: 8, color: T.blue }} />Вакансии по статусам</>}
-              extra={<FormulaButton chartKey="statuses" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {bar2data.length === 0 ? <NoData /> : (
-                <ResponsiveContainer width="100%" height={230}>
-                  <BarChart data={bar2data} barSize={52} margin={{ top: 16, right: 20, bottom: 4, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                    <YAxis axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
-                    <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                      {bar2data.map((b, i) => <BCell key={i} fill={b.fill} />)}
-                      <LabelList dataKey="value" position="top" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          </Col>
-
-          {/* 9. Воронка найма */}
-          <Col xs={24} lg={14}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><FunnelPlotOutlined style={{ marginRight: 8, color: T.teal }} />Воронка найма</>}
-              extra={<FormulaButton chartKey="funnel" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {chart3.every(r => r.value === 0) ? <NoData /> : (
-                <ResponsiveContainer width="100%" height={Math.max(260, chart3.length * 42 + 20)}>
-                  <BarChart data={chart3} layout="vertical" barSize={24} margin={{ top: 4, right: isMobile ? 40 : 115, bottom: 4, left: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <YAxis type="category" dataKey="stage" width={isMobile ? 110 : 175} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub, fontWeight: 500 }} />
-                    <RTooltip
-                      cursor={{ fill: 'rgba(128,128,128,0.15)' }}
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload?.length) return null;
-                        const d = payload[0].payload;
-                        return (
-                          <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
-                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-                            <div style={{ color: T.sub }}>Кандидатов: <b style={{ color: T.teal }}>{d.value}</b></div>
-                            {d.conv_step !== undefined && d.stage !== 'Передано заказчику' && (
-                              <div style={{ color: T.sub, marginTop: 2 }}>Конверсия с пред. этапа: <b style={{ color: T.text }}>{d.conv_step}%</b></div>
-                            )}
-                            {d.conv_total !== undefined && (
-                              <div style={{ color: T.sub, marginTop: 2 }}>Общая конверсия от старта: <b style={{ color: T.text }}>{d.conv_total}%</b></div>
-                            )}
-                          </div>
-                        );
+            return (
+              <Col
+                key={card.id}
+                xs={24}
+                lg={card.size || DASHBOARD_CARDS_MAP[card.id]?.defaultSize || 24}
+                style={{
+                  transition: 'opacity 0.2s ease',
+                  opacity: isDragging ? 0.35 : 1,
+                }}
+              >
+                <div
+                  onDragOver={(e) => isConfigMode && handleDragOver(e, index)}
+                  onDrop={(e) => isConfigMode && handleDrop(e, index)}
+                  style={{
+                    height: '100%',
+                    position: 'relative',
+                    borderRadius: 10,
+                    outline: isConfigMode && isOver ? '2px dashed #1677ff' : 'none',
+                    outlineOffset: 4,
+                  }}
+                >
+                  {isConfigMode && (
+                    <div
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragEnd={handleDragEnd}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '6px 12px',
+                        marginBottom: 8,
+                        background: isDarkMode ? '#1e293b' : '#f8fafc',
+                        border: `1px solid ${isDarkMode ? '#334155' : '#cbd5e1'}`,
+                        borderRadius: 8,
+                        cursor: 'grab',
+                        userSelect: 'none',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                       }}
-                    />
-                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
-                      {chart3.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                      <LabelList
-                        dataKey="value"
-                        position="right"
-                        formatter={(val, entry) => {
-                          const d = entry?.payload || {};
-                          if (d.conv_step !== undefined && d.stage !== 'Передано заказчику') {
-                            return `${val} (${d.conv_step}%)`;
-                          }
-                          return `${val}`;
-                        }}
-                        style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }}
-                      />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          </Col>
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <HolderOutlined style={{ color: '#1677ff', fontSize: 16, cursor: 'grab' }} />
+                        <span style={{
+                          fontWeight: 600,
+                          fontSize: 13,
+                          color: isDarkMode ? '#f1f5f9' : '#1e293b',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>
+                          {DASHBOARD_CARDS_MAP[card.id]?.title || card.id}
+                        </span>
+                      </div>
 
-          {/* 10. Причины отказа */}
-          <Col xs={24} lg={10}>
-            <RejectionReasonsCard
-              data={chartRejections}
-              isMobile={isMobile}
-              onFormulaClick={setActiveFormulaKey}
-            />
-          </Col>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        <Button.Group size="small">
+                          <Tooltip title="Сдвинуть влево/выше">
+                            <Button
+                              size="small"
+                              disabled={index === 0}
+                              icon={<ArrowLeftOutlined />}
+                              onClick={() => moveCard(index, index - 1)}
+                            />
+                          </Tooltip>
+                          <Tooltip title="Сдвинуть вправо/ниже">
+                            <Button
+                              size="small"
+                              disabled={index === currentCards.length - 1}
+                              icon={<ArrowRightOutlined />}
+                              onClick={() => moveCard(index, index + 1)}
+                            />
+                          </Tooltip>
+                        </Button.Group>
 
-          {/* 11. Топ-15 компаний кандидатов */}
-          <Col xs={24} lg={12}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><BankOutlined style={{ marginRight: 8, color: T.blue }} />Топ-15 компаний кандидатов</>}
-              extra={<FormulaButton chartKey="companies" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {!chart4.length ? <NoData text="Нет данных о компаниях кандидатов" /> : (
-                <ResponsiveContainer width="100%" height={Math.max(220, chart4.length * 36 + 40)}>
-                  <BarChart data={chart4} layout="vertical" barSize={22}
-                    margin={{ top: 4, right: isMobile ? 16 : 72, bottom: 4, left: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <YAxis type="category" dataKey="company" width={isMobile ? 90 : 150} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
-                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
-                      {chart4.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          </Col>
-
-          {/* 12. Средний срок закрытия (раб. дни) */}
-          <Col xs={24} lg={12}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><FieldTimeOutlined style={{ marginRight: 8, color: T.amber }} />Средний срок закрытия (раб. дни)</>}
-              extra={
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                  <Radio.Group size="small" value={groupBy} onChange={e => setGroupBy(e.target.value)} buttonStyle="solid">
-                    <Radio.Button value="it_role">По ИТ ролям</Radio.Button>
-                    <Radio.Button value="level">По Уровням</Radio.Button>
-                  </Radio.Group>
-                  <FormulaButton chartKey="avg_days" onOpen={setActiveFormulaKey} isMobile={isMobile} />
-                </div>
-              }
-            >
-              {!chart5.length ? <NoData text="Нет данных по закрытым вакансиям" /> : (
-                <div style={{ maxHeight: 520, overflowY: 'auto' }}>
-                  <div style={{ height: Math.max(220, chart5.length * 36 + 30) }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chart5} layout="vertical" barSize={20}
-                        margin={{ top: 4, right: isMobile ? 16 : 90, bottom: 4, left: 8 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                        <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                        <YAxis type="category" dataKey="label" width={isMobile ? 100 : 175} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                        <RTooltip
-                          cursor={{ fill: 'rgba(128,128,128,0.15)' }}
-                          content={({ active, payload, label }) => {
-                            if (!active || !payload?.length) return null;
-                            const d = payload[0].payload;
-                            return (
-                              <div style={{ background: 'var(--card-bg)', border: `1px solid ${T.border}`, borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)' }}>
-                                <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>
-                                <div style={{ color: T.sub }}>Средний срок: <b style={{ color: T.amber }}>{d.avg_days} раб. дн.</b></div>
-                                <div style={{ color: T.sub }}>Вакансий: <b>{d.count}</b></div>
-                              </div>
-                            );
-                          }}
+                        <Select
+                          size="small"
+                          value={card.size || DASHBOARD_CARDS_MAP[card.id]?.defaultSize || 24}
+                          onChange={(val) => updateCardSize(index, val)}
+                          style={{ width: 110 }}
+                          options={[
+                            { value: 8, label: '33% (1/3)' },
+                            { value: 10, label: '40%' },
+                            { value: 12, label: '50% (1/2)' },
+                            { value: 14, label: '60%' },
+                            { value: 16, label: '66% (2/3)' },
+                            { value: 24, label: '100% (Вся)' },
+                          ]}
                         />
-                        <Bar dataKey="avg_days" fill={T.amber} radius={[0, 5, 5, 0]}>
-                          <LabelList dataKey="avg_days" position="right"
-                            formatter={v => `${v} д.`}
-                            style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {renderer()}
                 </div>
-              )}
-            </Card>
-          </Col>
-
-          {/* 13. Распределение вакансий по уровню ИТ роли */}
-          <Col xs={24} lg={24}>
-            <Card
-              style={CS} bodyStyle={CBS} headStyle={CHS}
-              title={<><TeamOutlined style={{ marginRight: 8, color: T.blue }} />Распределение вакансий по уровню ИТ роли</>}
-              extra={<FormulaButton chartKey="levels" onOpen={setActiveFormulaKey} isMobile={isMobile} />}
-            >
-              {!chartLevels.length ? <NoData text="Нет данных по уровням" /> : (
-                <ResponsiveContainer width="100%" height={Math.max(220, chartLevels.length * 42 + 20)}>
-                  <BarChart data={chartLevels} layout="vertical" barSize={24}
-                    margin={{ top: 4, right: isMobile ? 16 : 64, bottom: 4, left: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
-                    <XAxis type="number" axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_NUM, fill: T.muted }} />
-                    <YAxis type="category" dataKey="level" width={isMobile ? 100 : 160} axisLine={false} tickLine={false} style={{ fontSize: FS_AXIS_LABEL, fill: T.sub }} />
-                    <RTooltip content={<BarTip />} cursor={{ fill: 'rgba(128,128,128,0.15)' }} />
-                    <Bar dataKey="value" radius={[0, 5, 5, 0]}>
-                      {chartLevels.map((_, i) => <BCell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                      <LabelList dataKey="value" position="right" style={{ fontWeight: 700, fontSize: FS_BAR_VAL, fill: T.text }} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </Card>
-          </Col>
-
+              </Col>
+            );
+          })}
         </Row>
       )}
 

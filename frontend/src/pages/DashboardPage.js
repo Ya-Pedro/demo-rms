@@ -242,15 +242,13 @@ const DashboardPage = () => {
         'source', 'employment_type', 'replacement_type', 'feasibility',
         'block', 'admin_manager', 'internal_transfer', 'offer_rejection_reason'
       ];
+      const responses = await Promise.all(
+        types.map(t => api.get(`/dictionaries/by-type/${t}`).catch(() => ({ data: [] })))
+      );
       const results = {};
-      for (const type of types) {
-        try {
-          const response = await api.get(`/dictionaries/by-type/${type}`);
-          results[type] = response.data;
-        } catch (e) {
-          results[type] = [];
-        }
-      }
+      types.forEach((type, idx) => {
+        results[type] = responses[idx]?.data || [];
+      });
       setDictionaries(results);
     } catch (error) {
       console.error('Failed to load dictionaries:', error);

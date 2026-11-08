@@ -309,15 +309,17 @@ const LoginPage = () => {
 
       <div style={{
         position: 'fixed',
-        bottom: 16,
+        bottom: 12,
         right: 16,
         fontSize: 12,
-        color: '#94a3b8',
-        fontWeight: 400,
-        background: 'rgba(255, 255, 255, 0.08)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        color: '#475569',
+        fontWeight: 500,
+        background: 'rgba(255, 255, 255, 0.85)',
+        border: '1px solid rgba(255, 255, 255, 0.5)',
         padding: '3px 8px',
         borderRadius: 4,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+        backdropFilter: 'blur(8px)',
       }}>
         RMS v{APP_VERSION}
       </div>
