@@ -251,6 +251,27 @@ def generate_recruiter_load_excel(matrix: list[dict], totals: dict) -> BytesIO:
     return output
 
 
+IVAKHIN_PREFERRED_BLOCKS = [
+    "эксплуатация",
+    "блокразвитиеит",
+    "блокдиджитал",
+    "прочее",
+    "ауп",
+    "рткит+",
+    "комкластер",
+    "рдпру",
+]
+
+
+def _ivakhin_block_sort_key(item: dict) -> tuple:
+    name = (item.get("block") or "").strip()
+    norm = name.lower().replace(" ", "").replace("-", "")
+    for idx, target in enumerate(IVAKHIN_PREFERRED_BLOCKS):
+        if norm == target or norm.rstrip("+") == target.rstrip("+"):
+            return (0, idx, name.lower())
+    return (1, 0, name.lower())
+
+
 def _calculate_ivakhin_statuses(
     vacs,
     block_map: dict[int, str],
@@ -373,7 +394,7 @@ def _calculate_ivakhin_statuses(
                     "total": b_total,
                 })
 
-        blocks_list.sort(key=lambda x: (-x["open"], -x["total"], x["block"]))
+        blocks_list.sort(key=_ivakhin_block_sort_key)
 
         result.append({
             "id": f"{y}-{m:02d}",
