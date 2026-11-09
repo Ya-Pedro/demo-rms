@@ -200,10 +200,17 @@ def apply_vacancy_filters(
                                                                                 
     if search_vacancy_id:
         s_vid = str(search_vacancy_id).strip()
-        conditions.append(or_(
-            Vacancy.vacancy_id.ilike(f"%{s_vid}%"),
-            cast(Vacancy.id, String).ilike(f"%{s_vid}%"),
-        ))
+        if "," in s_vid:
+            ids = [x.strip() for x in s_vid.split(",") if x.strip()]
+            conditions.append(or_(
+                Vacancy.vacancy_id.in_(ids),
+                and_(Vacancy.vacancy_id.is_(None), cast(Vacancy.id, String).in_(ids)),
+            ))
+        else:
+            conditions.append(or_(
+                Vacancy.vacancy_id.ilike(s_vid),
+                and_(Vacancy.vacancy_id.is_(None), cast(Vacancy.id, String) == s_vid),
+            ))
 
     _text_filters = {
         "search_position_name": (Vacancy.position_name, search_position_name),

@@ -327,7 +327,7 @@ def _calculate_ivakhin_statuses(
 
             # 3. Hold on m_end (balance)
             is_hold = False
-            if o_d and o_d <= m_end:
+            if (o_d and o_d <= m_end) or (o_d is None and st_name == "Hold"):
                 if st_name == "Hold":
                     h_date = st_d
                     if not h_date or h_date <= m_end:
@@ -339,7 +339,7 @@ def _calculate_ivakhin_statuses(
                 m_hold += 1
 
             # 4. Open on m_end (balance)
-            if not is_hold and o_d and o_d <= m_end:
+            if not is_hold and ((o_d and o_d <= m_end) or (o_d is None and st_name not in ("Закрыта", "Отмена", "Hold"))):
                 was_open = False
                 if st_name not in ("Закрыта", "Отмена", "Hold"):
                     was_open = True
