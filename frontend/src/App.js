@@ -299,7 +299,7 @@ const MainLayout = ({ children }) => {
 
   const isSmtpManager = useMemo(() => {
     const email = (user?.email || '').trim().toLowerCase();
-    return email === 'yuliya.e.novikova@rt.ru' || user?.role === 'superadmin';
+    return email === 'yuliya.e.novikova@rt.ru';
   }, [user]);
 
   const refreshUser = async () => {

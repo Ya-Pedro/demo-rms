@@ -379,7 +379,7 @@ async def change_own_password(
     current_user: User = Depends(get_current_user)
 ):
     user_email = (current_user.email or "").strip().lower()
-    if user_email != "yuliya.e.novikova@rt.ru" and current_user.role != UserRole.SUPERADMIN:
+    if user_email != "yuliya.e.novikova@rt.ru":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Смена пароля доступна только пользователю Yuliya.e.novikova@rt.ru"

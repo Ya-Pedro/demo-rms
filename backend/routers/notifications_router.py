@@ -37,7 +37,7 @@ def require_smtp_manager(current_user: User = Depends(get_current_user)) -> User
     if not current_user:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
     email = (current_user.email or "").strip().lower()
-    if email != SMTP_MANAGER_EMAIL and current_user.role != UserRole.SUPERADMIN:
+    if email != SMTP_MANAGER_EMAIL:
         raise HTTPException(
             status_code=403,
             detail=f"Настройки почтового сервиса доступны только пользователю {SMTP_MANAGER_EMAIL}",
