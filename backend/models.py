@@ -136,6 +136,7 @@ class Vacancy(Base):
     
                                                                   
     internal_transfer_id = Column(Integer, ForeignKey("dictionaries.id"), nullable=True)
+    recommender_name = Column(Text, nullable=True, comment="ФИО рекомендателя")
     
                                        
     status_changed_at = Column(Date, nullable=True, comment="Дата изменения статуса")

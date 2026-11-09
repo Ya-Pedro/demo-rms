@@ -751,6 +751,11 @@ const DashboardPage = () => {
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
+                <HighlightFormItem editing={!!editingVacancy} name="recommender_name" label="ФИО рекомендателя">
+                  <Input placeholder="ФИО рекомендателя" allowClear />
+                </HighlightFormItem>
+              </Col>
+              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="block_id" label="Блок">
                   <Select popupMatchSelectWidth={false} options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>

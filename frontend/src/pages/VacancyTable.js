@@ -1149,6 +1149,12 @@ const VacancyTable = ({
         ...dictFilter(dictionaries.internal_transfer),
       },
       {
+        title: 'ФИО рекомендателя', dataIndex: 'recommender_name', key: 'recommender_name', ...mkSort('recommender_name'), width: 160, ellipsis: true,
+        render: (text) => text || '-',
+        filteredValue: fi.recommender_name || null,
+        ...TEXT_FILTER_DROPDOWN,
+      },
+      {
         title: 'Дата изм. статуса', dataIndex: 'status_changed_at', key: 'status_changed_at', ...mkSort('status_changed_at'),
         width: 120,
         render: (d) => d ? dayjs(d).format('DD.MM.YY') : '-',

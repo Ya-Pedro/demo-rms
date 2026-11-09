@@ -151,6 +151,7 @@ class VacancyBase(BaseModel):
     team_lead_text: Optional[str] = None
     source_id: Optional[int] = None
     internal_transfer_id: Optional[int] = None
+    recommender_name: Optional[str] = None
     status_changed_at: Optional[date] = None
     close_date: Optional[date] = None
     candidate_name: Optional[str] = None
@@ -217,6 +218,7 @@ class VacancyUpdate(BaseModel):
     team_lead_text: Optional[str] = None
     source_id: Optional[int] = None
     internal_transfer_id: Optional[int] = None
+    recommender_name: Optional[str] = None
     status_changed_at: Optional[date] = None
     close_date: Optional[date] = None
     candidate_name: Optional[str] = None
@@ -272,6 +274,7 @@ class VacancyResponse(BaseModel):
     team_lead_text: Optional[str] = None
     source_id: Optional[int] = None
     internal_transfer_id: Optional[int] = None
+    recommender_name: Optional[str] = None
     status_changed_at: Optional[date] = None
     close_date: Optional[date] = None
     candidate_name: Optional[str] = None

@@ -166,6 +166,7 @@ def build_excel_from_vacancies(
             "Город":                          v.city.value if v.city else (v.city_text or ""),
             "Источник найма":                 v.source.value if v.source else "",
             "Внутренний перевод":             v.internal_transfer.value if v.internal_transfer else "",
+            "ФИО рекомендателя":              v.recommender_name or "",
             "Дата изм. статуса":              v.status_changed_at.strftime("%d.%m.%Y") if v.status_changed_at else "",
             "Дата закрытия":                  v.close_date.strftime("%d.%m.%Y") if v.close_date else "",
             "ФИО кандидата":                  v.candidate_name or "",

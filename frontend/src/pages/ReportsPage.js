@@ -839,6 +839,13 @@ const ReportsPage = () => {
         render: v => v || '-',
       },
       {
+        title: 'ФИО рекомендателя', dataIndex: 'recommender_name', key: 'recommender_name', width: 160, ellipsis: true,
+        ...mkSort('recommender_name'),
+        filteredValue: fi['recommender_name'] || null,
+        ...TEXT_FILTER_DROPDOWN,
+        render: v => v || '-',
+      },
+      {
         title:'Дата изм. статуса', dataIndex:'status_changed_at', key:'status_changed_at', width:130,
         ...mkSort('status_changed_at'),
         filteredValue: fi['status_changed_at'] || null,

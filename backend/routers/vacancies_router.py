@@ -69,6 +69,7 @@ async def get_vacancies(
     search_offer_accepted: Optional[str] = Query(None),
     search_offer_rejection_reason: Optional[str] = Query(None),
     search_comment: Optional[str] = Query(None),
+    search_recommender_name: Optional[str] = Query(None),
     search_open_date: Optional[str] = Query(None),
     search_close_date: Optional[str] = Query(None),
     search_status_changed_at: Optional[str] = Query(None),
@@ -451,6 +452,12 @@ COLUMN_DEFINITIONS = [
         "type": "dict",
         "dict_type": "internal_transfer",
         "dict_title": "Внутренний перевод",
+    },
+    {
+        "field": "recommender_name",
+        "display": "ФИО рекомендателя",
+        "aliases": ["фио рекомендателя", "рекомендатель", "рекомендация", "recommender", "recommender_name"],
+        "type": "text",
     },
     {
         "field": "replacement_type_id",

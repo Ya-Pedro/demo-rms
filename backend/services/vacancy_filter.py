@@ -68,6 +68,7 @@ def apply_vacancy_filters(
     search_feasibility_text: Optional[str] = None,
     search_offer_rejection_reason: Optional[str] = None,
     search_comment: Optional[str] = None,
+    search_recommender_name: Optional[str] = None,
     search_recruiter: Optional[str] = None,
     search_co_recruiter: Optional[str] = None,
                             
@@ -224,6 +225,7 @@ def apply_vacancy_filters(
         "search_feasibility_text": (Vacancy.feasibility_text, search_feasibility_text),
         "search_offer_rejection_reason": (Vacancy.offer_rejection_reason, search_offer_rejection_reason),
         "search_comment": (Vacancy.comment, search_comment),
+        "search_recommender_name": (Vacancy.recommender_name, search_recommender_name),
     }
     for _name, (col, val) in _text_filters.items():
         if val:
@@ -362,6 +364,7 @@ def apply_vacancy_filters(
         conditions.append(
             (Vacancy.position_name.ilike(s))
             | (Vacancy.candidate_name.ilike(s))
+            | (Vacancy.recommender_name.ilike(s))
             | (Vacancy.vacancy_id.ilike(s))
             | (Vacancy.candidate_company.ilike(s))
         )

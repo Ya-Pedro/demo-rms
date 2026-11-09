@@ -48,6 +48,7 @@ FIELD_LABELS: dict[str, str] = {
     "salary_gross":            "Зарплата (Gross)",
     "source_id":               "Источник найма",
     "internal_transfer_id":    "Внутренний перевод",
+    "recommender_name":        "ФИО рекомендателя",
     "replacement_type_id":     "Новая/Замена",
     "employment_type_id":      "Вид занятости",
     "feasibility_id":          "ТЭО проекта",

@@ -80,6 +80,7 @@ def vacancy_to_dict(vacancy: Vacancy, metrics=None) -> dict:
         "city_text": vacancy.city_text,
         "source_id": vacancy.source_id,
         "internal_transfer_id": vacancy.internal_transfer_id,
+        "recommender_name": vacancy.recommender_name,
         "status_changed_at": vacancy.status_changed_at,
         "close_date": vacancy.close_date,
         "candidate_name": vacancy.candidate_name,
