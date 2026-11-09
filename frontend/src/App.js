@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, createContext, useMemo } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ConfigProvider, App as AntApp, Layout, Menu, Button, Dropdown, Space, Avatar, message, Modal, Drawer, theme, Badge } from 'antd';
+import { ConfigProvider, App as AntApp, Layout, Menu, Button, Dropdown, Space, Avatar, message, Modal, Drawer, theme } from 'antd';
 import {
   TableOutlined,
   UserOutlined,
@@ -18,7 +18,6 @@ import {
   EditOutlined,
   ApiOutlined,
   MailOutlined,
-  SendOutlined,
 } from '@ant-design/icons';
 
 export const ThemeContext = createContext({
@@ -297,48 +296,11 @@ const MainLayout = ({ children }) => {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [twoFactorOpen, setTwoFactorOpen] = useState(false);
   const [smtpModalOpen, setSmtpModalOpen] = useState(false);
-  const [smtpConnected, setSmtpConnected] = useState(null);
-  const [smtpStatusLoading, setSmtpStatusLoading] = useState(false);
-  const [smtpSendingTest, setSendingTest] = useState(false);
 
   const isSmtpManager = useMemo(() => {
     const email = (user?.email || '').trim().toLowerCase();
     return email === 'yuliya.e.novikova@rt.ru' || user?.role === 'superadmin';
   }, [user]);
-
-  const checkSmtpStatus = useCallback(async () => {
-    if (!isSmtpManager) return;
-    setSmtpStatusLoading(true);
-    try {
-      const res = await api.get('/notifications/smtp-settings');
-      setSmtpConnected(Boolean(res.data?.connected));
-    } catch (err) {
-      setSmtpConnected(false);
-    } finally {
-      setSmtpStatusLoading(false);
-    }
-  }, [isSmtpManager]);
-
-  useEffect(() => {
-    if (isSmtpManager) {
-      checkSmtpStatus();
-    }
-  }, [isSmtpManager, checkSmtpStatus]);
-
-  const handleSendQuickTestEmail = async () => {
-    setSendingTest(true);
-    try {
-      const res = await api.post('/notifications/smtp-send-test');
-      message.success(res.data?.message || 'Тестовое письмо успешно отправлено на вашу почту!');
-      setSmtpConnected(true);
-    } catch (err) {
-      const errMsg = err?.response?.data?.detail || 'Не удалось отправить тестовое письмо';
-      message.error(errMsg);
-      setSmtpConnected(false);
-    } finally {
-      setSendingTest(false);
-    }
-  };
 
   const refreshUser = async () => {
     try {
@@ -499,30 +461,11 @@ const MainLayout = ({ children }) => {
       onClick: () => setTwoFactorOpen(true),
     },
     ...(isSmtpManager ? [
-      { type: 'divider' },
       {
         key: 'smtp-settings',
         icon: <MailOutlined />,
-        label: (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <span>Пароль почты</span>
-            {smtpStatusLoading ? (
-              <Badge status="processing" text={<span style={{ fontSize: 11, color: isDarkMode ? '#8b949e' : '#64748b' }}>проверка</span>} />
-            ) : smtpConnected === true ? (
-              <Badge status="success" text={<span style={{ fontSize: 11, color: '#16a34a', fontWeight: 500 }}>Связь есть</span>} />
-            ) : smtpConnected === false ? (
-              <Badge status="error" text={<span style={{ fontSize: 11, color: '#dc2626', fontWeight: 500 }}>Нет связи</span>} />
-            ) : null}
-          </div>
-        ),
+        label: 'Пароль почты',
         onClick: () => setSmtpModalOpen(true),
-      },
-      {
-        key: 'smtp-test-email',
-        icon: <SendOutlined />,
-        label: smtpSendingTest ? 'Отправка теста...' : 'Тестовое письмо на почту',
-        disabled: smtpSendingTest,
-        onClick: handleSendQuickTestEmail,
       },
     ] : []),
     {
@@ -682,7 +625,6 @@ const MainLayout = ({ children }) => {
           open={smtpModalOpen}
           onClose={() => setSmtpModalOpen(false)}
           user={user}
-          onStatusChange={(data) => setSmtpConnected(Boolean(data?.connected))}
         />
       )}
     </Layout>
