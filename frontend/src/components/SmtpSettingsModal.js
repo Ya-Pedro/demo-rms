@@ -15,6 +15,22 @@ import { api } from '../App';
 
 const { Text } = Typography;
 
+const extractErrorMessage = (err, fallback = 'Произошла ошибка') => {
+  if (!err) return fallback;
+  const detail = err.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((d) => (typeof d === 'string' ? d : d?.msg || d?.type || JSON.stringify(d)))
+      .join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  if (typeof err.message === 'string') return err.message;
+  return fallback;
+};
+
 const SmtpSettingsModal = ({ open, onClose, user }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -77,8 +93,8 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
         connection_message: res.data.message,
       }));
     } catch (err) {
-      const detail = err.response?.data?.detail || err.message;
-      message.error(`Ошибка при проверке связи: ${detail}`);
+      const errorText = extractErrorMessage(err, 'Ошибка при проверке связи');
+      message.error(errorText);
     } finally {
       setTesting(false);
     }
@@ -110,7 +126,7 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
       } else {
         notification.warning({
           message: 'Пароль сохранен',
-          description: res.data.message,
+          description: res.data.message || 'Проверьте связь с почтовым сервером',
           placement: 'topRight',
           duration: 6,
         });
@@ -121,8 +137,8 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
       onClose();
     } catch (err) {
       if (err.errorFields) return;
-      const detail = err.response?.data?.detail || err.message;
-      message.error(`Ошибка сохранения: ${detail}`);
+      const errorText = extractErrorMessage(err, 'Ошибка сохранения');
+      message.error(errorText);
     } finally {
       setSaving(false);
     }
@@ -135,7 +151,7 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
         template: 'reminder',
       });
 
-      const recipient = res.data.recipient;
+      const recipient = res.data?.recipient || user?.email;
       notification.success({
         message: 'Тестовое письмо отправлено',
         description: `Письмо отправлено на адрес ${recipient}. Пожалуйста, проверьте папку «Входящие».`,
@@ -143,10 +159,10 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
         duration: 6,
       });
     } catch (err) {
-      const detail = err.response?.data?.detail || err.message;
+      const errorText = extractErrorMessage(err, 'Ошибка отправки тестового письма');
       notification.error({
         message: 'Ошибка отправки тестового письма',
-        description: String(detail),
+        description: errorText,
         placement: 'topRight',
         duration: 7,
       });

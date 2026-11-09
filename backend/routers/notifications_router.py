@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
@@ -105,9 +106,13 @@ async def get_smtp_settings(
     Доступно только Yuliya.e.novikova@rt.ru и супер-администраторам.
     """
     await load_smtp_settings_from_db(db)
-    connected, conn_msg = check_smtp_connection()
     pwd = get_smtp_setting("SMTP_PASSWORD", "")
     has_pwd = bool(pwd and "REPLACE_WITH" not in pwd)
+
+    if has_pwd:
+        connected, conn_msg = await asyncio.to_thread(check_smtp_connection)
+    else:
+        connected, conn_msg = False, "Пароль к почтовому сервису не задан"
 
     res = await db.execute(select(SystemSetting).where(SystemSetting.key == "SMTP_PASSWORD"))
     setting_row = res.scalar_one_or_none()
@@ -147,7 +152,9 @@ async def update_smtp_settings(
     prt = body.port or int(get_smtp_setting("SMTP_PORT", "465"))
     usr = body.username or get_smtp_setting("SMTP_USERNAME", "")
 
-    connected, conn_msg = check_smtp_connection(server=srv, port=prt, user=usr, pwd=new_pwd)
+    connected, conn_msg = await asyncio.to_thread(
+        check_smtp_connection, server=srv, port=prt, user=usr, pwd=new_pwd
+    )
 
     async def _upsert_setting(k: str, v: str, desc: str):
         res = await db.execute(select(SystemSetting).where(SystemSetting.key == k))
@@ -199,17 +206,19 @@ async def update_smtp_settings(
 
 @router.post("/smtp-test-connection")
 async def test_smtp_connection_endpoint(
-    body: SmtpTestConnectionRequest,
+    body: Optional[SmtpTestConnectionRequest] = None,
     current_user: User = Depends(require_smtp_manager),
 ):
     """
     Проверка связи с SMTP сервером с текущим или переданным паролем.
     """
-    connected, conn_msg = check_smtp_connection(
-        server=body.server,
-        port=body.port,
-        user=body.username,
-        pwd=body.password,
+    req = body or SmtpTestConnectionRequest()
+    connected, conn_msg = await asyncio.to_thread(
+        check_smtp_connection,
+        server=req.server,
+        port=req.port,
+        user=req.username,
+        pwd=req.password,
     )
     return {
         "connected": connected,
@@ -220,7 +229,7 @@ async def test_smtp_connection_endpoint(
 @router.post("/smtp-send-test")
 async def send_self_test_email(
     request: Request,
-    body: SmtpSelfTestRequest,
+    body: Optional[SmtpSelfTestRequest] = None,
     current_user: User = Depends(require_smtp_manager),
 ):
     """
@@ -235,8 +244,16 @@ async def send_self_test_email(
         if parsed.scheme and parsed.netloc:
             base_url = f"{parsed.scheme}://{parsed.netloc}"
 
+    template = (body.template if body and body.template else "reminder").lower()
+
+    if not is_smtp_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Почтовый сервис не настроен: пароль не задан. Сначала сохраните актуальный пароль.",
+        )
+
     results = {}
-    if body.template in ("registration", "all"):
+    if template in ("registration", "all"):
         reg_res = await send_registration_email(
             email=recipient,
             full_name=current_user.full_name or "Юлия Новикова",
@@ -244,19 +261,26 @@ async def send_self_test_email(
             base_url=base_url,
         )
         results["registration"] = {
-            "status": "sent" if reg_res else ("mock_printed" if not is_smtp_configured() else "failed"),
+            "status": "sent" if reg_res else "failed",
             "success": bool(reg_res),
         }
 
-    if body.template in ("reminder", "all"):
+    if template in ("reminder", "all"):
         rem_res = await send_recruiter_weekly_reminder([recipient], base_url=base_url)
         results["reminder"] = rem_res
+        if rem_res.get("failed", 0) > 0:
+            failed_list = rem_res.get("failed_recipients", [])
+            err_text = failed_list[0].get("error") if failed_list else "Ошибка отправки"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Не удалось отправить тестовое письмо: {err_text}",
+            )
 
     return {
         "success": True,
         "recipient": recipient,
-        "template": body.template,
-        "smtp_configured": is_smtp_configured(),
+        "message": f"Тестовое письмо успешно отправлено на {recipient}",
+        "template": template,
         "delivery": results,
     }
 

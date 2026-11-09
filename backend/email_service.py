@@ -94,12 +94,12 @@ def check_smtp_connection(
             context.verify_mode = ssl.CERT_NONE
 
         if use_ssl or prt == 465:
-            with smtplib.SMTP_SSL(srv, prt, context=context, timeout=8) as s:
+            with smtplib.SMTP_SSL(srv, prt, context=context, timeout=4) as s:
                 if use_cred and usr and password:
                     s.login(usr, password)
                 return True, "Связь с почтовым сервером установлена (авторизация успешна)"
         else:
-            with smtplib.SMTP(srv, prt, timeout=8) as s:
+            with smtplib.SMTP(srv, prt, timeout=4) as s:
                 s.ehlo()
                 if use_starttls:
                     s.starttls(context=context)
