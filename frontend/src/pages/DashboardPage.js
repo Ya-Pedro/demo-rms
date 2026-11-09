@@ -730,7 +730,7 @@ const DashboardPage = () => {
               </Col>
               <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="city_text" label="Город">
-                  <Input allowClear />
+                  <Input />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
@@ -751,16 +751,11 @@ const DashboardPage = () => {
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 12 : 6}>
-                <HighlightFormItem editing={!!editingVacancy} name="recommender_name" label="ФИО рекомендателя">
-                  <Input placeholder="ФИО рекомендателя" allowClear />
-                </HighlightFormItem>
-              </Col>
-              <Col span={isMobile ? 12 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="block_id" label="Блок">
                   <Select popupMatchSelectWidth={false} options={(dictionaries.block || []).map(d => ({ value: d.id, label: d.value }))} allowClear showSearch optionFilterProp="label" />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 12 : 6}>
+              <Col span={isMobile ? 24 : 12}>
                 <HighlightFormItem editing={!!editingVacancy} name="feasibility_id" label="ТЭО проекта">
                   <CreatableDictSelect
                     options={(dictionaries.feasibility || []).map(d => ({ value: d.id, label: d.value }))}
@@ -771,6 +766,22 @@ const DashboardPage = () => {
                         feasibility: [...(prev.feasibility || []), { id: newOpt.value, value: newOpt.label }],
                       }));
                     }}
+                  />
+                </HighlightFormItem>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={24}>
+                <HighlightFormItem editing={!!editingVacancy} name="offer_rejection_reason" label="Причина отказа от Оффера">
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    showSearch
+                    placeholder="Выберите причину(ы) отказа от оффера"
+                    options={rejectionReasonOptions}
+                    filterOption={(input, option) =>
+                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                    }
                   />
                 </HighlightFormItem>
               </Col>
@@ -789,7 +800,7 @@ const DashboardPage = () => {
               </Col>
               <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="team_lead_text" label="Тимлид">
-                  <Input allowClear />
+                  <Input />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 24 : 6}>
@@ -819,35 +830,24 @@ const DashboardPage = () => {
               </Col>
             </Row>
             <Row gutter={16}>
-              <Col span={isMobile ? 24 : 8}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="candidate_name" label="ФИО кандидата">
                   <Input />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 24 : 8}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="candidate_company" label="Компания кандидата">
                   <Input />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 24 : 8}>
+              <Col span={isMobile ? 24 : 6}>
                 <HighlightFormItem editing={!!editingVacancy} name="ex_employee_name" label="ФИО бывшего сотр.">
                   <Input />
                 </HighlightFormItem>
               </Col>
-            </Row>
-            <Row gutter={16}>
-              <Col span={24}>
-                <HighlightFormItem editing={!!editingVacancy} name="offer_rejection_reason" label="Причина отказа от Оффера">
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    showSearch
-                    placeholder="Выберите причину(ы) отказа от оффера"
-                    options={rejectionReasonOptions}
-                    filterOption={(input, option) =>
-                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                    }
-                  />
+              <Col span={isMobile ? 24 : 6}>
+                <HighlightFormItem editing={!!editingVacancy} name="recommender_name" label="ФИО рекомендателя">
+                  <Input placeholder="ФИО рекомендателя" />
                 </HighlightFormItem>
               </Col>
             </Row>

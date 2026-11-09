@@ -675,7 +675,8 @@ body {
 }
 
 /* Clean empty field highlight */
-.highlight-empty-field .ant-input,
+.highlight-empty-field .ant-input-affix-wrapper,
+.highlight-empty-field .ant-input:not(.ant-input-affix-wrapper .ant-input),
 .highlight-empty-field .ant-select-selector,
 .highlight-empty-field .ant-picker,
 .highlight-empty-field .ant-input-number {
@@ -684,7 +685,13 @@ body {
   box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.2) !important;
   transition: border-color 0.15s ease;
 }
-.highlight-empty-field .ant-input:hover,
+.highlight-empty-field .ant-input-affix-wrapper .ant-input {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.highlight-empty-field .ant-input-affix-wrapper:hover,
+.highlight-empty-field .ant-input:not(.ant-input-affix-wrapper .ant-input):hover,
 .highlight-empty-field .ant-select-selector:hover,
 .highlight-empty-field .ant-picker:hover,
 .highlight-empty-field .ant-input-number:hover {
