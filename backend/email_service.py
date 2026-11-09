@@ -2,6 +2,8 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 from pydantic import EmailStr
 from typing import Optional
 import os
+import smtplib
+import ssl
 import logging
 from email_templates import (
     get_recruiter_weekly_reminder_html,
@@ -12,27 +14,145 @@ from email_templates import (
 
 logger = logging.getLogger(__name__)
 
+_DYNAMIC_SMTP_SETTINGS: dict[str, str] = {}
+
+
+def get_smtp_setting(key: str, default: str = "") -> str:
+    if key in _DYNAMIC_SMTP_SETTINGS and _DYNAMIC_SMTP_SETTINGS[key] is not None:
+        return _DYNAMIC_SMTP_SETTINGS[key]
+    return os.environ.get(key, default)
+
+
+def set_dynamic_smtp_setting(key: str, val: str):
+    _DYNAMIC_SMTP_SETTINGS[key] = val
+    os.environ[key] = val
+
+
+def update_env_file(key: str, value: str):
+    """
+    Обновляет или добавляет переменную в .env файл на диске, если он существует.
+    """
+    candidates = ["/app/.env", os.path.join(os.path.dirname(__file__), ".env")]
+    for env_path in candidates:
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                found = False
+                new_lines = []
+                for line in lines:
+                    stripped = line.strip()
+                    if stripped.startswith(f"{key}=") or stripped.startswith(f"export {key}="):
+                        new_lines.append(f"{key}={value}\n")
+                        found = True
+                    else:
+                        new_lines.append(line)
+                if not found:
+                    new_lines.append(f"{key}={value}\n")
+                with open(env_path, "w", encoding="utf-8") as f:
+                    f.writelines(new_lines)
+                logger.info(f"Updated {key} in {env_path}")
+                break
+            except Exception as e:
+                logger.warning(f"Could not update {env_path}: {e}")
+
+
+def check_smtp_connection(
+    server: Optional[str] = None,
+    port: Optional[int] = None,
+    user: Optional[str] = None,
+    pwd: Optional[str] = None,
+    use_ssl: Optional[bool] = None,
+    use_starttls: Optional[bool] = None,
+) -> tuple[bool, str]:
+    """
+    Проверяет сетевое подключение, SSL/TLS рукопожатие и аутентификацию на SMTP сервере.
+    Возвращает (успех: bool, сообщение_или_ошибка: str).
+    """
+    srv = (server or get_smtp_setting("SMTP_SERVER", "")).strip()
+    prt = int(port if port is not None else get_smtp_setting("SMTP_PORT", "587"))
+    usr = (user if user is not None else get_smtp_setting("SMTP_USERNAME", "")).strip()
+    password = (pwd if pwd is not None else get_smtp_setting("SMTP_PASSWORD", "")).strip()
+
+    if use_ssl is None:
+        use_ssl = get_smtp_setting("SMTP_SSL_TLS", "False").lower() == "true"
+    if use_starttls is None:
+        use_starttls = get_smtp_setting("SMTP_STARTTLS", "True").lower() == "true"
+    use_cred = get_smtp_setting("SMTP_USE_CREDENTIALS", "True").lower() == "true"
+
+    if not srv:
+        return False, "SMTP сервер не настроен"
+
+    # Если заглушка
+    if "REPLACE_WITH" in password or not password:
+        return False, "Пароль к почтовому сервису не задан"
+
+    try:
+        context = ssl.create_default_context()
+        if not get_smtp_setting("SMTP_VALIDATE_CERTS", "True").lower() == "true":
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+
+        if use_ssl or prt == 465:
+            with smtplib.SMTP_SSL(srv, prt, context=context, timeout=8) as s:
+                if use_cred and usr and password:
+                    s.login(usr, password)
+                return True, "Связь с почтовым сервером установлена (авторизация успешна)"
+        else:
+            with smtplib.SMTP(srv, prt, timeout=8) as s:
+                s.ehlo()
+                if use_starttls:
+                    s.starttls(context=context)
+                    s.ehlo()
+                if use_cred and usr and password:
+                    s.login(usr, password)
+                return True, "Связь с почтовым сервером установлена (авторизация успешна)"
+    except smtplib.SMTPAuthenticationError as e:
+        err_text = e.smtp_error.decode("utf-8", errors="ignore") if hasattr(e, "smtp_error") and isinstance(e.smtp_error, bytes) else str(e)
+        return False, f"Ошибка авторизации: неверный пароль или логин ({err_text})"
+    except smtplib.SMTPConnectError as e:
+        return False, f"Не удалось подключиться к {srv}:{prt}: {e}"
+    except Exception as e:
+        return False, f"Сбой подключения: {type(e).__name__}: {e}"
+
+
+async def load_smtp_settings_from_db(db):
+    """
+    Загружает переопределенные системные настройки из БД при старте или запросе.
+    """
+    from models import SystemSetting
+    from sqlalchemy import select
+    try:
+        res = await db.execute(select(SystemSetting).where(SystemSetting.key.like("SMTP_%")))
+        rows = res.scalars().all()
+        for r in rows:
+            if r.value is not None:
+                _DYNAMIC_SMTP_SETTINGS[r.key] = r.value
+                os.environ[r.key] = r.value
+    except Exception as e:
+        logger.debug(f"Could not load smtp settings from DB: {e}")
+
 
 def get_mail_config() -> ConnectionConfig:
     return ConnectionConfig(
-        MAIL_USERNAME=os.environ.get("SMTP_USERNAME", ""),
-        MAIL_PASSWORD=os.environ.get("SMTP_PASSWORD", ""),
-        MAIL_FROM=os.environ.get("SMTP_FROM", "noreply@rms-system.ru"),
-        MAIL_PORT=int(os.environ.get("SMTP_PORT", 587)),
-        MAIL_SERVER=os.environ.get("SMTP_SERVER", "smtp.gmail.com"),
-        MAIL_STARTTLS=os.environ.get("SMTP_STARTTLS", "True").lower() == "true",
-        MAIL_SSL_TLS=os.environ.get("SMTP_SSL_TLS", "False").lower() == "true",
-        USE_CREDENTIALS=os.environ.get("SMTP_USE_CREDENTIALS", "True").lower() == "true",
-        VALIDATE_CERTS=os.environ.get("SMTP_VALIDATE_CERTS", "True").lower() == "true",
-        MAIL_FROM_NAME=os.environ.get("SMTP_FROM_NAME", "RMS Уведомления"),
+        MAIL_USERNAME=get_smtp_setting("SMTP_USERNAME", ""),
+        MAIL_PASSWORD=get_smtp_setting("SMTP_PASSWORD", ""),
+        MAIL_FROM=get_smtp_setting("SMTP_FROM", "noreply@rms-system.ru"),
+        MAIL_PORT=int(get_smtp_setting("SMTP_PORT", "587")),
+        MAIL_SERVER=get_smtp_setting("SMTP_SERVER", "smtp.gmail.com"),
+        MAIL_STARTTLS=get_smtp_setting("SMTP_STARTTLS", "True").lower() == "true",
+        MAIL_SSL_TLS=get_smtp_setting("SMTP_SSL_TLS", "False").lower() == "true",
+        USE_CREDENTIALS=get_smtp_setting("SMTP_USE_CREDENTIALS", "True").lower() == "true",
+        VALIDATE_CERTS=get_smtp_setting("SMTP_VALIDATE_CERTS", "True").lower() == "true",
+        MAIL_FROM_NAME=get_smtp_setting("SMTP_FROM_NAME", "RMS Уведомления"),
     )
 
 
 def is_smtp_configured() -> bool:
-    server = os.environ.get("SMTP_SERVER", "").strip()
-    user = os.environ.get("SMTP_USERNAME", "").strip()
-    pwd = os.environ.get("SMTP_PASSWORD", "").strip()
-    use_cred = os.environ.get("SMTP_USE_CREDENTIALS", "True").lower() == "true"
+    server = get_smtp_setting("SMTP_SERVER", "").strip()
+    user = get_smtp_setting("SMTP_USERNAME", "").strip()
+    pwd = get_smtp_setting("SMTP_PASSWORD", "").strip()
+    use_cred = get_smtp_setting("SMTP_USE_CREDENTIALS", "True").lower() == "true"
 
     if not server:
         return False

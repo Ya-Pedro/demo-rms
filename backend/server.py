@@ -115,7 +115,17 @@ async def lifespan(app: FastAPI):
     
     await init_db()
     logger.info("Database initialized")
-                                   
+
+    # Load dynamic system settings (e.g. SMTP credentials) from DB
+    try:
+        from database import AsyncSessionLocal
+        from email_service import load_smtp_settings_from_db
+        async with AsyncSessionLocal() as db_session:
+            await load_smtp_settings_from_db(db_session)
+        logger.info("Dynamic system settings loaded from database")
+    except Exception as e:
+        logger.warning(f"Could not load system settings from DB on startup: {e}")
+
     # Initialize and start Weekly Reminder Scheduler (Friday 13:00 MSK)
     scheduler_module.scheduler_instance = WeeklyReminderScheduler(redis_client=redis_client)
     scheduler_module.scheduler_instance.start()

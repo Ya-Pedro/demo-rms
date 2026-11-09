@@ -99,6 +99,15 @@ async def main():
 
     args = parser.parse_args()
 
+    # Load from DB if database is accessible
+    try:
+        from database import AsyncSessionLocal
+        from email_service import load_smtp_settings_from_db
+        async with AsyncSessionLocal() as session:
+            await load_smtp_settings_from_db(session)
+    except Exception:
+        pass
+
     print("\n" + "=" * 65)
     print("      ДИАГНОСТИКА И ТЕСТИРОВАНИЕ ОТПРАВКИ EMAIL В RMS      ")
     print("=" * 65)

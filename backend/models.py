@@ -358,5 +358,17 @@ class IntegrationToken(Base):
 
     created_by = relationship("User", foreign_keys=[created_by_id])
 
+class SystemSetting(Base):
+    """
+    Системные настройки (например, динамические параметры SMTP, пароли интеграций).
+    """
+    __tablename__ = "system_settings"
+
+    key = Column(String(128), primary_key=True, index=True)
+    value = Column(Text, nullable=True)
+    description = Column(String(255), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_by = Column(String(255), nullable=True)
+
 from middleware.audit import AuditLog                                         
 from services.refresh_token import RefreshToken                                        
