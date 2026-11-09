@@ -78,6 +78,15 @@ async def get_vacancies(
     search_close_date_to: Optional[str] = Query(None),
     search_status_changed_at_from: Optional[str] = Query(None),
     search_status_changed_at_to: Optional[str] = Query(None),
+    open_date: Optional[str] = Query(None),
+    close_date: Optional[str] = Query(None),
+    status_changed_at: Optional[str] = Query(None),
+    open_date_from: Optional[str] = Query(None),
+    open_date_to: Optional[str] = Query(None),
+    close_date_from: Optional[str] = Query(None),
+    close_date_to: Optional[str] = Query(None),
+    status_changed_at_from: Optional[str] = Query(None),
+    status_changed_at_to: Optional[str] = Query(None),
     sort_field: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
     sort_order: Optional[str] = Query("desc"),
@@ -92,6 +101,15 @@ async def get_vacancies(
                      if k not in ("db", "current_user", "skip", "limit",
                                   "sort_field", "sort_by", "sort_order", "week_number",
                                   "year", "start_date", "end_date")}
+    filter_params["search_open_date"] = filter_params.get("search_open_date") or open_date
+    filter_params["search_close_date"] = filter_params.get("search_close_date") or close_date
+    filter_params["search_status_changed_at"] = filter_params.get("search_status_changed_at") or status_changed_at
+    filter_params["search_open_date_from"] = filter_params.get("search_open_date_from") or open_date_from
+    filter_params["search_open_date_to"] = filter_params.get("search_open_date_to") or open_date_to
+    filter_params["search_close_date_from"] = filter_params.get("search_close_date_from") or close_date_from
+    filter_params["search_close_date_to"] = filter_params.get("search_close_date_to") or close_date_to
+    filter_params["search_status_changed_at_from"] = filter_params.get("search_status_changed_at_from") or status_changed_at_from
+    filter_params["search_status_changed_at_to"] = filter_params.get("search_status_changed_at_to") or status_changed_at_to
     service = VacancyService(db)
     vacancies, total, metrics_map = await service.list_vacancies(
         current_user=current_user, skip=skip, limit=limit,

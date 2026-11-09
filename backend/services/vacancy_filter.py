@@ -287,15 +287,38 @@ def apply_vacancy_filters(
             pass
 
                                                                                
+    _EMPTY_DATE_KEYWORDS = {
+        "empty", "null", "none", "is_null", "пусто", "без даты", "-",
+        "__empty__", "not_set", "undefined"
+    }
+
+    # Fallback to direct field names if passed via kwargs
+    search_open_date = search_open_date or kwargs.get("open_date")
+    search_close_date = search_close_date or kwargs.get("close_date")
+    search_status_changed_at = search_status_changed_at or kwargs.get("status_changed_at")
+    search_open_date_from = search_open_date_from or kwargs.get("open_date_from")
+    search_open_date_to = search_open_date_to or kwargs.get("open_date_to")
+    search_close_date_from = search_close_date_from or kwargs.get("close_date_from")
+    search_close_date_to = search_close_date_to or kwargs.get("close_date_to")
+    search_status_changed_at_from = search_status_changed_at_from or kwargs.get("status_changed_at_from")
+    search_status_changed_at_to = search_status_changed_at_to or kwargs.get("status_changed_at_to")
+
     _date_point_filters = {
         "search_open_date": (Vacancy.open_date, search_open_date),
         "search_close_date": (Vacancy.close_date, search_close_date),
         "search_status_changed_at": (Vacancy.status_changed_at, search_status_changed_at),
     }
     for _name, (col, val) in _date_point_filters.items():
-        if not val:
+        if val is None or val == "":
             continue
-        parsed = _parse_date(val)
+        v_str = str(val[0] if isinstance(val, (list, tuple)) else val).strip().lower()
+        if v_str in _EMPTY_DATE_KEYWORDS:
+            conditions.append(col.is_(None))
+            continue
+        if v_str in ("not_empty", "not_null", "is_not_null", "не пусто", "заполнено"):
+            conditions.append(col.is_not(None))
+            continue
+        parsed = _parse_date(v_str)
         if parsed:
             conditions.append(col == parsed)
 
@@ -306,12 +329,17 @@ def apply_vacancy_filters(
         (Vacancy.status_changed_at, search_status_changed_at_from, search_status_changed_at_to),
     ]
     for col, val_from, val_to in _date_range_filters:
+        vf_str = str(val_from[0] if isinstance(val_from, (list, tuple)) else val_from).strip().lower() if val_from else ""
+        vt_str = str(val_to[0] if isinstance(val_to, (list, tuple)) else val_to).strip().lower() if val_to else ""
+        if vf_str in _EMPTY_DATE_KEYWORDS or vt_str in _EMPTY_DATE_KEYWORDS:
+            conditions.append(col.is_(None))
+            continue
         if val_from:
-            parsed_from = _parse_date(val_from)
+            parsed_from = _parse_date(vf_str)
             if parsed_from:
                 conditions.append(col >= parsed_from)
         if val_to:
-            parsed_to = _parse_date(val_to)
+            parsed_to = _parse_date(vt_str)
             if parsed_to:
                 conditions.append(col <= parsed_to)
 

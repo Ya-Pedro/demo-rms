@@ -178,32 +178,56 @@ const getPopupContainer = () => document.body;
 
 const DateRangeFilterDropdown = ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
   const containerRef = React.useRef(null);
+  const isEmptySelected = selectedKeys?.[0] === 'empty';
+
   const parseRange = (keys) => {
     if (!keys || keys.length === 0) return [null, null];
+    if (keys[0] === 'empty') return [null, null];
     const [from, to] = (keys[0] || '').split('|');
     const d1 = from && dayjs(from, 'DD.MM.YY', true).isValid() ? dayjs(from, 'DD.MM.YY') : null;
     const d2 = to && dayjs(to, 'DD.MM.YY', true).isValid() ? dayjs(to, 'DD.MM.YY') : null;
     return [d1, d2];
   };
+
+  const handleCheckboxChange = (e) => {
+    if (e.target.checked) {
+      setSelectedKeys(['empty']);
+    } else {
+      setSelectedKeys([]);
+    }
+  };
+
+  const handleDateChange = (dates) => {
+    if (dates && dates[0] && dates[1]) {
+      setSelectedKeys([`${dates[0].format('DD.MM.YY')}|${dates[1].format('DD.MM.YY')}`]);
+    } else {
+      setSelectedKeys([]);
+    }
+  };
+
   return (
-    <div ref={containerRef} style={{ padding: '12px 16px' }}>
+    <div ref={containerRef} style={{ padding: '12px 16px', minWidth: 280 }}>
       <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13, color: 'var(--text-color)' }}>Выберите период</div>
       <DatePicker.RangePicker
         format="DD.MM.YYYY"
         placeholder={['Дата от', 'Дата до']}
         value={parseRange(selectedKeys)}
+        disabled={isEmptySelected}
         getPopupContainer={() => document.body}
-        style={{ width: 280, marginBottom: 10 }}
-        onChange={(dates) => {
-          if (dates && dates[0] && dates[1]) {
-            setSelectedKeys([`${dates[0].format('DD.MM.YY')}|${dates[1].format('DD.MM.YY')}`]);
-          } else {
-            setSelectedKeys([]);
-          }
-        }}
+        style={{ width: '100%', marginBottom: 10 }}
+        onChange={handleDateChange}
         allowClear
       />
-      <br />
+      <div style={{ marginBottom: 12 }}>
+        <Checkbox
+          checked={isEmptySelected}
+          onChange={handleCheckboxChange}
+        >
+          <span style={{ fontSize: 13, color: isEmptySelected ? '#1677ff' : 'inherit', fontWeight: isEmptySelected ? 600 : 400 }}>
+            Только пустые (без даты)
+          </span>
+        </Checkbox>
+      </div>
       <Space>
         <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 80 }}>Найти</Button>
         <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 80 }}>Сброс</Button>
@@ -393,7 +417,10 @@ const ReportsPage = () => {
         if (!vals || vals.length === 0) continue;
         if (DATE_FILTER_KEYS.has(key)) {
           const val = Array.isArray(vals) ? vals[0] : vals;
-          if (val != null && val !== '') {
+          if (val === 'empty' || val === 'null' || val === '__empty__') {
+            p.append(key, 'empty');
+            p.append(`search_${key}`, 'empty');
+          } else if (val != null && val !== '') {
             const parts = String(val).split('|');
             if (parts.length === 2) {
               const [from, to] = parts;
@@ -401,10 +428,17 @@ const ReportsPage = () => {
                 const d = dayjs(s, 'DD.MM.YY', true);
                 return d.isValid() ? d.format('YYYY-MM-DD') : s;
               };
-              if (from) p.append(`${key}_from`, parseDate(from));
-              if (to)   p.append(`${key}_to`,   parseDate(to));
+              if (from) {
+                p.append(`${key}_from`, parseDate(from));
+                p.append(`search_${key}_from`, parseDate(from));
+              }
+              if (to) {
+                p.append(`${key}_to`,   parseDate(to));
+                p.append(`search_${key}_to`,   parseDate(to));
+              }
             } else {
               p.append(key, String(val));
+              p.append(`search_${key}`, String(val));
             }
           }
         } else if (TEXT_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
@@ -574,7 +608,10 @@ const ReportsPage = () => {
         if (!vals || vals.length === 0) return;
         if (DATE_FILTER_KEYS.has(k)) {
           const val = Array.isArray(vals) ? vals[0] : vals;
-          if (val != null && val !== '') {
+          if (val === 'empty' || val === 'null' || val === '__empty__') {
+            p.append(k, 'empty');
+            p.append(`search_${k}`, 'empty');
+          } else if (val != null && val !== '') {
             const parts = String(val).split('|');
             if (parts.length === 2) {
               const [from, to] = parts;
@@ -582,10 +619,17 @@ const ReportsPage = () => {
                 const d = dayjs(s, 'DD.MM.YY', true);
                 return d.isValid() ? d.format('YYYY-MM-DD') : s;
               };
-              if (from) p.append(`${k}_from`, parseDate(from));
-              if (to)   p.append(`${k}_to`,   parseDate(to));
+              if (from) {
+                p.append(`${k}_from`, parseDate(from));
+                p.append(`search_${k}_from`, parseDate(from));
+              }
+              if (to) {
+                p.append(`${k}_to`,   parseDate(to));
+                p.append(`search_${k}_to`,   parseDate(to));
+              }
             } else {
               p.append(k, String(val));
+              p.append(`search_${k}`, String(val));
             }
           }
         } else if (TEXT_FILTER_KEYS.has(k) || NUMBER_FILTER_KEYS.has(k)) {
