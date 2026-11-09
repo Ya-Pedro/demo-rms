@@ -147,6 +147,7 @@ const TEXT_FILTER_KEYS = new Set([
   'vacancy_ext_id', 'vacancy_name', 'team_lead_name', 'city_name',
   'candidate_name', 'candidate_company', 'ex_employee_name', 'unit_id',
   'feasibility_name', 'iqhr_link', 'comment', 'offer_rejection_reason',
+  'recommender_name',
 ]);
 
 const REPORTS_FILTERS_KEY = 'rms_reports_filters';
@@ -443,7 +444,10 @@ const ReportsPage = () => {
           }
         } else if (TEXT_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
           const val = String(Array.isArray(vals) ? vals[0] : vals).trim();
-          if (val) p.append(key, val);
+          if (val) {
+            p.append(key, val);
+            p.append(`search_${key}`, val);
+          }
         } else {
           vals.forEach(v => p.append(key, String(v)));
         }
@@ -634,7 +638,10 @@ const ReportsPage = () => {
           }
         } else if (TEXT_FILTER_KEYS.has(k) || NUMBER_FILTER_KEYS.has(k)) {
           const val = String(Array.isArray(vals) ? vals[0] : vals).trim();
-          if (val) p.append(k, val);
+          if (val) {
+            p.append(k, val);
+            p.append(`search_${k}`, val);
+          }
         } else {
           vals.forEach(v => p.append(k, String(v)));
         }

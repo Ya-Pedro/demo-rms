@@ -69,6 +69,7 @@ def apply_vacancy_filters(
     search_offer_rejection_reason: Optional[str] = None,
     search_comment: Optional[str] = None,
     search_recommender_name: Optional[str] = None,
+    recommender_name: Optional[str] = None,
     search_recruiter: Optional[str] = None,
     search_co_recruiter: Optional[str] = None,
                             
@@ -214,22 +215,26 @@ def apply_vacancy_filters(
             ))
 
     _text_filters = {
-        "search_position_name": (Vacancy.position_name, search_position_name),
-        "search_candidate_name": (Vacancy.candidate_name, search_candidate_name),
-        "search_candidate_company": (Vacancy.candidate_company, search_candidate_company),
-        "search_ex_employee_name": (Vacancy.ex_employee_name, search_ex_employee_name),
-        "search_unit_id": (Vacancy.unit_id, search_unit_id),
-        "search_iqhr_link": (Vacancy.iqhr_link, search_iqhr_link),
-        "search_city_text": (Vacancy.city_text, search_city_text),
-        "search_team_lead_text": (Vacancy.team_lead_text, search_team_lead_text),
-        "search_feasibility_text": (Vacancy.feasibility_text, search_feasibility_text),
-        "search_offer_rejection_reason": (Vacancy.offer_rejection_reason, search_offer_rejection_reason),
-        "search_comment": (Vacancy.comment, search_comment),
-        "search_recommender_name": (Vacancy.recommender_name, search_recommender_name),
+        "search_position_name": (Vacancy.position_name, search_position_name or kwargs.get("position_name")),
+        "search_candidate_name": (Vacancy.candidate_name, search_candidate_name or kwargs.get("candidate_name")),
+        "search_candidate_company": (Vacancy.candidate_company, search_candidate_company or kwargs.get("candidate_company")),
+        "search_ex_employee_name": (Vacancy.ex_employee_name, search_ex_employee_name or kwargs.get("ex_employee_name")),
+        "search_unit_id": (Vacancy.unit_id, search_unit_id or kwargs.get("unit_id")),
+        "search_iqhr_link": (Vacancy.iqhr_link, search_iqhr_link or kwargs.get("iqhr_link")),
+        "search_city_text": (Vacancy.city_text, search_city_text or kwargs.get("city_text")),
+        "search_team_lead_text": (Vacancy.team_lead_text, search_team_lead_text or kwargs.get("team_lead_text")),
+        "search_feasibility_text": (Vacancy.feasibility_text, search_feasibility_text or kwargs.get("feasibility_text")),
+        "search_offer_rejection_reason": (Vacancy.offer_rejection_reason, search_offer_rejection_reason or kwargs.get("offer_rejection_reason")),
+        "search_comment": (Vacancy.comment, search_comment or kwargs.get("comment")),
+        "search_recommender_name": (Vacancy.recommender_name, search_recommender_name or recommender_name or kwargs.get("recommender_name")),
     }
     for _name, (col, val) in _text_filters.items():
-        if val:
-            conditions.append(col.ilike(f"%{val}%"))
+        if val is not None:
+            if isinstance(val, (list, tuple)):
+                val = val[0] if val else None
+            if val is not None and str(val).strip():
+                clean_val = str(val).strip()
+                conditions.append(col.ilike(f"%{clean_val}%"))
 
                                                                                 
     if search_quantity is not None:

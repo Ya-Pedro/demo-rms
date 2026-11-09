@@ -254,6 +254,8 @@ async def export_vacancies_excel(
     search_salary_gross: Optional[str] = Query(None),
     search_iqhr_link: Optional[str] = Query(None),
     search_feasibility_text: Optional[str] = Query(None),
+    search_recommender_name: Optional[str] = Query(None),
+    recommender_name: Optional[str] = Query(None),
 ):
     query = select(Vacancy).options(
         selectinload(Vacancy.recruiter),
@@ -305,6 +307,7 @@ async def export_vacancies_excel(
         search_salary_gross=search_salary_gross,
         search_iqhr_link=search_iqhr_link,
         search_feasibility_text=search_feasibility_text,
+        search_recommender_name=search_recommender_name or recommender_name,
     )
     query = query.order_by(Vacancy.id)
     result = await db.execute(query)

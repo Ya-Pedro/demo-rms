@@ -70,6 +70,7 @@ async def get_vacancies(
     search_offer_rejection_reason: Optional[str] = Query(None),
     search_comment: Optional[str] = Query(None),
     search_recommender_name: Optional[str] = Query(None),
+    recommender_name: Optional[str] = Query(None),
     search_open_date: Optional[str] = Query(None),
     search_close_date: Optional[str] = Query(None),
     search_status_changed_at: Optional[str] = Query(None),
@@ -102,6 +103,7 @@ async def get_vacancies(
                      if k not in ("db", "current_user", "skip", "limit",
                                   "sort_field", "sort_by", "sort_order", "week_number",
                                   "year", "start_date", "end_date")}
+    filter_params["search_recommender_name"] = filter_params.get("search_recommender_name") or recommender_name
     filter_params["search_open_date"] = filter_params.get("search_open_date") or open_date
     filter_params["search_close_date"] = filter_params.get("search_close_date") or close_date
     filter_params["search_status_changed_at"] = filter_params.get("search_status_changed_at") or status_changed_at

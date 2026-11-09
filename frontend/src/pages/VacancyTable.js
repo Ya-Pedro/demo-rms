@@ -193,7 +193,7 @@ const NUMBER_FILTER_DROPDOWN = {
 const TEXT_FILTER_KEYS = new Set([
   'vacancy_id', 'position_name', 'team_lead_text', 'city_text',
   'candidate_name', 'candidate_company', 'ex_employee_name', 'unit_id',
-  'comment', 'offer_rejection_reason', 'iqhr_link',
+  'comment', 'offer_rejection_reason', 'iqhr_link', 'recommender_name',
 ]);
 
 const VACANCY_FILTERS_KEY = 'rms_vacancy_filters';
@@ -644,7 +644,10 @@ const VacancyTable = ({
           }
         } else if (TEXT_FILTER_KEYS.has(key) || NUMBER_FILTER_KEYS.has(key)) {
           const val = Array.isArray(values) ? values[0] : values;
-          if (val != null && val !== '') sp.append(`search_${key}`, String(val));
+          if (val != null && val !== '') {
+            sp.append(`search_${key}`, String(val));
+            sp.append(key, String(val));
+          }
         } else {
           if (!Array.isArray(values)) continue;
           values.forEach(v => sp.append(key, String(v)));
