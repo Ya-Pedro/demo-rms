@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from database import get_db
-from models import User
+from models import User, UserRole
 from schemas import (
     LoginRequest, Token, UserResponse,
     ChangePasswordRequest, ForgotPasswordRequest, ChangeOwnPasswordRequest,
@@ -378,6 +378,12 @@ async def change_own_password(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    user_email = (current_user.email or "").strip().lower()
+    if user_email != "yuliya.e.novikova@rt.ru" and current_user.role != UserRole.SUPERADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Смена пароля доступна только пользователю Yuliya.e.novikova@rt.ru"
+        )
                                                                
     if not verify_password(data.current_password, current_user.hashed_password):
         raise HTTPException(

@@ -449,18 +449,18 @@ const MainLayout = ({ children }) => {
       onClick: toggleTheme,
     },
     {
-      key: 'change-password',
-      icon: <KeyOutlined />,
-      label: 'Сменить пароль',
-      onClick: () => setChangePasswordOpen(true),
-    },
-    {
       key: '2fa',
       icon: <SafetyCertificateOutlined />,
       label: user?.is_2fa_enabled ? '2FA: включена' : '2FA: настроить',
       onClick: () => setTwoFactorOpen(true),
     },
     ...(isSmtpManager ? [
+      {
+        key: 'change-password',
+        icon: <KeyOutlined />,
+        label: 'Сменить пароль',
+        onClick: () => setChangePasswordOpen(true),
+      },
       {
         key: 'smtp-settings',
         icon: <MailOutlined />,
@@ -600,11 +600,13 @@ const MainLayout = ({ children }) => {
       }}>
         {children}
       </Content>
-      <ChangePasswordModal
-        open={changePasswordOpen}
-        onSuccess={() => setChangePasswordOpen(false)}
-        forced={false}
-      />
+      {isSmtpManager && (
+        <ChangePasswordModal
+          open={changePasswordOpen}
+          onSuccess={() => setChangePasswordOpen(false)}
+          forced={false}
+        />
+      )}
       <Modal
         open={twoFactorOpen}
         onCancel={() => setTwoFactorOpen(false)}
