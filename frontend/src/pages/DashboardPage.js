@@ -154,7 +154,7 @@ const HighlightFormItem = (props) => {
     <Form.Item noStyle dependencies={[props.name]}>
       {({ getFieldValue }) => {
         const val = getFieldValue(props.name);
-        const isEmpty = val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0);
+        const isEmpty = props.name !== 'vacancy_id' && (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0));
         return (
           <Form.Item 
             {...props} 
@@ -682,9 +682,9 @@ const DashboardPage = () => {
             <div className="form-section-title">Основная информация</div>
             <Row gutter={16}>
               <Col span={isMobile ? 24 : 6}>
-              <HighlightFormItem editing={!!editingVacancy} name="vacancy_id" label="ID вакансии">
+                <Form.Item name="vacancy_id" label="ID вакансии">
                   <Input disabled placeholder={editingVacancy ? undefined : 'Автоматически'} />
-                </HighlightFormItem>
+                </Form.Item>
               </Col>
               <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="position_name" label="Вакансия" rules={[{ required: true }]}>
