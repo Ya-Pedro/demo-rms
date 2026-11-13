@@ -118,11 +118,11 @@ async def get_smtp_settings(
     setting_row = res.scalar_one_or_none()
 
     return {
-        "smtp_server": get_smtp_setting("SMTP_SERVER", "smtp.yandex.ru"),
-        "smtp_port": int(get_smtp_setting("SMTP_PORT", "465")),
+        "smtp_server": get_smtp_setting("SMTP_SERVER", "smtp.company.ru"),
+        "smtp_port": int(get_smtp_setting("SMTP_PORT", "587")),
         "smtp_username": get_smtp_setting("SMTP_USERNAME", ""),
         "smtp_from": get_smtp_setting("SMTP_FROM", ""),
-        "smtp_ssl_tls": get_smtp_setting("SMTP_SSL_TLS", "True").lower() == "true",
+        "smtp_ssl_tls": get_smtp_setting("SMTP_SSL_TLS", "False").lower() == "true",
         "password_configured": has_pwd,
         "is_smtp_configured": is_smtp_configured(),
         "connected": connected,
@@ -176,6 +176,20 @@ async def update_smtp_settings(
         await _upsert_setting("SMTP_SERVER", body.server.strip(), "Хост SMTP сервера")
     if body.port:
         await _upsert_setting("SMTP_PORT", str(body.port), "Порт SMTP сервера")
+        if body.port == 465:
+            await _upsert_setting("SMTP_SSL_TLS", "True", "Использовать SSL/TLS")
+            await _upsert_setting("SMTP_STARTTLS", "False", "Использовать STARTTLS")
+            set_dynamic_smtp_setting("SMTP_SSL_TLS", "True")
+            set_dynamic_smtp_setting("SMTP_STARTTLS", "False")
+            update_env_file("SMTP_SSL_TLS", "True")
+            update_env_file("SMTP_STARTTLS", "False")
+        elif body.port in (587, 25):
+            await _upsert_setting("SMTP_SSL_TLS", "False", "Использовать SSL/TLS")
+            await _upsert_setting("SMTP_STARTTLS", "True", "Использовать STARTTLS")
+            set_dynamic_smtp_setting("SMTP_SSL_TLS", "False")
+            set_dynamic_smtp_setting("SMTP_STARTTLS", "True")
+            update_env_file("SMTP_SSL_TLS", "False")
+            update_env_file("SMTP_STARTTLS", "True")
 
     await db.commit()
 

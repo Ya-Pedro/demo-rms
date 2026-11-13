@@ -48,8 +48,8 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
       form.setFieldsValue({
         username: res.data.smtp_username || '',
         from_email: res.data.smtp_from || '',
-        server: res.data.smtp_server || 'smtp.yandex.ru',
-        port: res.data.smtp_port || 465,
+        server: res.data.smtp_server || '',
+        port: res.data.smtp_port || 587,
         password: '',
       });
     } catch (err) {
@@ -296,10 +296,10 @@ const SmtpSettingsModal = ({ open, onClose, user }) => {
                 </Form.Item>
                 <div style={{ display: 'flex', gap: 12 }}>
                   <Form.Item name="server" label="Сервер" style={{ flex: 1, marginBottom: 0 }}>
-                    <Input placeholder="smtp.yandex.ru" />
+                    <Input placeholder="smtp.company.ru" />
                   </Form.Item>
                   <Form.Item name="port" label="Порт" style={{ width: 90, marginBottom: 0 }}>
-                    <Input placeholder="465" />
+                    <Input placeholder="587" />
                   </Form.Item>
                 </div>
               </div>

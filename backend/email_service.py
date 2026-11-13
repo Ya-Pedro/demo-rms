@@ -134,14 +134,24 @@ async def load_smtp_settings_from_db(db):
 
 
 def get_mail_config() -> ConnectionConfig:
+    port = int(get_smtp_setting("SMTP_PORT", "587"))
+    use_ssl = get_smtp_setting("SMTP_SSL_TLS", "False").lower() == "true"
+    use_starttls = get_smtp_setting("SMTP_STARTTLS", "True").lower() == "true"
+    if port == 465:
+        use_ssl = True
+        use_starttls = False
+    elif port in (587, 25):
+        use_ssl = False
+        use_starttls = True
+
     return ConnectionConfig(
         MAIL_USERNAME=get_smtp_setting("SMTP_USERNAME", ""),
         MAIL_PASSWORD=get_smtp_setting("SMTP_PASSWORD", ""),
-        MAIL_FROM=get_smtp_setting("SMTP_FROM", "noreply@rms-system.ru"),
-        MAIL_PORT=int(get_smtp_setting("SMTP_PORT", "587")),
-        MAIL_SERVER=get_smtp_setting("SMTP_SERVER", "smtp.gmail.com"),
-        MAIL_STARTTLS=get_smtp_setting("SMTP_STARTTLS", "True").lower() == "true",
-        MAIL_SSL_TLS=get_smtp_setting("SMTP_SSL_TLS", "False").lower() == "true",
+        MAIL_FROM=get_smtp_setting("SMTP_FROM", "noreply@company.ru"),
+        MAIL_PORT=port,
+        MAIL_SERVER=get_smtp_setting("SMTP_SERVER", "smtp.company.ru"),
+        MAIL_STARTTLS=use_starttls,
+        MAIL_SSL_TLS=use_ssl,
         USE_CREDENTIALS=get_smtp_setting("SMTP_USE_CREDENTIALS", "True").lower() == "true",
         VALIDATE_CERTS=get_smtp_setting("SMTP_VALIDATE_CERTS", "True").lower() == "true",
         MAIL_FROM_NAME=get_smtp_setting("SMTP_FROM_NAME", "RMS Уведомления"),
