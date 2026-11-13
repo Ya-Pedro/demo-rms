@@ -30,17 +30,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/notifications", tags=["Уведомления"])
 
-SMTP_MANAGER_EMAIL = "yuliya.e.novikova@rt.ru"
+SMTP_MANAGER_EMAILS = {"yuliya.e.novikova@rt.ru", "irek.nasibullin@rt.ru"}
 
 
 def require_smtp_manager(current_user: User = Depends(get_current_user)) -> User:
     if not current_user:
         raise HTTPException(status_code=401, detail="Требуется авторизация")
     email = (current_user.email or "").strip().lower()
-    if email != SMTP_MANAGER_EMAIL:
+    if email not in SMTP_MANAGER_EMAILS:
         raise HTTPException(
             status_code=403,
-            detail=f"Настройки почтового сервиса доступны только пользователю {SMTP_MANAGER_EMAIL}",
+            detail="Настройки почтового сервиса доступны только уполномоченным администраторам",
         )
     return current_user
 
@@ -127,7 +127,7 @@ async def get_smtp_settings(
         "is_smtp_configured": is_smtp_configured(),
         "connected": connected,
         "connection_message": conn_msg,
-        "manager_email": SMTP_MANAGER_EMAIL,
+        "manager_email": current_user.email,
         "current_user_email": current_user.email,
         "updated_at": setting_row.updated_at.isoformat() if setting_row and setting_row.updated_at else None,
         "updated_by": setting_row.updated_by if setting_row else None,
