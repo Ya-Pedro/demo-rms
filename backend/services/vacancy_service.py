@@ -238,7 +238,10 @@ class VacancyService:
                                 
         if current_user and current_user.role == UserRole.RECRUITER:
             vacancy_data["recruiter_id"] = current_user.id
+            vacancy_data["open_date"] = date.today()
             # Preserve co_recruiter_id so recruiter can assign a co-recruiter
+        elif not vacancy_data.get("open_date"):
+            vacancy_data["open_date"] = date.today()
 
         funnel = {
             "resumes_sent": vacancy_data.pop("resume_at_customer", 0) or 0,
@@ -337,6 +340,7 @@ class VacancyService:
 
         if current_user and current_user.role == UserRole.RECRUITER:
             update_data.pop("recruiter_id", None)
+            update_data.pop("open_date", None)
             # Preserve co_recruiter_id so recruiter can update co-recruiter
 
                                             

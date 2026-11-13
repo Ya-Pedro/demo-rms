@@ -276,9 +276,11 @@ const DashboardPage = () => {
   const handleCreate = () => {
     setEditingVacancy(null);
     form.resetFields();
-    if (isRecruiter && user?.id) {
-      form.setFieldsValue({ recruiter_id: user.id });
-    }
+    form.setFieldsValue({
+      open_date: dayjs(),
+      quantity: 1,
+      ...(isRecruiter && user?.id ? { recruiter_id: user.id } : {}),
+    });
     setDrawerVisible(true);
   };
 
@@ -345,8 +347,10 @@ const DashboardPage = () => {
       if (isRecruiter) {
         if (editingVacancy) {
           delete payload.recruiter_id;
+          delete payload.open_date;
         } else {
           payload.recruiter_id = user?.id;
+          payload.open_date = payload.open_date || dayjs().format('YYYY-MM-DD');
         }
       }
       if (editingVacancy) {
@@ -673,7 +677,7 @@ const DashboardPage = () => {
           </Space>
         }
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" initialValues={{ open_date: dayjs(), quantity: 1 }}>
           <div className="form-section">
             <div className="form-section-title">Основная информация</div>
             <Row gutter={16}>
@@ -867,7 +871,11 @@ const DashboardPage = () => {
             <Row gutter={16}>
               <Col span={isMobile ? 24 : 12}>
                 <HighlightFormItem editing={!!editingVacancy} name="open_date" label="Дата открытия">
-                  <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
+                  <DatePicker 
+                    style={{ width: '100%' }} 
+                    format="DD.MM.YYYY" 
+                    disabled={isRecruiter}
+                  />
                 </HighlightFormItem>
               </Col>
               <Col span={isMobile ? 24 : 12}>
