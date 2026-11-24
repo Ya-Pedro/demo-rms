@@ -45,7 +45,7 @@ const webpackConfig = {
   },
 };
 
-if (config.enableVisualEdits && babelMetadataPlugin) {
+if (config.enableVisualEdits && typeof babelMetadataPlugin !== 'undefined' && babelMetadataPlugin) {
   webpackConfig.babel = {
     plugins: [babelMetadataPlugin],
   };
@@ -53,11 +53,11 @@ if (config.enableVisualEdits && babelMetadataPlugin) {
 
 webpackConfig.devServer = (devServerConfig) => {
 
-  if (config.enableVisualEdits && setupDevServer) {
+  if (config.enableVisualEdits && typeof setupDevServer !== 'undefined' && setupDevServer) {
     devServerConfig = setupDevServer(devServerConfig);
   }
 
-  if (config.enableHealthCheck && setupHealthEndpoints && healthPluginInstance) {
+  if (config.enableHealthCheck && typeof setupHealthEndpoints !== 'undefined' && setupHealthEndpoints && typeof healthPluginInstance !== 'undefined' && healthPluginInstance) {
     const originalSetupMiddlewares = devServerConfig.setupMiddlewares;
 
     devServerConfig.setupMiddlewares = (middlewares, devServer) => {

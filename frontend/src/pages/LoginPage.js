@@ -34,6 +34,7 @@ const LoginPage = () => {
   }, []);
 
   const onFinish = async (values) => {
+    if (loading) return;
     setLoading(true);
     setLoginError('');
     try {
@@ -90,28 +91,7 @@ const LoginPage = () => {
       tokenStorage.setUser(user);
     }
 
-    try {
-      let userResponse = null;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          userResponse = await api.get('/auth/me');
-          break;
-        } catch (err) {
-          if (attempt < 2 && !user) {
-            await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
-          } else if (!user) {
-            throw err;
-          }
-        }
-      }
-      if (userResponse?.data) {
-        tokenStorage.setUser(userResponse.data);
-      }
-    } catch (err) {
-      if (!user) {
-        throw err;
-      }
-    }
+    api.defaults.headers.common.Authorization = `Bearer ${access_token}`;
 
     if (is_temporary_password) {
       setForceChangeOpen(true);
@@ -210,6 +190,8 @@ const LoginPage = () => {
                   type="primary"
                   htmlType="submit"
                   block
+                  loading={loading}
+                  disabled={loading}
                   data-testid="login-submit"
                 >
                   Войти

@@ -38,7 +38,7 @@ from auth import (
     set_active_session, _invalidate_session_cache,
 )
 from email_service import send_password_reset_email
-from limiter import limiter
+from limiter import limiter, get_real_client_ip
 from services.totp import generate_totp_secret, get_totp_uri, generate_qr_svg, verify_totp_code
 
 router = APIRouter(prefix="/auth", tags=["Аутентификация"])
@@ -91,22 +91,10 @@ def validate_password_strength(password: str) -> str | None:
     return None
 
 def _get_client_ip(request: Request) -> str:
-\
-\
-\
-\
-\
-\
-\
-\
-       
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-    return request.client.host if request.client else "unknown"
+    return get_real_client_ip(request)
 
 @router.post("/login")
-@limiter.limit("10/5minute")
+@limiter.limit("120/minute")
 async def login(
     login_data: LoginRequest,
     request: Request,
@@ -120,17 +108,46 @@ async def login(
 \
 \
        
+    email_clean = (login_data.email or "").strip().lower()
+    fail_key = f"login_fails:{email_clean}"
+    try:
+        r = _get_redis_client()
+        fails = r.get(fail_key)
+        if fails and int(fails) >= 10:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Слишком много неудачных попыток входа для этого email. Подождите 5 минут."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Redis check login_fails error: %s", e)
+
     result = await db.execute(
         select(User).where(User.email == login_data.email)
     )
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(login_data.password, user.hashed_password):
+        try:
+            r = _get_redis_client()
+            p = r.pipeline()
+            p.incr(fail_key)
+            p.expire(fail_key, 300)
+            p.execute()
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный email или пароль",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    try:
+        r = _get_redis_client()
+        r.delete(fail_key)
+    except Exception:
+        pass
 
     if not user.is_active:
         raise HTTPException(
@@ -150,7 +167,7 @@ async def login(
     return await _issue_tokens(db, user, request)
 
 @router.post("/2fa/verify")
-@limiter.limit("10/5minute")
+@limiter.limit("60/minute")
 async def verify_2fa(
     data: TwoFactorVerifyRequest,
     request: Request,
@@ -198,7 +215,7 @@ async def _issue_tokens(db: AsyncSession, user: User, request: Request) -> dict:
     client_ip = _get_client_ip(request)
 
                                                                                 
-    await revoke_all_user_tokens(db, user.id)
+    # revoke_all_user_tokens removed to support multi-tab
 
                                                                                
                                                                 
@@ -500,11 +517,17 @@ async def refresh_access_token(
     client_ip = _get_client_ip(request)
     new_refresh_token = await create_refresh_token(db, user.id, ip=client_ip)
 
-    return {
+    response_data = {
         "access_token": new_access_token,
         "refresh_token": new_refresh_token,
         "token_type": "bearer",
     }
+    try:
+        r = _get_redis_client()
+        r.setex(f"rotated_refresh:{data.refresh_token}", 60, json.dumps(response_data))
+    except Exception:
+        pass
+    return response_data
 
 @router.post("/logout")
 async def logout(
@@ -521,6 +544,7 @@ async def logout_all(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-                                                    
+    from auth import clear_all_active_sessions
     count = await revoke_all_user_tokens(db, current_user.id)
+    clear_all_active_sessions(current_user.id)
     return {"message": f"Все сессии завершены ({count})"}

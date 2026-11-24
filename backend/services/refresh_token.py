@@ -16,8 +16,8 @@ from database import Base
 
 REFRESH_TOKEN_EXPIRE_DAYS = max(1, int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", 7)))
 
-                                                                                   
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 720))
+# Срок жизни access-токена в минутах (по умолчанию 12 часов = 720 мин)
+ACCESS_TOKEN_EXPIRE_MINUTES = max(60, int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 720)))
 
 class RefreshToken(Base):
                                                       

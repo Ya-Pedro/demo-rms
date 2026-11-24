@@ -42,80 +42,153 @@ if SECRET_KEY == _DEFAULT_SECRET and not _allow_default:
         )
 
 ALGORITHM = "HS256"
-                                                                  
-                                                       
-ACCESS_TOKEN_EXPIRE_MINUTES = max(5, int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 720)))
+# Время жизни access токена (по умолчанию 12 часов, минимум 60 минут)
+ACCESS_TOKEN_EXPIRE_MINUTES = max(60, int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 720)))
 
-                                                                                
-                                                                         
-                                                        
+# ---------------------------------------------------------------------------
+# Redis: Хранение активных сессий пользователя (поддержка мультисессий / вкладок)
+# ---------------------------------------------------------------------------
 @lru_cache(maxsize=1)
 def _get_redis() -> "_redis_sync.Redis":
-                                                                              
-                                                        
     import os as _os
     _redis_url = _os.environ.get("REDIS_URL", "redis://localhost:6379/0")
     return _redis_sync.from_url(_redis_url, decode_responses=True, socket_connect_timeout=2)
 
-REDIS_SESSION_KEY = "active_session:{user_id}"
-                                                                  
-                                                                      
-SESSION_TTL_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 3600
-
-def set_active_session(user_id: int, session_id: str) -> None:
-    try:
-        r = _get_redis()
-        key = REDIS_SESSION_KEY.format(user_id=user_id)
-        r.set(key, session_id, ex=SESSION_TTL_SECONDS)
-    except Exception:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Redis недоступен: set_active_session user_id=%s", user_id
-        )
-    try:
-        with _session_cache_lock:
-            _session_cache[user_id] = (session_id, _time.monotonic())
-    except Exception:
-        pass
-
-def get_active_session(user_id: int) -> str | None:
-    try:
-        r = _get_redis()
-        key = REDIS_SESSION_KEY.format(user_id=user_id)
-        return r.get(key)
-    except Exception:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Redis недоступен: get_active_session user_id=%s", user_id
-        )
-        return None
+REDIS_SESSIONS_KEY = "active_sessions:{user_id}"
+REDIS_SESSION_KEY  = "active_session:{user_id}"  # для обратной совместимости
+SESSION_TTL_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 86400  # запас +24ч
 
 import time as _time
 from threading import Lock as _Lock
 
 SESSION_CACHE_TTL = 30
-_session_cache: dict[int, tuple[str, float]] = {}
+_session_cache: dict[int, tuple[set[str], float]] = {}
 _session_cache_lock = _Lock()
 
+def add_active_session(user_id: int, session_id: str) -> None:
+    """Добавляет session_id в список активных сессий пользователя (не удаляя другие вкладки)."""
+    try:
+        r = _get_redis()
+        key = REDIS_SESSIONS_KEY.format(user_id=user_id)
+        pipe = r.pipeline()
+        pipe.sadd(key, session_id)
+        pipe.expire(key, SESSION_TTL_SECONDS)
+        pipe.execute()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("Redis недоступен: add_active_session user_id=%s", user_id)
+
+    try:
+        with _session_cache_lock:
+            cached = _session_cache.get(user_id)
+            if cached is not None:
+                cached[0].add(session_id)
+            else:
+                _session_cache[user_id] = ({session_id}, _time.monotonic())
+    except Exception:
+        pass
+
+def set_active_session(user_id: int, session_id: str) -> None:
+    """Псевдоним add_active_session для совместимости со старыми вызовами."""
+    add_active_session(user_id, session_id)
+
+def remove_active_session(user_id: int, session_id: str) -> None:
+    """Удаляет конкретную сессию (например, при одиночном logout)."""
+    try:
+        r = _get_redis()
+        key = REDIS_SESSIONS_KEY.format(user_id=user_id)
+        r.srem(key, session_id)
+    except Exception:
+        pass
+    try:
+        with _session_cache_lock:
+            cached = _session_cache.get(user_id)
+            if cached is not None:
+                cached[0].discard(session_id)
+    except Exception:
+        pass
+
+def clear_all_active_sessions(user_id: int) -> None:
+    """Удаляет все активные сессии пользователя (при logout-all)."""
+    try:
+        r = _get_redis()
+        r.delete(REDIS_SESSIONS_KEY.format(user_id=user_id))
+        r.delete(REDIS_SESSION_KEY.format(user_id=user_id))
+    except Exception:
+        pass
+    try:
+        with _session_cache_lock:
+            _session_cache.pop(user_id, None)
+    except Exception:
+        pass
+
+def get_active_session(user_id: int) -> str | None:
+    """Совместимость: возвращает любую активную сессию или None."""
+    try:
+        r = _get_redis()
+        members = r.smembers(REDIS_SESSIONS_KEY.format(user_id=user_id))
+        if members:
+            return next(iter(members))
+        return r.get(REDIS_SESSION_KEY.format(user_id=user_id))
+    except Exception:
+        return None
+
 def _check_session_cached(user_id: int, token_session_id: str) -> bool:
+    """
+    Проверяет, действительна ли сессия токена.
+    Поддерживает одновременную работу в нескольких вкладках.
+    При сбое Redis или отсутствии ключа не разлогинивает пользователя (fail-open).
+    """
     now = _time.monotonic()
 
+    # 1. Проверяем локальный кэш процесса
     with _session_cache_lock:
         cached = _session_cache.get(user_id)
         if cached is not None:
-            cached_sid, checked_at = cached
-            if now - checked_at < SESSION_CACHE_TTL and cached_sid == token_session_id:
+            cached_sids, checked_at = cached
+            if now - checked_at < SESSION_CACHE_TTL and token_session_id in cached_sids:
                 return True
 
-    active_sid = get_active_session(user_id)
+    # 2. Проверяем Redis
+    try:
+        r = _get_redis()
+        key = REDIS_SESSIONS_KEY.format(user_id=user_id)
 
-    if active_sid is None:
+        # Проверяем в множестве активных сессий
+        if r.sismember(key, token_session_id):
+            with _session_cache_lock:
+                cached = _session_cache.get(user_id)
+                if cached is not None:
+                    cached[0].add(token_session_id)
+                else:
+                    _session_cache[user_id] = ({token_session_id}, now)
+            return True
+
+        # Обратная совместимость со старым строковым ключом
+        old_sid = r.get(REDIS_SESSION_KEY.format(user_id=user_id))
+        if old_sid and old_sid == token_session_id:
+            r.sadd(key, token_session_id)
+            r.expire(key, SESSION_TTL_SECONDS)
+            with _session_cache_lock:
+                _session_cache[user_id] = ({token_session_id}, now)
+            return True
+
+        # Если ключ существует в Redis, обновляем локальный кэш актуальными сессиями
+        if r.exists(key):
+            current_members = set(r.smembers(key))
+            with _session_cache_lock:
+                _session_cache[user_id] = (current_members, now)
+            return token_session_id in current_members
+
+        # Ключа нет (все сессии были завершены через logout-all)
+        with _session_cache_lock:
+            _session_cache[user_id] = (set(), now)
+        return False
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Redis session check fallback (allowing request): %s", e)
         return True
-
-    with _session_cache_lock:
-        _session_cache[user_id] = (active_sid, now)
-
-    return active_sid == token_session_id
 
 def _invalidate_session_cache(user_id: int) -> None:
     with _session_cache_lock:

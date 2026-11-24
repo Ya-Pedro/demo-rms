@@ -50,7 +50,8 @@ dayjs.locale('ru');
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
-const IDLE_TIMEOUT_MS = (Number(process.env.REACT_APP_IDLE_TIMEOUT_MINUTES) || 12 * 60) * 60 * 1000;
+const idleMinutes = Number(process.env.REACT_APP_IDLE_TIMEOUT_MINUTES);
+const IDLE_TIMEOUT_MS = (idleMinutes && idleMinutes >= 60 ? idleMinutes : 12 * 60) * 60 * 1000;
 
 const api = axios.create({
   baseURL: BACKEND_URL ? `${BACKEND_URL}/api` : '/api',
@@ -106,12 +107,17 @@ api.interceptors.response.use(
     }
 
     if (isRefreshing) {
-
       return new Promise((resolve, reject) => {
         failedQueue.push({ resolve, reject });
       })
         .then((newToken) => {
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          if (originalRequest.headers) {
+            if (typeof originalRequest.headers.set === 'function') {
+              originalRequest.headers.set('Authorization', `Bearer ${newToken}`);
+            } else {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            }
+          }
           return api(originalRequest);
         })
         .catch((err) => Promise.reject(err));
@@ -123,7 +129,6 @@ api.interceptors.response.use(
     const refreshToken = tokenStorage.getRefresh();
 
     if (!refreshToken) {
-
       processQueue(error, null);
       isRefreshing = false;
       forceLogout();
@@ -147,13 +152,20 @@ api.interceptors.response.use(
 
       processQueue(null, newToken);
 
-      originalRequest.headers.Authorization = `Bearer ${newToken}`;
+      if (originalRequest.headers) {
+        if (typeof originalRequest.headers.set === 'function') {
+          originalRequest.headers.set('Authorization', `Bearer ${newToken}`);
+        } else {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        }
+      }
       return api(originalRequest);
 
     } catch (refreshError) {
-
       processQueue(refreshError, null);
-      forceLogout();
+      if (refreshError.response && (refreshError.response.status === 401 || refreshError.response.status === 403)) {
+        forceLogout();
+      }
       return Promise.reject(refreshError);
 
     } finally {
