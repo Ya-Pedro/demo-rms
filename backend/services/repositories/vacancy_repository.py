@@ -7,11 +7,12 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 
-from sqlalchemy import select, func, and_, or_, update, Integer
+from sqlalchemy import select, func, and_, or_, update, Integer, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import InstrumentedAttribute
 
-from models import User, Vacancy, WeeklyReport, UserRole
+from models import User, Vacancy, WeeklyReport, UserRole, Dictionary
 
                                                  
 VACANCY_LOAD_OPTIONS = [
@@ -31,6 +32,111 @@ VACANCY_LOAD_OPTIONS = [
     selectinload(Vacancy.feasibility),
     selectinload(Vacancy.block),
 ]
+
+DICT_SORT_COLUMNS = (
+    'level_id', 'status_id', 'it_role_id', 'admin_manager_id',
+    'project_id', 'source_id', 'internal_transfer_id',
+    'replacement_type_id', 'employment_type_id',
+    'block_id',
+)
+
+USER_SORT_COLUMNS = ('recruiter_id', 'co_recruiter_id')
+
+TEXT_SORT_COLUMNS = {
+    'position_name', 'candidate_name', 'comment', 'offer_rejection_reason',
+    'recommender_name', 'candidate_company', 'ex_employee_name', 'unit_id', 'iqhr_link',
+}
+
+HYBRID_TEXT_DICT_SORT = {
+    'team_lead_text': (Vacancy.team_lead_text, Vacancy.team_lead_id, True),
+    'city_text': (Vacancy.city_text, Vacancy.city_id, False),
+    'feasibility_id': (Vacancy.feasibility_text, Vacancy.feasibility_id, False),
+}
+
+FUNNEL_MODEL_ATTR_MAP = {
+    'resume_at_customer': Vacancy.resume_at_customer,
+    'resume_approved': Vacancy.resume_approved,
+    'interviews_fact': Vacancy.interviews_fact,
+    'interviews_plan': Vacancy.interviews_plan,
+    'offer_made': Vacancy.offer_made,
+    'offer_accepted': Vacancy.offer_accepted_cnt,
+}
+
+
+def order_expr(expr, order_dir: str, is_text: bool = False):
+    """Формирует ORDER BY так, чтобы NULL и пустые строки считались минимальными:
+    ASC -> пустые сверху (NULLS FIRST), DESC -> пустые в конце (NULLS LAST).
+    Текстовые значения сравниваются без учёта регистра и крайних пробелов.
+    """
+    target = func.lower(func.nullif(func.trim(expr), '')) if is_text else expr
+    if order_dir == 'asc':
+        return target.asc().nulls_first()
+    return target.desc().nulls_last()
+
+
+def apply_vacancy_sorting(
+    query,
+    sort_field: Optional[str],
+    sort_order: Optional[str] = "desc",
+    funnel_col_map: Optional[dict] = None,
+    dialect_name: str = "postgresql",
+):
+    """Единая сортировка вакансий для таблицы и экспорта."""
+    if not sort_field:
+        return query.order_by(Vacancy.id.desc())
+
+    fields = sort_field.split(',')
+    orders = sort_order.split(',') if sort_order else []
+
+    for i, f in enumerate(fields):
+        field_name = f.strip()
+        if not field_name:
+            continue
+        order_dir = orders[i].strip().lower() if i < len(orders) else 'desc'
+        if order_dir not in ('asc', 'desc'):
+            order_dir = 'desc'
+
+        if field_name == 'vacancy_id':
+            clean_vid = func.nullif(func.trim(Vacancy.vacancy_id), '')
+            has_val = case((clean_vid.is_(None), None), else_=1)
+            query = query.order_by(order_expr(has_val, order_dir))
+            if dialect_name == 'postgresql':
+                num_expr = func.cast(
+                    func.nullif(func.regexp_replace(clean_vid, r'\D', '', 'g'), ''),
+                    Integer,
+                )
+                query = query.order_by(order_expr(num_expr, order_dir))
+            query = query.order_by(order_expr(clean_vid, order_dir, is_text=True))
+        elif field_name == 'work_duration_days':
+            sort_col = func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)
+            query = query.order_by(order_expr(sort_col, order_dir))
+        elif funnel_col_map and field_name in funnel_col_map:
+            sort_col = func.coalesce(funnel_col_map[field_name], 0)
+            query = query.order_by(sort_col.asc() if order_dir == 'asc' else sort_col.desc())
+        elif field_name in FUNNEL_MODEL_ATTR_MAP:
+            sort_col = func.coalesce(FUNNEL_MODEL_ATTR_MAP[field_name], 0)
+            query = query.order_by(sort_col.asc() if order_dir == 'asc' else sort_col.desc())
+        elif field_name in HYBRID_TEXT_DICT_SORT:
+            text_col, dict_fk_col, text_first = HYBRID_TEXT_DICT_SORT[field_name]
+            dict_subq = select(Dictionary.value).where(Dictionary.id == dict_fk_col).scalar_subquery()
+            clean_text = func.nullif(func.trim(text_col), '')
+            clean_dict = func.nullif(func.trim(dict_subq), '')
+            combined = func.coalesce(clean_text, clean_dict) if text_first else func.coalesce(clean_dict, clean_text)
+            query = query.order_by(order_expr(combined, order_dir, is_text=True))
+        elif field_name in DICT_SORT_COLUMNS:
+            dict_subq = select(Dictionary.value).where(Dictionary.id == getattr(Vacancy, field_name)).scalar_subquery()
+            query = query.order_by(order_expr(dict_subq, order_dir, is_text=True))
+        elif field_name in USER_SORT_COLUMNS:
+            user_subq = select(User.full_name).where(User.id == getattr(Vacancy, field_name)).scalar_subquery()
+            query = query.order_by(order_expr(user_subq, order_dir, is_text=True))
+        else:
+            sort_col = getattr(Vacancy, field_name, None)
+            if sort_col is not None and isinstance(sort_col, InstrumentedAttribute):
+                is_text = field_name in TEXT_SORT_COLUMNS
+                query = query.order_by(order_expr(sort_col, order_dir, is_text=is_text))
+
+    return query.order_by(Vacancy.id.desc())
+
 
 class VacancyRepository:
     def __init__(self, db: AsyncSession):
@@ -108,58 +214,18 @@ class VacancyRepository:
                     'offer_accepted': metrics_subq.c._mv_offer_accepted,
                 }
 
-            for i, f in enumerate(fields):
-                field_name = f.strip()
-                order_dir = orders[i].strip() if i < len(orders) else 'desc'
-                if field_name == 'vacancy_id':
-                    num_expr = func.coalesce(
-                        func.cast(func.nullif(func.regexp_replace(Vacancy.vacancy_id, r'\D', '', 'g'), ''), Integer),
-                        Vacancy.id
-                    )
-                    if order_dir == 'asc':
-                        base_query = base_query.order_by(num_expr.asc().nulls_last(), Vacancy.vacancy_id.asc().nulls_last())
-                    else:
-                        base_query = base_query.order_by(num_expr.desc().nulls_last(), Vacancy.vacancy_id.desc().nulls_last())
-                elif field_name == 'work_duration_days':
-                    sort_col = func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)
-                    if order_dir == 'asc':
-                        base_query = base_query.order_by(sort_col.asc().nulls_last())
-                    else:
-                        base_query = base_query.order_by(sort_col.desc().nulls_last())
-                elif needs_funnel_join and field_name in funnel_col_map:
-                    sort_col = func.coalesce(funnel_col_map[field_name], 0)
-                    if order_dir == 'asc':
-                        base_query = base_query.order_by(sort_col.asc())
-                    else:
-                        base_query = base_query.order_by(sort_col.desc())
-                elif field_name in (
-                    'level_id', 'status_id', 'it_role_id', 'admin_manager_id',
-                    'project_id', 'source_id', 'internal_transfer_id',
-                    'replacement_type_id', 'employment_type_id', 'feasibility_id',
-                    'block_id', 'city_id'
-                ):
-                    from models import Dictionary
-                    dict_subq = select(Dictionary.value).where(Dictionary.id == getattr(Vacancy, field_name)).scalar_subquery()
-                    if order_dir == 'asc':
-                        base_query = base_query.order_by(dict_subq.asc().nulls_last())
-                    else:
-                        base_query = base_query.order_by(dict_subq.desc().nulls_last())
-                elif field_name in ('recruiter_id', 'co_recruiter_id'):
-                    from models import User
-                    user_subq = select(User.full_name).where(User.id == getattr(Vacancy, field_name)).scalar_subquery()
-                    if order_dir == 'asc':
-                        base_query = base_query.order_by(user_subq.asc().nulls_last())
-                    else:
-                        base_query = base_query.order_by(user_subq.desc().nulls_last())
-                else:
-                    sort_col = getattr(Vacancy, field_name, None)
-                    from sqlalchemy.orm.attributes import InstrumentedAttribute
-                    if sort_col is not None and isinstance(sort_col, InstrumentedAttribute):
-                        if order_dir == 'asc':
-                            base_query = base_query.order_by(sort_col.asc().nulls_last())
-                        else:
-                            base_query = base_query.order_by(sort_col.desc().nulls_last())
-            base_query = base_query.order_by(Vacancy.id.desc())
+            else:
+                funnel_col_map = None
+
+            dialect_name = getattr(getattr(self.db, "bind", None), "dialect", None)
+            dialect_str = dialect_name.name if dialect_name else "postgresql"
+            base_query = apply_vacancy_sorting(
+                base_query,
+                sort_field=sort_field,
+                sort_order=sort_order,
+                funnel_col_map=funnel_col_map,
+                dialect_name=dialect_str,
+            )
         else:
             base_query = base_query.order_by(Vacancy.id.desc())
 

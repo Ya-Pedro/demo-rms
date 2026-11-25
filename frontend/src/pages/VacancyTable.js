@@ -43,6 +43,11 @@ dayjs.extend(isoWeek);
 
 import DelegationModal from '../components/DelegationModal';
 import { OFFER_REJECTION_REASONS } from './DashboardPage';
+import {
+  createDateFilterDropdown,
+  createTextFilterDropdown,
+  createNumberFilterDropdown,
+} from '../components/TableFilterDropdowns';
 import './VacancyTable.css';
 
 const STORAGE_KEY_PREFIX = 'rms_table_settings_';
@@ -85,115 +90,20 @@ const WH = (text) => (
   <div style={{ whiteSpace: 'normal', lineHeight: '1.2', textAlign: 'center' }}>{text}</div>
 );
 
-const TEXT_FILTER_DROPDOWN = {
-  filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
-    <div style={{ padding: 8 }}>
-      <Input
-        autoFocus
-        placeholder="Поиск..."
-        value={selectedKeys[0]}
-        onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-        onPressEnter={() => confirm()}
-        style={{ width: 188, marginBottom: 8, display: 'block' }}
-      />
-      <Space>
-        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 90 }}>Найти</Button>
-        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 90 }}>Сброс</Button>
-      </Space>
-    </div>
-  ),
-  filterDropdownProps: { getPopupContainer },
-};
+const TEXT_FILTER_DROPDOWN = createTextFilterDropdown({ width: 188, buttonWidth: 90 });
 
-const DateRangeFilterDropdown = ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => {
-  const containerRef = React.useRef(null);
-  const isEmptySelected = selectedKeys?.[0] === 'empty';
+const DATE_FILTER_DROPDOWN = createDateFilterDropdown();
 
-  const parseRange = (keys) => {
-    if (!keys || keys.length === 0) return [null, null];
-    if (keys[0] === 'empty') return [null, null];
-    const [from, to] = (keys[0] || '').split('|');
-    const d1 = from && dayjs(from, 'DD.MM.YY', true).isValid() ? dayjs(from, 'DD.MM.YY') : null;
-    const d2 = to && dayjs(to, 'DD.MM.YY', true).isValid() ? dayjs(to, 'DD.MM.YY') : null;
-    return [d1, d2];
-  };
-
-  const handleCheckboxChange = (e) => {
-    if (e.target.checked) {
-      setSelectedKeys(['empty']);
-    } else {
-      setSelectedKeys([]);
-    }
-  };
-
-  const handleDateChange = (dates) => {
-    if (dates && dates[0] && dates[1]) {
-      setSelectedKeys([`${dates[0].format('DD.MM.YY')}|${dates[1].format('DD.MM.YY')}`]);
-    } else {
-      setSelectedKeys([]);
-    }
-  };
-
-  return (
-    <div ref={containerRef} style={{ padding: '12px 16px', minWidth: 280 }}>
-      <div style={{ marginBottom: 8, fontWeight: 500, fontSize: 13, color: 'var(--text-color)' }}>Выберите период</div>
-      <DatePicker.RangePicker
-        format="DD.MM.YYYY"
-        placeholder={['Дата от', 'Дата до']}
-        value={parseRange(selectedKeys)}
-        disabled={isEmptySelected}
-        getPopupContainer={() => document.body}
-        style={{ width: '100%', marginBottom: 10 }}
-        onChange={handleDateChange}
-        allowClear
-      />
-      <div style={{ marginBottom: 12 }}>
-        <Checkbox
-          checked={isEmptySelected}
-          onChange={handleCheckboxChange}
-        >
-          <span style={{ fontSize: 13, color: isEmptySelected ? '#1677ff' : 'inherit', fontWeight: isEmptySelected ? 600 : 400 }}>
-            Только пустые (без даты)
-          </span>
-        </Checkbox>
-      </div>
-      <Space>
-        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 80 }}>Найти</Button>
-        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 80 }}>Сброс</Button>
-      </Space>
-    </div>
-  );
-};
-
-const DATE_FILTER_DROPDOWN = {
-  filterDropdown: (props) => <DateRangeFilterDropdown {...props} />,
-  filterDropdownProps: { getPopupContainer },
-};
-
-const NUMBER_FILTER_DROPDOWN = {
-  filterDropdown: ({ setSelectedKeys, selectedKeys, confirm, clearFilters }) => (
-    <div style={{ padding: 8 }}>
-      <Input
-        autoFocus
-        placeholder="Точное значение..."
-        value={selectedKeys[0]}
-        onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-        onPressEnter={() => confirm()}
-        style={{ width: 140, marginBottom: 8, display: 'block' }}
-      />
-      <Space>
-        <Button type="primary" onClick={() => confirm()} size="small" style={{ width: 65 }}>Найти</Button>
-        <Button onClick={() => { clearFilters(); confirm(); }} size="small" style={{ width: 65 }}>Сброс</Button>
-      </Space>
-    </div>
-  ),
-  filterDropdownProps: { getPopupContainer },
-};
+const NUMBER_FILTER_DROPDOWN = createNumberFilterDropdown({
+  width: 140,
+  buttonWidth: 65,
+  placeholder: 'Точное значение...',
+});
 
 const TEXT_FILTER_KEYS = new Set([
   'vacancy_id', 'position_name', 'team_lead_text', 'city_text',
   'candidate_name', 'candidate_company', 'ex_employee_name', 'unit_id',
-  'comment', 'offer_rejection_reason', 'iqhr_link', 'recommender_name',
+  'comment', 'iqhr_link', 'recommender_name',
 ]);
 
 const VACANCY_FILTERS_KEY = 'rms_vacancy_filters';
@@ -1126,9 +1036,12 @@ const VacancyTable = ({
       {
         title: 'Причина отказа от Оффера', dataIndex: 'offer_rejection_reason', key: 'offer_rejection_reason', ...mkSort('offer_rejection_reason'), width: 170, ellipsis: true,
         filteredValue: fi.offer_rejection_reason || null,
-        filters: (dictionaries?.offer_rejection_reason && dictionaries.offer_rejection_reason.length > 0)
-          ? dictionaries.offer_rejection_reason.map(r => ({ text: r.value, value: r.value }))
-          : OFFER_REJECTION_REASONS.map(r => ({ text: r.label, value: r.value })),
+        filters: [
+          ...((dictionaries?.offer_rejection_reason && dictionaries.offer_rejection_reason.length > 0)
+            ? dictionaries.offer_rejection_reason.map(r => ({ text: r.value, value: r.value }))
+            : OFFER_REJECTION_REASONS.map(r => ({ text: r.label, value: r.value }))),
+          { text: 'Без указания', value: '__empty__' },
+        ],
         filterSearch: true,
         filterDropdownProps: { getPopupContainer },
         render: (v) => v || '-',

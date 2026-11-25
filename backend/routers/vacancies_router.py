@@ -68,6 +68,7 @@ async def get_vacancies(
     search_offer_made: Optional[str] = Query(None),
     search_offer_accepted: Optional[str] = Query(None),
     search_offer_rejection_reason: Optional[str] = Query(None),
+    offer_rejection_reason: Optional[List[str]] = Query(None),
     search_comment: Optional[str] = Query(None),
     search_recommender_name: Optional[str] = Query(None),
     recommender_name: Optional[str] = Query(None),

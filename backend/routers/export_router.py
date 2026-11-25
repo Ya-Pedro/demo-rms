@@ -19,6 +19,7 @@ from models import User, Vacancy, UserRole
 from schemas import SmartExportRequest
 from auth import get_current_user
 from services.vacancy_filter import apply_vacancy_filters
+from services.repositories.vacancy_repository import apply_vacancy_sorting
 
 router = APIRouter(prefix="/export", tags=["Экспорт"])
 
@@ -90,14 +91,7 @@ def build_vacancy_query_with_filters(
     )
 
                                                                     
-    if sort_field:
-        sort_column = getattr(Vacancy, sort_field, None)
-        if sort_column is not None:
-            query = query.order_by(sort_column.asc() if sort_order == "asc" else sort_column.desc())
-        else:
-            query = query.order_by(Vacancy.id.desc())
-    else:
-        query = query.order_by(Vacancy.id.desc())
+    query = apply_vacancy_sorting(query, sort_field=sort_field, sort_order=sort_order)
 
     return query
 

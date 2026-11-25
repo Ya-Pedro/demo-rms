@@ -27,7 +27,19 @@ from typing import List, Optional
 from sqlalchemy import and_, or_, select, func, cast, String
 from sqlalchemy.orm import Query
 
-from models import Vacancy, UserRole, User, VacancyDelegation
+from models import Vacancy, UserRole, User, VacancyDelegation, Dictionary
+
+_EMPTY_TEXT_KEYWORDS = {
+    "__empty__", "empty", "null", "none", "is_null", "пусто", "не указано", "без указания"
+}
+
+
+def _empty_text_cond(col):
+    return or_(col.is_(None), func.trim(col) == "")
+
+
+def _is_empty_kw(val: str) -> bool:
+    return val.strip().lower() in _EMPTY_TEXT_KEYWORDS
 
                                                                                 
                       
@@ -67,6 +79,7 @@ def apply_vacancy_filters(
     search_team_lead_text: Optional[str] = None,
     search_feasibility_text: Optional[str] = None,
     search_offer_rejection_reason: Optional[str] = None,
+    offer_rejection_reason: Optional[List[str]] = None,
     search_comment: Optional[str] = None,
     search_recommender_name: Optional[str] = None,
     recommender_name: Optional[str] = None,
@@ -149,17 +162,40 @@ def apply_vacancy_filters(
         "city_id": (Vacancy.city_id, city_id),
         "team_lead_id": (Vacancy.team_lead_id, team_lead_id),
     }
+    _hybrid_text_cols = {
+        "feasibility_id": Vacancy.feasibility_text,
+        "city_id": Vacancy.city_text,
+        "team_lead_id": Vacancy.team_lead_text,
+    }
     for _name, (col, values) in _dict_filters.items():
         if values:
+            text_fb = _hybrid_text_cols.get(_name)
             if 0 in values:
-                # If 0 is in the filter list, filter for NULL as well
+                # If 0 is in the filter list, filter for truly empty (both FK and fallback text)
                 valid_ids = [v for v in values if v != 0]
+                empty_cond = (
+                    and_(col.is_(None), _empty_text_cond(text_fb))
+                    if text_fb is not None else col.is_(None)
+                )
                 if valid_ids:
-                    conditions.append(or_(col.in_(valid_ids), col.is_(None)))
+                    match_cond = (
+                        or_(
+                            col.in_(valid_ids),
+                            and_(col.is_(None), text_fb.in_(select(Dictionary.value).where(Dictionary.id.in_(valid_ids)))),
+                        )
+                        if text_fb is not None else col.in_(valid_ids)
+                    )
+                    conditions.append(or_(match_cond, empty_cond))
                 else:
-                    conditions.append(col.is_(None))
+                    conditions.append(empty_cond)
             else:
-                conditions.append(col.in_(values))
+                if text_fb is not None:
+                    conditions.append(or_(
+                        col.in_(values),
+                        and_(col.is_(None), text_fb.in_(select(Dictionary.value).where(Dictionary.id.in_(values)))),
+                    ))
+                else:
+                    conditions.append(col.in_(values))
 
     if recruiter_id:
         if 0 in recruiter_id:
@@ -202,7 +238,9 @@ def apply_vacancy_filters(
                                                                                 
     if search_vacancy_id:
         s_vid = str(search_vacancy_id).strip()
-        if "," in s_vid:
+        if _is_empty_kw(s_vid):
+            conditions.append(_empty_text_cond(Vacancy.vacancy_id))
+        elif "," in s_vid:
             ids = [x.strip() for x in s_vid.split(",") if x.strip()]
             conditions.append(or_(
                 Vacancy.vacancy_id.in_(ids),
@@ -214,6 +252,11 @@ def apply_vacancy_filters(
                 and_(Vacancy.vacancy_id.is_(None), cast(Vacancy.id, String) == s_vid),
             ))
 
+    _hybrid_fk_cols = {
+        "search_city_text": Vacancy.city_id,
+        "search_team_lead_text": Vacancy.team_lead_id,
+        "search_feasibility_text": Vacancy.feasibility_id,
+    }
     _text_filters = {
         "search_position_name": (Vacancy.position_name, search_position_name or kwargs.get("position_name")),
         "search_candidate_name": (Vacancy.candidate_name, search_candidate_name or kwargs.get("candidate_name")),
@@ -224,7 +267,6 @@ def apply_vacancy_filters(
         "search_city_text": (Vacancy.city_text, search_city_text or kwargs.get("city_text")),
         "search_team_lead_text": (Vacancy.team_lead_text, search_team_lead_text or kwargs.get("team_lead_text")),
         "search_feasibility_text": (Vacancy.feasibility_text, search_feasibility_text or kwargs.get("feasibility_text")),
-        "search_offer_rejection_reason": (Vacancy.offer_rejection_reason, search_offer_rejection_reason or kwargs.get("offer_rejection_reason")),
         "search_comment": (Vacancy.comment, search_comment or kwargs.get("comment")),
         "search_recommender_name": (Vacancy.recommender_name, search_recommender_name or recommender_name or kwargs.get("recommender_name")),
     }
@@ -234,62 +276,71 @@ def apply_vacancy_filters(
                 val = val[0] if val else None
             if val is not None and str(val).strip():
                 clean_val = str(val).strip()
-                conditions.append(col.ilike(f"%{clean_val}%"))
+                fk_col = _hybrid_fk_cols.get(_name)
+                if _is_empty_kw(clean_val):
+                    if fk_col is not None:
+                        conditions.append(and_(fk_col.is_(None), _empty_text_cond(col)))
+                    else:
+                        conditions.append(_empty_text_cond(col))
+                elif fk_col is not None:
+                    dict_match_subq = select(Dictionary.id).where(Dictionary.value.ilike(f"%{clean_val}%"))
+                    conditions.append(or_(col.ilike(f"%{clean_val}%"), fk_col.in_(dict_match_subq)))
+                else:
+                    conditions.append(col.ilike(f"%{clean_val}%"))
 
-                                                                                
-    if search_quantity is not None:
-        try:
-            conditions.append(Vacancy.quantity == int(search_quantity))
-        except (ValueError, TypeError):
-            pass
+    raw_reasons = []
+    if offer_rejection_reason:
+        raw_reasons.extend(offer_rejection_reason)
+    elif kwargs.get("offer_rejection_reason"):
+        extra_rej = kwargs.get("offer_rejection_reason")
+        if isinstance(extra_rej, (list, tuple)):
+            raw_reasons.extend(extra_rej)
+        elif extra_rej:
+            raw_reasons.append(extra_rej)
+    elif search_offer_rejection_reason:
+        raw_reasons.append(search_offer_rejection_reason)
 
-    if search_salary_gross is not None:
-        try:
-            conditions.append(Vacancy.salary_gross == int(search_salary_gross))
-        except (ValueError, TypeError):
-            pass
+    reason_conds = []
+    for rv in raw_reasons:
+        if rv is None:
+            continue
+        r_str = str(rv).strip()
+        if not r_str:
+            continue
+        if _is_empty_kw(r_str) or r_str == "0":
+            reason_conds.append(_empty_text_cond(Vacancy.offer_rejection_reason))
+        else:
+            reason_conds.append(Vacancy.offer_rejection_reason.ilike(f"%{r_str}%"))
+    if reason_conds:
+        conditions.append(or_(*reason_conds))
 
-    if search_work_duration_days is not None:
+    _num_specs = [
+        (search_quantity, Vacancy.quantity, float, "none"),
+        (search_salary_gross, Vacancy.salary_gross, int, "none"),
+        (search_work_duration_days, (func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)), int, "open_date"),
+        (search_resume_at_customer, Vacancy.resume_at_customer, int, "zero"),
+        (search_resume_approved, Vacancy.resume_approved, int, "zero"),
+        (search_interviews_fact, Vacancy.interviews_fact, int, "zero"),
+        (search_interviews_plan, Vacancy.interviews_plan, int, "zero"),
+        (search_offer_made, Vacancy.offer_made, int, "zero"),
+        (search_offer_accepted, Vacancy.offer_accepted_cnt, int, "zero"),
+    ]
+    for raw_num, num_col, caster, empty_mode in _num_specs:
+        if raw_num is None:
+            continue
+        num_str = str(raw_num[0] if isinstance(raw_num, (list, tuple)) else raw_num).strip()
+        if not num_str:
+            continue
+        if _is_empty_kw(num_str):
+            if empty_mode == "none":
+                conditions.append(num_col.is_(None))
+            elif empty_mode == "zero":
+                conditions.append(or_(num_col == 0, num_col.is_(None)))
+            else:
+                conditions.append(Vacancy.open_date.is_(None))
+            continue
         try:
-            conditions.append(
-                (func.coalesce(Vacancy.close_date, func.current_date()) - Vacancy.open_date - func.coalesce(Vacancy.hold_days, 0)) == int(search_work_duration_days)
-            )
-        except (ValueError, TypeError):
-            pass
-
-    if search_resume_at_customer is not None:
-        try:
-            conditions.append(Vacancy.resume_at_customer == int(search_resume_at_customer))
-        except (ValueError, TypeError):
-            pass
-
-    if search_resume_approved is not None:
-        try:
-            conditions.append(Vacancy.resume_approved == int(search_resume_approved))
-        except (ValueError, TypeError):
-            pass
-
-    if search_interviews_fact is not None:
-        try:
-            conditions.append(Vacancy.interviews_fact == int(search_interviews_fact))
-        except (ValueError, TypeError):
-            pass
-
-    if search_interviews_plan is not None:
-        try:
-            conditions.append(Vacancy.interviews_plan == int(search_interviews_plan))
-        except (ValueError, TypeError):
-            pass
-
-    if search_offer_made is not None:
-        try:
-            conditions.append(Vacancy.offer_made == int(search_offer_made))
-        except (ValueError, TypeError):
-            pass
-
-    if search_offer_accepted is not None:
-        try:
-            conditions.append(Vacancy.offer_accepted_cnt == int(search_offer_accepted))
+            conditions.append(num_col == caster(num_str.replace(',', '.')))
         except (ValueError, TypeError):
             pass
 
