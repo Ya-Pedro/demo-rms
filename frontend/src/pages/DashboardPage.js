@@ -195,6 +195,8 @@ const DashboardPage = () => {
 
   const [user, setUser] = useState(() => tokenStorage.getUser() || {});
   const isRecruiter = user?.role === 'recruiter';
+  const isAdmin     = user?.role === 'admin' || user?.role === 'superadmin';
+  const statusChangedManualRef = useRef(false);
 
   const checkWeekEditable = useCallback((weekPeriod) => {
     if (!isRecruiter || !weekPeriod) return true;
@@ -275,9 +277,11 @@ const DashboardPage = () => {
 
   const handleCreate = () => {
     setEditingVacancy(null);
+    statusChangedManualRef.current = false;
     form.resetFields();
     form.setFieldsValue({
       open_date: dayjs(),
+      status_changed_at: null,
       quantity: 1,
       ...(isRecruiter && user?.id ? { recruiter_id: user.id } : {}),
     });
@@ -285,13 +289,26 @@ const DashboardPage = () => {
   };
 
   const handleStatusChange = (val) => {
-    form.setFieldsValue({
-      status_id: val,
-    });
+    const nextFields = { status_id: val };
+    if (!statusChangedManualRef.current) {
+      if (editingVacancy) {
+        if (val && val !== editingVacancy.status_id) {
+          nextFields.status_changed_at = dayjs();
+        } else {
+          nextFields.status_changed_at = editingVacancy.status_changed_at
+            ? dayjs(editingVacancy.status_changed_at)
+            : null;
+        }
+      } else {
+        nextFields.status_changed_at = val ? dayjs() : null;
+      }
+    }
+    form.setFieldsValue(nextFields);
   };
 
   const handleEdit = (record) => {
     setEditingVacancy(record);
+    statusChangedManualRef.current = false;
 
     let rejectionReasons = [];
     if (record.offer_rejection_reason) {
@@ -308,6 +325,7 @@ const DashboardPage = () => {
     form.setFieldsValue({
       ...record,
       open_date: record.open_date ? dayjs(record.open_date) : null,
+      status_changed_at: record.status_changed_at ? dayjs(record.status_changed_at) : null,
       close_date: record.close_date ? dayjs(record.close_date) : null,
 
       resume_at_customer: record.resume_at_customer || 0,
@@ -334,9 +352,13 @@ const DashboardPage = () => {
       const payload = {
         ...values,
         open_date: values.open_date ? values.open_date.format('YYYY-MM-DD') : null,
+        status_changed_at: values.status_changed_at ? values.status_changed_at.format('YYYY-MM-DD') : null,
         close_date: values.close_date ? values.close_date.format('YYYY-MM-DD') : null,
       };
       delete payload.vacancy_id;
+      if (!isAdmin) {
+        delete payload.status_changed_at;
+      }
 
       if (Array.isArray(payload.offer_rejection_reason)) {
         payload.offer_rejection_reason = payload.offer_rejection_reason.length > 0
@@ -677,7 +699,16 @@ const DashboardPage = () => {
           </Space>
         }
       >
-        <Form form={form} layout="vertical" initialValues={{ open_date: dayjs(), quantity: 1 }}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ open_date: dayjs(), quantity: 1 }}
+          onValuesChange={(changedValues) => {
+            if ('status_changed_at' in changedValues) {
+              statusChangedManualRef.current = true;
+            }
+          }}
+        >
           <div className="form-section">
             <div className="form-section-title">Основная информация</div>
             <Row gutter={16}>
@@ -869,16 +900,27 @@ const DashboardPage = () => {
           <div className="form-section">
             <div className="form-section-title">Даты</div>
             <Row gutter={16}>
-              <Col span={isMobile ? 24 : 12}>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="open_date" label="Дата открытия">
                   <DatePicker 
                     style={{ width: '100%' }} 
                     format="DD.MM.YYYY" 
-                    disabled={isRecruiter}
+                    disabled={!isAdmin}
                   />
                 </HighlightFormItem>
               </Col>
-              <Col span={isMobile ? 24 : 12}>
+              <Col span={isMobile ? 24 : 8}>
+                <HighlightFormItem editing={!!editingVacancy} name="status_changed_at" label="Дата изм. статуса">
+                  <DatePicker
+                    style={{ width: '100%' }}
+                    format="DD.MM.YYYY"
+                    disabled={!isAdmin}
+                    placeholder={isAdmin ? 'Авто или выберите дату' : 'Автоматически'}
+                    data-testid="vacancy-status-changed-at"
+                  />
+                </HighlightFormItem>
+              </Col>
+              <Col span={isMobile ? 24 : 8}>
                 <HighlightFormItem editing={!!editingVacancy} name="close_date" label="Дата закрытия">
                   <DatePicker style={{ width: '100%' }} format="DD.MM.YYYY" />
                 </HighlightFormItem>

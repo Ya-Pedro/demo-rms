@@ -672,14 +672,21 @@ async def preview_vacancies_import(
         if u.email:
             user_lookup_by_email[_norm_str(u.email)] = u.id
 
-    existing_vids = set((await db.execute(select(Vacancy.vacancy_id))).scalars().all())
+    existing_rows = (await db.execute(select(Vacancy.vacancy_id, Vacancy.status_changed_at, Vacancy.close_date))).all()
+    existing_vids = {r.vacancy_id for r in existing_rows}
+    existing_dates_map = {r.vacancy_id: (r.status_changed_at, r.close_date) for r in existing_rows}
 
     vid_col_name = matched_columns["vacancy_id"][0]
     pos_col_name = matched_columns.get("position_name", (None, None))[0]
+    status_col_name = matched_columns.get("status_id", (None, None))[0]
+    st_changed_col_name = matched_columns.get("status_changed_at", (None, None))[0]
+    close_col_name = matched_columns.get("close_date", (None, None))[0]
+    _STATUSES_REQUIRING_DATE = {"отмена", "закрыта", "hold"}
 
     missing_dict_map = {}
     missing_recruiter_map = {}
     missing_positions = []
+    missing_status_dates = []
     dash_dates_count = 0
     other_errors = []
     existing_count = 0
@@ -704,6 +711,31 @@ async def preview_vacancies_import(
                     "vacancy_id": vid_str,
                     "suggested_name": f"Вакансия {vid_str}",
                 })
+
+        raw_st = row.get(status_col_name) if status_col_name else None
+        if raw_st is not None and not pd.isna(raw_st):
+            st_norm = _clean_dict_val(raw_st)
+            if st_norm in _STATUSES_REQUIRING_DATE:
+                raw_st_chg = row.get(st_changed_col_name) if st_changed_col_name else None
+                raw_close = row.get(close_col_name) if close_col_name else None
+                st_chg_empty = (
+                    raw_st_chg is None or pd.isna(raw_st_chg)
+                    or str(raw_st_chg).strip() == ""
+                    or str(raw_st_chg).strip().lower() in EMPTY_DATE_STRINGS
+                )
+                close_empty = (
+                    raw_close is None or pd.isna(raw_close)
+                    or str(raw_close).strip() == ""
+                    or str(raw_close).strip().lower() in EMPTY_DATE_STRINGS
+                )
+                db_st_chg, db_close = existing_dates_map.get(vid_str, (None, None))
+                if st_chg_empty and db_st_chg is None:
+                    missing_status_dates.append({
+                        "row": excel_row,
+                        "vacancy_id": vid_str,
+                        "status": str(raw_st).strip(),
+                        "has_close_date": (not close_empty) or (db_close is not None),
+                    })
 
         for field, (col_name, defn) in matched_columns.items():
             if field == "vacancy_id":
@@ -783,6 +815,7 @@ async def preview_vacancies_import(
         "missing_dictionaries": missing_dictionaries,
         "missing_recruiters": missing_recruiters,
         "missing_positions": missing_positions,
+        "missing_status_dates": missing_status_dates,
         "dash_dates_count": dash_dates_count,
         "other_errors": other_errors[:50],
     }

@@ -1622,12 +1622,40 @@ const VacancyTable = ({
               </div>
 
               {/* Уведомление если нет конфликтов */}
-              {!importPreview.has_conflicts && (
+              {!importPreview.has_conflicts && !(importPreview.missing_status_dates?.length > 0) && (
                 <Alert
                   type="success"
                   showIcon
                   message={<span style={{ fontSize: 14, fontWeight: 600 }}>Файл проверен</span>}
                   description={<span style={{ fontSize: 13 }}>Все строки и справочники корректны. Можно начинать импорт.</span>}
+                />
+              )}
+
+              {/* Предупреждение о вакансиях в финальных статусах/Hold без даты изменения статуса */}
+              {importPreview.missing_status_dates?.length > 0 && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      Не заполнена «Дата изм. статуса» ({importPreview.missing_status_dates.length} стр.)
+                    </span>
+                  }
+                  description={
+                    <div style={{ fontSize: 12, color: '#475569' }}>
+                      Для статусов «Отмена» / «Закрыта» / «Hold» дата смены статуса нужна для корректного учёта на дашбордах.
+                      <div style={{ marginTop: 4, maxHeight: 80, overflowY: 'auto' }}>
+                        {importPreview.missing_status_dates.slice(0, 15).map((item, i) => (
+                          <div key={i}>
+                            • Стр. {item.row} (ID {item.vacancy_id}, статус «{item.status}»{item.has_close_date ? ', есть дата закрытия' : ', дата закрытия тоже пуста'})
+                          </div>
+                        ))}
+                        {importPreview.missing_status_dates.length > 15 && (
+                          <div>...и ещё {importPreview.missing_status_dates.length - 15}</div>
+                        )}
+                      </div>
+                    </div>
+                  }
                 />
               )}
 

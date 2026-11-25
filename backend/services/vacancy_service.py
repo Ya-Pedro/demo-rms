@@ -239,6 +239,7 @@ class VacancyService:
         if current_user and current_user.role == UserRole.RECRUITER:
             vacancy_data["recruiter_id"] = current_user.id
             vacancy_data["open_date"] = date.today()
+            vacancy_data.pop("status_changed_at", None)
             # Preserve co_recruiter_id so recruiter can assign a co-recruiter
         elif not vacancy_data.get("open_date"):
             vacancy_data["open_date"] = date.today()
@@ -338,10 +339,17 @@ class VacancyService:
         vacancy = await self.get_vacancy_or_404(vacancy_id)
         await self.check_recruiter_access(vacancy, current_user)
 
+        is_admin = bool(current_user and current_user.role in (UserRole.ADMIN, UserRole.SUPERADMIN))
+        has_explicit_status_date = "status_changed_at" in update_data
+        explicit_status_date = update_data.get("status_changed_at")
+
         if current_user and current_user.role == UserRole.RECRUITER:
             update_data.pop("recruiter_id", None)
             update_data.pop("open_date", None)
+            update_data.pop("status_changed_at", None)
             # Preserve co_recruiter_id so recruiter can update co-recruiter
+        elif not is_admin:
+            update_data.pop("status_changed_at", None)
 
                                             
         _hist_before = None
@@ -360,15 +368,18 @@ class VacancyService:
         new_status_id = update_data.get("status_id")
         if new_status_id is not None and new_status_id != old_status_id:
             old_status_val = vacancy.status.value if vacancy.status else None
-            change_date = date.today()
+            if is_admin and has_explicit_status_date and explicit_status_date is not None and explicit_status_date != vacancy.status_changed_at:
+                change_date = explicit_status_date
+            else:
+                change_date = date.today()
             update_data["status_changed_at"] = change_date
 
             if old_status_val == "Hold" and vacancy.status_changed_at:
                 from services.holidays import calculate_working_days
-                hold_wd = calculate_working_days(vacancy.status_changed_at, change_date)
+                hold_wd = max(0, calculate_working_days(vacancy.status_changed_at, change_date))
                 vacancy.hold_days = (vacancy.hold_days or 0) + hold_wd
-        else:
-            # Status was not changed: preserve existing status_changed_at
+        elif not (is_admin and has_explicit_status_date):
+            # Status was not changed (or caller cannot edit date): preserve existing status_changed_at
             update_data.pop("status_changed_at", None)
 
         if "offer_accepted" in update_data:

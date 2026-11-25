@@ -16,13 +16,15 @@ except ImportError:
 
 import httpx
 import openpyxl
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from database import Base, get_db
 from models import User, UserRole, Dictionary, DictionaryType, Vacancy, WeeklyReport
 from auth import create_access_token, get_password_hash
-from server import app
+from server import app, rms_key_builder
 
 
 async def _setup_sort_filter_db():
@@ -46,9 +48,13 @@ async def _setup_sort_filter_db():
     async with SessionLocal() as db:
         pwd = get_password_hash("TestPass123!")
         sa = User(email="sa@test.ru", hashed_password=pwd, full_name="Super Admin", role=UserRole.SUPERADMIN, is_active=True)
-        db.add(sa)
+        adm = User(email="adm@test.ru", hashed_password=pwd, full_name="Admin User", role=UserRole.ADMIN, is_active=True)
+        rec = User(email="rec@test.ru", hashed_password=pwd, full_name="Recruiter User", role=UserRole.RECRUITER, is_active=True)
+        db.add_all([sa, adm, rec])
 
         st_open = Dictionary(type=DictionaryType.VACANCY_STATUS, value="Открыта")
+        st_cancel = Dictionary(type=DictionaryType.VACANCY_STATUS, value="Отмена")
+        st_hold = Dictionary(type=DictionaryType.VACANCY_STATUS, value="Hold")
         role_android = Dictionary(type=DictionaryType.IT_ROLE, value="Android разработчик")
         role_angular = Dictionary(type=DictionaryType.IT_ROLE, value="angular разработчик")
         role_sys = Dictionary(type=DictionaryType.IT_ROLE, value="системный администратор")
@@ -57,7 +63,7 @@ async def _setup_sort_filter_db():
         city_dict = Dictionary(type=DictionaryType.CITY, value="Москва")
         tl_dict = Dictionary(type=DictionaryType.TEAM_LEAD, value="Лид Из Справочника")
 
-        db.add_all([st_open, role_android, role_angular, role_sys, role_lawyer, feas_dict, city_dict, tl_dict])
+        db.add_all([st_open, st_cancel, st_hold, role_android, role_angular, role_sys, role_lawyer, feas_dict, city_dict, tl_dict])
         await db.flush()
 
         # 1: empty role, empty candidate (None), empty feasibility, empty quantity (None)
@@ -114,10 +120,21 @@ async def _setup_sort_filter_db():
         ])
         await db.commit()
 
-        ids = {"feas_dict": feas_dict.id}
+        ids = {
+            "feas_dict": feas_dict.id,
+            "st_open": st_open.id,
+            "st_cancel": st_cancel.id,
+            "st_hold": st_hold.id,
+            "rec_id": rec.id,
+        }
 
-    token = create_access_token({"sub": "sa@test.ru", "role": "superadmin"})
-    return engine, ids, {"Authorization": f"Bearer {token}"}
+    FastAPICache.init(InMemoryBackend(), prefix="test-sort-filter", key_builder=rms_key_builder)
+    token_sa = create_access_token({"sub": "sa@test.ru", "role": "superadmin"})
+    token_adm = create_access_token({"sub": "adm@test.ru", "role": "admin"})
+    token_rec = create_access_token({"sub": "rec@test.ru", "role": "recruiter"})
+    ids["hdr_adm"] = {"Authorization": f"Bearer {token_adm}"}
+    ids["hdr_rec"] = {"Authorization": f"Bearer {token_rec}"}
+    return engine, ids, {"Authorization": f"Bearer {token_sa}"}
 
 
 @asyncio_mark
@@ -255,7 +272,95 @@ async def test_sorting_empty_minimal_and_column_filters():
             wb_ev = openpyxl.load_workbook(BytesIO(r_exp_vid.content))
             assert wb_ev["Отчеты"].max_row == 2  # header + 1 matching row
 
-            print("ALL SORTING & COLUMN FILTER REGRESSION TESTS PASSED (100%)!")
+            # --- 7. ADMIN/SUPERADMIN STATUS_CHANGED_AT EDIT, RBAC, AND IMPORT PREVIEW WARNING ---
+            # Create an undated Cancelled vacancy as Admin (explicit None)
+            r_cr = await client.post("/api/vacancies", json={
+                "position_name": "Октябрьская отмена без даты",
+                "status_id": ids["st_cancel"],
+                "open_date": "2026-09-20",
+                "status_changed_at": None,
+                "recruiter_id": ids["rec_id"],
+            }, headers=ids["hdr_adm"])
+            assert r_cr.status_code == 201
+            undated_vac = r_cr.json()
+            # Ensure cleared via PATCH as admin (in case create auto-filled date.today())
+            r_clr = await client.patch(f"/api/vacancies/{undated_vac['id']}", json={
+                "status_changed_at": None,
+            }, headers=ids["hdr_adm"])
+            assert r_clr.status_code == 200 and r_clr.json()["status_changed_at"] is None
+
+            # Before filling October date: October metrics have 0 Cancelled
+            r_oct_before = await client.get("/api/dashboards/metrics", params={
+                "start_date": "2026-10-01", "end_date": "2026-10-31"
+            }, headers=headers)
+            assert r_oct_before.json()["chart2_open_closed"]["cancel"] == 0
+
+            # Admin fills October status_changed_at without changing status_id
+            r_fix_oct = await client.patch(f"/api/vacancies/{undated_vac['id']}", json={
+                "status_id": ids["st_cancel"],
+                "status_changed_at": "2026-10-15",
+            }, headers=ids["hdr_adm"])
+            assert r_fix_oct.status_code == 200
+            assert r_fix_oct.json()["status_changed_at"] == "2026-10-15"
+
+            # Dashboard cache cleared automatically & October now reflects cancel == 1!
+            r_oct_after = await client.get("/api/dashboards/metrics", params={
+                "start_date": "2026-10-01", "end_date": "2026-10-31"
+            }, headers=headers)
+            assert r_oct_after.json()["chart2_open_closed"]["cancel"] == 1
+
+            # Superadmin changes status AND sets explicit past date -> keeps explicit date
+            r_sa_chg = await client.patch(f"/api/vacancies/{undated_vac['id']}", json={
+                "status_id": ids["st_open"],
+                "status_changed_at": "2026-10-20",
+            }, headers=headers)
+            assert r_sa_chg.status_code == 200
+            assert r_sa_chg.json()["status_changed_at"] == "2026-10-20"
+
+            # Recruiter CANNOT manually change status_changed_at on create or update
+            r_rec_cr = await client.post("/api/vacancies", json={
+                "position_name": "Рекрутерская вакансия",
+                "status_id": ids["st_open"],
+                "status_changed_at": "2026-10-01",
+            }, headers=ids["hdr_rec"])
+            assert r_rec_cr.status_code == 201
+            rec_vac = r_rec_cr.json()
+            assert rec_vac["status_changed_at"] == date.today().isoformat()
+
+            r_rec_patch = await client.patch(f"/api/vacancies/{rec_vac['id']}", json={
+                "status_changed_at": "2026-10-05",
+            }, headers=ids["hdr_rec"])
+            assert r_rec_patch.status_code == 200
+            assert r_rec_patch.json()["status_changed_at"] == date.today().isoformat()
+
+            r_rec_chg_st = await client.patch(f"/api/vacancies/{rec_vac['id']}", json={
+                "status_id": ids["st_hold"],
+                "status_changed_at": "2026-10-05",
+            }, headers=ids["hdr_rec"])
+            assert r_rec_chg_st.status_code == 200
+            assert r_rec_chg_st.json()["status_changed_at"] == date.today().isoformat()
+
+            # Excel /import/preview highlights missing status_changed_at on Отмена/Hold, ignores existing DB dated row
+            wb_imp = openpyxl.Workbook()
+            ws_imp = wb_imp.active
+            ws_imp.append(["ID вакансии", "Вакансия", "Статус вакансии", "Дата изм. статуса"])
+            ws_imp.append(["NEW_CANCEL", "Отмена без даты", "Отмена", ""])
+            ws_imp.append(["NEW_HOLD", "Холд с прочерком", "Hold", "-"])
+            ws_imp.append([undated_vac["vacancy_id"], "Уже с датой в БД", "Отмена", ""])
+            imp_buf = BytesIO()
+            wb_imp.save(imp_buf)
+            imp_buf.seek(0)
+            r_prev = await client.post(
+                "/api/vacancies/import/preview",
+                files={"file": ("test.xlsx", imp_buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+                headers=headers,
+            )
+            assert r_prev.status_code == 200
+            prev_data = r_prev.json()
+            assert len(prev_data["missing_status_dates"]) == 2
+            assert {m["vacancy_id"] for m in prev_data["missing_status_dates"]} == {"NEW_CANCEL", "NEW_HOLD"}
+
+            print("ALL SORTING, COLUMN FILTER & STATUS DATE TESTS PASSED (100%)!")
 
     finally:
         app.dependency_overrides.clear()
