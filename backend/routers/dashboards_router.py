@@ -610,7 +610,7 @@ def _calculate_ivakhin_statuses(
             if allowed_status_names is not None and eff not in allowed_status_names:
                 continue
 
-            b_name = block_map.get(v.block_id, "Прочее") if v.block_id else "Прочее"
+            b_name = block_map.get(v.block_id, "Не указан") if v.block_id else "Не указан"
 
             if eff == "Закрыта":
                 block_counts[b_name]["closed"] += 1

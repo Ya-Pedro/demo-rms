@@ -165,12 +165,18 @@ async def _setup_test_app():
             block_id=blk_other.id, recruiter_id=rec2.id,
             open_date=date(2026, 11, 2),
         )
+        # Vacancy without block_id (must map to "Не указан", NOT merge into dictionary block "Прочее")
+        v_no_block = Vacancy(
+            vacancy_id="9001", position_name="Без блока", status_id=st_open.id,
+            block_id=None, recruiter_id=rec1.id,
+            open_date=date(2026, 11, 3),
+        )
 
         db.add_all([
             v_open_1, v_offer_1, v_open_2, v_open_3,
             v_cancel_undated, v_cancel_oct,
             v_closed_nov1, v_closed_dec,
-            v_hold_dig, v_hold_interval, v_collision,
+            v_hold_dig, v_hold_interval, v_collision, v_no_block,
         ])
         await db.flush()
 
@@ -452,6 +458,14 @@ async def test_dashboards_consistency_and_all_filters():
             assert c2a["total"] == c2a["open"] + c2a["closed"] + c2a["hold"] + c2a["cancel"]
             assert c2a["cancel"] == 2  # v_cancel_undated + v_cancel_oct
             assert c2a["open"] == 4
+
+            # 9. Unfiltered Nov period keeps block_id=None as "Не указан", not inflating "Прочее"
+            r_unfilt_nov = await client.get("/api/dashboards/metrics", params={
+                "start_date": "2026-11-01", "end_date": "2026-11-25"
+            }, headers=headers)
+            ivk_blocks = {b["block"]: b["open"] for b in r_unfilt_nov.json()["chart_ivakhin_statuses"][0]["blocks"]}
+            assert ivk_blocks.get("Прочее") == 1
+            assert ivk_blocks.get("Не указан") == 1
 
             print("ALL DASHBOARD CONSISTENCY & FILTER TESTS PASSED (100%)!")
 
