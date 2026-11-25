@@ -10,6 +10,7 @@ from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi_cache import FastAPICache
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,13 +60,18 @@ async def create_delegation(
     current_user: User = Depends(get_current_user),
 ):
     svc = DelegationService(db)
-    return await svc.create_delegation(
+    res = await svc.create_delegation(
         vacancy_id=vacancy_id,
         delegated_to_id=body.delegated_to_id,
         start_date=body.start_date,
         end_date=body.end_date,
         current_user=current_user,
     )
+    try:
+        await FastAPICache.clear(namespace="dashboards")
+    except Exception:
+        pass
+    return res
 
 @router.get(
     "/vacancies/{vacancy_id}/delegations",
@@ -92,3 +98,7 @@ async def revoke_delegation(
 ):
     svc = DelegationService(db)
     await svc.revoke_delegation(delegation_id, current_user)
+    try:
+        await FastAPICache.clear(namespace="dashboards")
+    except Exception:
+        pass

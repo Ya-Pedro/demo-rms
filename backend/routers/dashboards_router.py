@@ -1,20 +1,8 @@
-\
-\
-\
-\
-\
-\
-\
-\
-\
-\
-\
-\
-   
 from __future__ import annotations
 
+import os
 from collections import Counter, defaultdict
-from datetime import date as _date, timedelta
+from datetime import date as _date, datetime as _datetime, timedelta, timezone as _timezone
 from io import BytesIO
 from typing import Optional
 
@@ -26,13 +14,46 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from database import get_db
-from models import Vacancy, WeeklyReport, Dictionary, DictionaryType, User, UserRole, VacancyHistory
+from models import Vacancy, WeeklyReport, Dictionary, DictionaryType, User, UserRole, VacancyHistory, VacancyDelegation
 from auth import get_current_user
 from services.working_days_service import calculate_net_working_days
-from services.vacancy_service import get_current_week_monday
 from fastapi_cache.decorator import cache
 
 router = APIRouter(prefix="/dashboards", tags=["Дашборды"])
+
+
+def _local_today() -> _date:
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo(os.environ.get("APP_TIMEZONE", "Europe/Moscow"))
+        return _datetime.now(tz).date()
+    except Exception:
+        return (_datetime.now(_timezone.utc) + timedelta(hours=3)).date()
+
+
+def _local_week_monday() -> _date:
+    today = _local_today()
+    return today - timedelta(days=today.weekday())
+
+
+def _to_local_date(val) -> Optional[_date]:
+    if val is None:
+        return None
+    if isinstance(val, _datetime):
+        try:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo(os.environ.get("APP_TIMEZONE", "Europe/Moscow"))
+            if val.tzinfo is None:
+                val = val.replace(tzinfo=_timezone.utc)
+            return val.astimezone(tz).date()
+        except Exception:
+            if val.tzinfo is None:
+                return (val + timedelta(hours=3)).date()
+            return val.astimezone(_timezone(timedelta(hours=3))).date()
+    if isinstance(val, _date):
+        return val
+    return None
+
 
 async def _dict_map(db: AsyncSession, dtype: DictionaryType) -> dict:
     rows = (await db.execute(
@@ -40,8 +61,8 @@ async def _dict_map(db: AsyncSession, dtype: DictionaryType) -> dict:
     )).all()
     return {r.id: r.value for r in rows}
 
+
 def _parse_ids(raw: Optional[str]) -> Optional[list[int]]:
-                                           
     if not raw:
         return None
     try:
@@ -49,8 +70,271 @@ def _parse_ids(raw: Optional[str]) -> Optional[list[int]]:
     except ValueError:
         return None
 
-def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
-    week_monday = get_current_week_monday()
+
+def _parse_dashboard_filters(
+    start_date: Optional[str],
+    end_date: Optional[str],
+    it_role_ids: Optional[str],
+    level_ids: Optional[str],
+    admin_manager_ids: Optional[str],
+    project_ids: Optional[str],
+    recruiter_ids: Optional[str],
+    block_ids: Optional[str],
+    status_ids: Optional[str],
+    vacancy_ids: Optional[str],
+    block_id: Optional[int],
+    project_id: Optional[int],
+) -> dict:
+    dt_start: Optional[_date] = None
+    dt_end: Optional[_date] = None
+    try:
+        if start_date:
+            dt_start = _date.fromisoformat(start_date)
+        if end_date:
+            dt_end = _date.fromisoformat(end_date)
+        if dt_start and dt_end and dt_start > dt_end:
+            dt_start, dt_end = dt_end, dt_start
+    except ValueError:
+        pass
+
+    f_blocks = _parse_ids(block_ids)
+    f_projects = _parse_ids(project_ids)
+    if block_id and not f_blocks:
+        f_blocks = [block_id]
+    if project_id and not f_projects:
+        f_projects = [project_id]
+
+    return {
+        "dt_start": dt_start,
+        "dt_end": dt_end,
+        "f_it_roles": _parse_ids(it_role_ids),
+        "f_levels": _parse_ids(level_ids),
+        "f_admin_mgrs": _parse_ids(admin_manager_ids),
+        "f_projects": f_projects,
+        "f_recruiters": _parse_ids(recruiter_ids),
+        "f_blocks": f_blocks,
+        "f_statuses": _parse_ids(status_ids),
+        "f_vac_tokens": set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None,
+    }
+
+
+async def _load_hold_intervals(db: AsyncSession) -> dict[int, list[tuple[Optional[_date], _date]]]:
+    """
+    Восстанавливает интервалы [hold_start, hold_exit) нахождения вакансий в статусе Hold
+    из таблицы VacancyHistory в хронологическом порядке (в локальной таймзоне).
+    """
+    import json as _json
+    hist_hold_rows = (await db.execute(
+        select(
+            VacancyHistory.vacancy_id,
+            VacancyHistory.created_at,
+            VacancyHistory.changes,
+        ).where(
+            VacancyHistory.changes.ilike('%Hold%'),
+            VacancyHistory.action_type == "UPDATE",
+        ).order_by(VacancyHistory.created_at.asc(), VacancyHistory.id.asc())
+    )).all()
+
+    pending_start: dict[int, Optional[_date]] = {}
+    intervals: dict[int, list[tuple[Optional[_date], _date]]] = defaultdict(list)
+
+    for hr in hist_hold_rows:
+        if hr.vacancy_id is None:
+            continue
+        try:
+            ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
+            if not isinstance(ch, dict):
+                continue
+            st_ch = ch.get("Статус вакансии") or ch.get("status")
+            if not isinstance(st_ch, dict):
+                continue
+            old_val = (st_ch.get("old") or "").strip()
+            new_val = (st_ch.get("new") or "").strip()
+            rec_d = _to_local_date(hr.created_at)
+            if rec_d is None:
+                continue
+
+            if new_val == "Hold" and old_val != "Hold":
+                pending_start[hr.vacancy_id] = rec_d
+            elif old_val == "Hold" and new_val != "Hold":
+                h_start = pending_start.pop(hr.vacancy_id, None)
+                if h_start is None or h_start < rec_d:
+                    intervals[hr.vacancy_id].append((h_start, rec_d))
+        except Exception:
+            pass
+
+    return intervals
+
+
+def _was_on_hold_at(
+    v_id: int,
+    cutoff: _date,
+    hold_intervals: dict[int, list[tuple[Optional[_date], _date]]],
+) -> bool:
+    for h_start, h_end in hold_intervals.get(v_id, ()):
+        if cutoff < h_end and (h_start is None or h_start <= cutoff):
+            return True
+    return False
+
+
+def _compute_effective_status(
+    v,
+    dt_start: Optional[_date],
+    dt_end: Optional[_date],
+    status_map: dict[int, str],
+    hold_intervals: dict[int, list[tuple[Optional[_date], _date]]],
+) -> Optional[str]:
+    if getattr(v, "quantity", 1) == 0.001:
+        return None
+    if dt_end and v.open_date and v.open_date > dt_end:
+        return None
+
+    st_name = status_map.get(v.status_id)
+    if not st_name:
+        return None
+    if not dt_start and not dt_end:
+        return st_name
+
+    # Если вакансия находилась в Hold на дату среза dt_end по истории переходов
+    if dt_end and _was_on_hold_at(v.id, dt_end, hold_intervals):
+        return "Hold"
+
+    if st_name == "Закрыта":
+        c_date = v.close_date or _to_local_date(v.status_changed_at)
+        if not c_date:
+            return None
+        if dt_start and c_date < dt_start:
+            return None
+        if dt_end and c_date > dt_end:
+            return "Открыта"
+        return "Закрыта"
+
+    if st_name == "Отмена":
+        c_date = _to_local_date(v.status_changed_at) or v.close_date
+        if not c_date:
+            # Отменённая вакансия без даты отмены не должна превращаться в «Открыта»
+            return None
+        if dt_start and c_date < dt_start:
+            return None
+        if dt_end and c_date > dt_end:
+            return "Открыта"
+        return "Отмена"
+
+    if st_name == "Hold":
+        h_date = _to_local_date(v.status_changed_at)
+        if dt_end and h_date and h_date > dt_end:
+            return "Открыта"
+        return "Hold"
+
+    return st_name
+
+
+def _matches_vac_tokens(v, f_vac_tokens: set[str], all_pk_strs: set[str]) -> bool:
+    v_pk = str(v.id)
+    v_ext = str(v.vacancy_id).strip() if v.vacancy_id else ""
+    for tok in f_vac_tokens:
+        if tok in all_pk_strs:
+            if v_pk == tok:
+                return True
+        elif v_ext and v_ext == tok:
+            return True
+    return False
+
+
+async def _load_active_delegations(db: AsyncSession, cutoff: _date) -> dict[int, list[int]]:
+    """
+    Загружает активные делегирования (замещения на время отпуска) на дату среза cutoff.
+    """
+    rows = (await db.execute(
+        select(VacancyDelegation.vacancy_id, VacancyDelegation.delegated_to_id)
+        .where(
+            VacancyDelegation.is_active == True,
+            VacancyDelegation.start_date <= cutoff,
+            VacancyDelegation.end_date >= cutoff,
+        )
+    )).all()
+    res: dict[int, list[int]] = defaultdict(list)
+    for r in rows:
+        if r.delegated_to_id and r.delegated_to_id not in res[r.vacancy_id]:
+            res[r.vacancy_id].append(r.delegated_to_id)
+    return res
+
+
+def _get_vacancy_recruiter_ids(v, active_delegations: dict[int, list[int]]) -> list[int]:
+    """
+    Возвращает упорядоченный список уникальных ID всех рекрутеров по вакансии
+    для блока «Загрузка рекрутеров»: основной + доп. (со-рекрутер) + замещающие (делегирование).
+    """
+    ids: list[int] = []
+    if getattr(v, "recruiter_id", None):
+        ids.append(v.recruiter_id)
+    if getattr(v, "co_recruiter_id", None) and v.co_recruiter_id not in ids:
+        ids.append(v.co_recruiter_id)
+    for del_uid in active_delegations.get(v.id, ()):
+        if del_uid not in ids:
+            ids.append(del_uid)
+    return ids
+
+
+async def _load_recruiters_lookup(
+    db: AsyncSession,
+    all_vacs,
+    active_delegations: Optional[dict[int, list[int]]] = None,
+) -> tuple[dict[int, str], list[dict]]:
+    rows = (await db.execute(select(User.id, User.full_name, User.is_active))).all()
+    user_name_map = {r.id: r.full_name for r in rows}
+    assigned_ids = set()
+    for v in all_vacs:
+        if v.recruiter_id:
+            assigned_ids.add(v.recruiter_id)
+        if getattr(v, "co_recruiter_id", None):
+            assigned_ids.add(v.co_recruiter_id)
+        if active_delegations:
+            assigned_ids.update(active_delegations.get(v.id, ()))
+    recruiters_opts = sorted(
+        [
+            {"id": r.id, "value": r.full_name}
+            for r in rows
+            if r.is_active or r.id in assigned_ids
+        ],
+        key=lambda x: x["value"],
+    )
+    return user_name_map, recruiters_opts
+
+
+def _get_report_week_start(r) -> Optional[_date]:
+    if getattr(r, "week_start", None):
+        return r.week_start
+    if getattr(r, "year", None) and getattr(r, "week_number", None):
+        try:
+            return _date.fromisocalendar(r.year, r.week_number, 1)
+        except ValueError:
+            return None
+    return None
+
+
+def _report_in_period(r, dt_start: Optional[_date], dt_end: Optional[_date]) -> bool:
+    if not dt_start and not dt_end:
+        return True
+    rep_d = _get_report_week_start(r)
+    if not rep_d:
+        return False
+    if dt_start and rep_d < dt_start:
+        return False
+    if dt_end and rep_d > dt_end:
+        return False
+    return True
+
+
+def _calculate_recruiter_load(
+    vacs,
+    user_name_map: dict[int, str],
+    status_map: dict[int, str],
+    eff_status_fn=None,
+    active_delegations: Optional[dict[int, list[int]]] = None,
+    f_recruiters: Optional[list[int]] = None,
+):
+    week_monday = _local_week_monday()
     week_sunday = week_monday + timedelta(days=6)
     ACTIVE_STATUSES = [
         "Выход",
@@ -60,26 +344,21 @@ def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
         "Проверка СБ",
         "Согласование фин условий",
     ]
+    INACTIVE_TERMINAL = {"Закрыта", "Hold", "Отмена"}
+    deleg_map = active_delegations or {}
 
     recruiter_matrix_map: dict[str, dict] = {}
-    for r in recruiters_opts:
-        r_name = r["value"]
-        recruiter_matrix_map[r_name] = {
-            "recruiter": r_name,
-            "exit": 0,
-            "open": 0,
-            "offer": 0,
-            "docs_prep": 0,
-            "security_check": 0,
-            "fin_approval": 0,
-            "new_this_week": 0,
-            "total_open": 0,
-        }
-
     for v in vacs:
-        s_name = status_map.get(v.status_id)
-        if not s_name or s_name not in ACTIVE_STATUSES:
+        rec_ids = _get_vacancy_recruiter_ids(v, deleg_map)
+        if not rec_ids:
             continue
+
+        cur_st = status_map.get(v.status_id)
+        eff_st = eff_status_fn(v) if eff_status_fn else cur_st
+        if not eff_st or eff_st in INACTIVE_TERMINAL:
+            continue
+
+        s_name = cur_st if (cur_st and cur_st in ACTIVE_STATUSES) else "Открыта"
 
         is_new_this_week = (
             s_name == "Открыта"
@@ -87,15 +366,10 @@ def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
             and (week_monday <= v.open_date <= week_sunday)
         )
 
-        rec_names = []
-        if v.recruiter_id:
-            name = next(
-                (r["value"] for r in recruiters_opts if r["id"] == v.recruiter_id),
-                f"ID {v.recruiter_id}"
-            )
-            rec_names.append(name)
-
-        for name in rec_names:
+        for uid in rec_ids:
+            if f_recruiters and uid not in f_recruiters:
+                continue
+            name = user_name_map.get(uid, f"ID {uid}")
             if name not in recruiter_matrix_map:
                 recruiter_matrix_map[name] = {
                     "recruiter": name,
@@ -128,7 +402,7 @@ def _calculate_recruiter_load(vacs, recruiters_opts, status_map):
 
     recruiter_load_matrix = sorted(
         [data for data in recruiter_matrix_map.values() if data["total_open"] > 0],
-        key=lambda x: x["recruiter"]
+        key=lambda x: x["recruiter"],
     )
 
     totals = {
@@ -276,21 +550,22 @@ def _calculate_ivakhin_statuses(
     vacs,
     block_map: dict[int, str],
     status_map: dict[int, str],
-    hold_exits: dict[int, _date],
+    hold_intervals: dict[int, list[tuple[Optional[_date], _date]]],
     dt_start: Optional[_date],
     dt_end: Optional[_date],
+    allowed_status_names: Optional[set[str]] = None,
 ) -> list[dict]:
     import calendar
-    now = _date.today()
+    now = _local_today()
 
     if not dt_start and not dt_end:
         curr_year = now.year
         months = [(curr_year, m) for m in range(1, 13)]
     else:
-        start_y = dt_start.year if dt_start else now.year
-        start_m = dt_start.month if dt_start else 1
         end_y = dt_end.year if dt_end else now.year
         end_m = dt_end.month if dt_end else (now.month if end_y == now.year else 12)
+        start_y = dt_start.year if dt_start else end_y
+        start_m = dt_start.month if dt_start else 1
         months = []
         y, m = start_y, start_m
         while (y < end_y) or (y == end_y and m <= end_m):
@@ -314,6 +589,11 @@ def _calculate_ivakhin_statuses(
         last_day = calendar.monthrange(y, m)[1]
         m_end = _date(y, m, last_day)
 
+        eff_m_start = max(m_start, dt_start) if (dt_start and dt_start > m_start) else m_start
+        eff_m_end = min(m_end, dt_end) if (dt_end and dt_end < m_end) else m_end
+        if eff_m_start > eff_m_end:
+            continue
+
         m_short = MONTH_NAMES_RU.get(m, str(m))
         m_label = f"{m_short} {y}" if multiple_years else m_short
 
@@ -324,59 +604,29 @@ def _calculate_ivakhin_statuses(
         m_cancel = 0
 
         for v in vacs:
-            st_name = status_map.get(v.status_id, "")
+            eff = _compute_effective_status(v, eff_m_start, eff_m_end, status_map, hold_intervals)
+            if eff is None:
+                continue
+            if allowed_status_names is not None and eff not in allowed_status_names:
+                continue
+
             b_name = block_map.get(v.block_id, "Прочее") if v.block_id else "Прочее"
 
-            o_d = v.open_date
-            c_d = v.close_date
-            st_d = v.status_changed_at.date() if hasattr(v.status_changed_at, "date") else v.status_changed_at
-
-            eff_c_date = c_d or st_d
-            eff_cancel_date = st_d or c_d
-
-            # 1. Closed in this month (flow)
-            if st_name == "Закрыта":
-                if eff_c_date and m_start <= eff_c_date <= m_end:
-                    block_counts[b_name]["closed"] += 1
-                    m_closed += 1
-
-            # 2. Cancelled in this month (flow)
-            if st_name == "Отмена":
-                if eff_cancel_date and m_start <= eff_cancel_date <= m_end:
-                    block_counts[b_name]["cancel"] += 1
-                    m_cancel += 1
-
-            # 3. Hold on m_end (balance)
-            is_hold = False
-            if (o_d and o_d <= m_end) or (o_d is None and st_name == "Hold"):
-                if st_name == "Hold":
-                    h_date = st_d
-                    if not h_date or h_date <= m_end:
-                        is_hold = True
-                elif v.id in hold_exits and hold_exits[v.id] > m_end:
-                    is_hold = True
-            if is_hold:
+            if eff == "Закрыта":
+                block_counts[b_name]["closed"] += 1
+                m_closed += 1
+            elif eff == "Отмена":
+                block_counts[b_name]["cancel"] += 1
+                m_cancel += 1
+            elif eff == "Hold":
                 block_counts[b_name]["hold"] += 1
                 m_hold += 1
-
-            # 4. Open on m_end (balance)
-            if not is_hold and ((o_d and o_d <= m_end) or (o_d is None and st_name not in ("Закрыта", "Отмена", "Hold"))):
-                was_open = False
-                if st_name not in ("Закрыта", "Отмена", "Hold"):
-                    was_open = True
-                elif st_name == "Закрыта":
-                    if eff_c_date and eff_c_date > m_end:
-                        was_open = True
-                elif st_name == "Отмена":
-                    if eff_cancel_date and eff_cancel_date > m_end:
-                        was_open = True
-                if was_open:
-                    block_counts[b_name]["open"] += 1
-                    m_open += 1
+            else:
+                block_counts[b_name]["open"] += 1
+                m_open += 1
 
         m_total_val = m_open + m_hold
 
-        # Skip months that have zero activity if no period is selected and month is in the future
         if not dt_start and not dt_end and (m_open + m_closed + m_hold + m_cancel == 0) and (y > now.year or (y == now.year and m > now.month)):
             continue
 
@@ -588,7 +838,6 @@ async def get_dashboard_metrics(
     status_ids:         Optional[str] = Query(None),
     vacancy_ids:        Optional[str] = Query(None),
     group_by:           str           = Query("it_role"),
-                                                            
     block_id:           Optional[int] = Query(None),
     project_id:         Optional[int] = Query(None),
     db: AsyncSession = Depends(get_db),
@@ -600,47 +849,35 @@ async def get_dashboard_metrics(
             detail="Доступ к дашбордам разрешен только администраторам и супер-администраторам",
         )
 
-    dt_start: Optional[_date] = None
-    dt_end:   Optional[_date] = None
-    try:
-        if start_date: dt_start = _date.fromisoformat(start_date)
-        if end_date:   dt_end   = _date.fromisoformat(end_date)
-        if dt_start and dt_end and dt_start > dt_end:
-            dt_start, dt_end = dt_end, dt_start
-    except ValueError:
-        pass
+    flt = _parse_dashboard_filters(
+        start_date, end_date, it_role_ids, level_ids, admin_manager_ids,
+        project_ids, recruiter_ids, block_ids, status_ids, vacancy_ids,
+        block_id, project_id,
+    )
+    dt_start = flt["dt_start"]
+    dt_end = flt["dt_end"]
+    f_it_roles = flt["f_it_roles"]
+    f_levels = flt["f_levels"]
+    f_admin_mgrs = flt["f_admin_mgrs"]
+    f_projects = flt["f_projects"]
+    f_recruiters = flt["f_recruiters"]
+    f_blocks = flt["f_blocks"]
+    f_statuses = flt["f_statuses"]
+    f_vac_tokens = flt["f_vac_tokens"]
 
-    f_it_roles   = _parse_ids(it_role_ids)
-    f_levels     = _parse_ids(level_ids)
-    f_admin_mgrs = _parse_ids(admin_manager_ids)
-    f_projects   = _parse_ids(project_ids)
-    f_recruiters = _parse_ids(recruiter_ids)
-    f_blocks     = _parse_ids(block_ids)
-    f_statuses   = _parse_ids(status_ids)
-    f_vac_tokens = set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None
-
-    if block_id   and not f_blocks:   f_blocks   = [block_id]
-    if project_id and not f_projects: f_projects = [project_id]
-
-    status_map    = await _dict_map(db, DictionaryType.VACANCY_STATUS)
-    source_map    = await _dict_map(db, DictionaryType.SOURCE)
-    block_map     = await _dict_map(db, DictionaryType.BLOCK)
-    project_map   = await _dict_map(db, DictionaryType.PROJECT)
-    it_role_map   = await _dict_map(db, DictionaryType.IT_ROLE)
-    level_map     = await _dict_map(db, DictionaryType.SPECIALIST_LEVEL)
-    admin_mgr_map = await _dict_map(db, DictionaryType.ADMIN_MANAGER)
+    status_map      = await _dict_map(db, DictionaryType.VACANCY_STATUS)
+    source_map      = await _dict_map(db, DictionaryType.SOURCE)
+    block_map       = await _dict_map(db, DictionaryType.BLOCK)
+    project_map     = await _dict_map(db, DictionaryType.PROJECT)
+    it_role_map     = await _dict_map(db, DictionaryType.IT_ROLE)
+    level_map       = await _dict_map(db, DictionaryType.SPECIALIST_LEVEL)
+    admin_mgr_map   = await _dict_map(db, DictionaryType.ADMIN_MANAGER)
     replacement_map = await _dict_map(db, DictionaryType.REPLACEMENT_TYPE)
     employment_map  = await _dict_map(db, DictionaryType.EMPLOYMENT_TYPE)
 
-    # 3.2. Разбираем статусы
     closed_ids = {k for k, v in status_map.items() if v == "Закрыта"}
     exit_ids   = {k for k, v in status_map.items() if v == "Выход"}
-    hold_ids   = {k for k, v in status_map.items() if v == "Hold"}
-    cancel_ids = {k for k, v in status_map.items() if v == "Отмена"}
-    open_ids   = {k for k, v in status_map.items()
-                  if v not in ("Закрыта", "Выход", "Отмена", "Hold")}
 
-    # 3.3. Тянем вакансии (только нужные поля)
     all_vacs = (await db.execute(
         select(
             Vacancy.id, Vacancy.vacancy_id, Vacancy.status_id, Vacancy.source_id,
@@ -658,89 +895,30 @@ async def get_dashboard_metrics(
         )
     )).all()
 
-    # Загружаем историю вакансий, выходивших из статуса Hold
-    hold_exits: dict[int, _date] = {}
-    hist_hold_rows = (await db.execute(
-        select(
-            VacancyHistory.vacancy_id,
-            VacancyHistory.created_at,
-            VacancyHistory.changes,
-        ).where(
-            VacancyHistory.changes.ilike('%Hold%'),
-            VacancyHistory.action_type == "UPDATE",
-        )
-    )).all()
-    import json as _json
-    for hr in hist_hold_rows:
-        try:
-            ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
-            st_ch = ch.get("Статус вакансии") or ch.get("status")
-            if st_ch and st_ch.get("old") == "Hold":
-                exit_d = hr.created_at.date() if hasattr(hr.created_at, "date") else hr.created_at
-                if hr.vacancy_id not in hold_exits or exit_d > hold_exits[hr.vacancy_id]:
-                    hold_exits[hr.vacancy_id] = exit_d
-        except Exception:
-            pass
+    all_pk_strs = {str(v.id) for v in all_vacs}
+    hold_intervals = await _load_hold_intervals(db)
+    cutoff_date = dt_end or _local_today()
+    active_delegations = await _load_active_delegations(db, cutoff_date)
+
+    eff_status_cache = {
+        v.id: _compute_effective_status(v, dt_start, dt_end, status_map, hold_intervals)
+        for v in all_vacs
+    }
 
     def get_effective_status(v) -> Optional[str]:
-        if v.quantity == 0.001:
-            return None
-        if dt_end and v.open_date and v.open_date > dt_end:
-            return None
+        return eff_status_cache.get(v.id)
 
-        st_name = status_map.get(v.status_id)
-        if not dt_start and not dt_end:
-            return st_name
-
-        # Если вакансия вышла из Hold позже даты среза dt_end, на момент среза она была в Hold
-        if dt_end and v.id in hold_exits:
-            exit_d = hold_exits[v.id]
-            if exit_d > dt_end:
-                return "Hold"
-
-        if st_name == "Закрыта":
-            c_date = v.close_date
-            if not c_date and v.status_changed_at:
-                c_date = v.status_changed_at
-            if not c_date:
-                return None
-            if dt_start and c_date < dt_start:
-                return None
-            if dt_end and c_date > dt_end:
-                return "Открыта"
-            return "Закрыта"
-
-        if st_name == "Отмена":
-            c_date = v.status_changed_at or v.close_date
-            if not c_date:
-                if dt_end and v.open_date and v.open_date <= dt_end:
-                    return "Открыта"
-                return None
-            if dt_start and c_date < dt_start:
-                return None
-            if dt_end and c_date > dt_end:
-                return "Открыта"
-            return "Отмена"
-
-        if st_name == "Hold":
-            h_date = v.status_changed_at
-            if dt_end and h_date and h_date > dt_end:
-                return "Открыта"
-            # На дату среза была в Hold (без ограничения снизу, тянется с 2025 и ранее)
-            return "Hold"
-
-        return st_name
+    allowed_status_names: Optional[set[str]] = (
+        {status_map[sid] for sid in f_statuses if sid in status_map}
+        if f_statuses else None
+    )
 
     def matches_filters(v, exclude_field: Optional[str] = None) -> bool:
         eff_st = get_effective_status(v)
         if eff_st is None:
             return False
         if exclude_field != "vacancy" and f_vac_tokens:
-            matches_vac = (
-                str(v.id) in f_vac_tokens or
-                (v.vacancy_id and str(v.vacancy_id).strip() in f_vac_tokens)
-            )
-            if not matches_vac:
+            if not _matches_vac_tokens(v, f_vac_tokens, all_pk_strs):
                 return False
         if exclude_field != "it_role" and f_it_roles and v.it_role_id not in f_it_roles:
             return False
@@ -750,13 +928,11 @@ async def get_dashboard_metrics(
             return False
         if exclude_field != "project" and f_projects and v.project_id not in f_projects:
             return False
-        if exclude_field != "recruiter" and f_recruiters:
-            if v.recruiter_id not in f_recruiters:
-                return False
+        if exclude_field != "recruiter" and f_recruiters and v.recruiter_id not in f_recruiters:
+            return False
         if exclude_field != "block" and f_blocks and v.block_id not in f_blocks:
             return False
-        if exclude_field != "status" and f_statuses:
-            allowed_status_names = {status_map.get(sid) for sid in f_statuses if sid in status_map}
+        if exclude_field != "status" and allowed_status_names is not None:
             if eff_st not in allowed_status_names:
                 return False
         return True
@@ -773,6 +949,8 @@ async def get_dashboard_metrics(
         WeeklyReport.offer_accepted,
         WeeklyReport.offer_rejection_reason,
         WeeklyReport.week_start,
+        WeeklyReport.year,
+        WeeklyReport.week_number,
     )
     all_reports = (await db.execute(report_query)).all()
 
@@ -780,7 +958,6 @@ async def get_dashboard_metrics(
     for r in all_reports:
         reports_by_vac[r.vacancy_id].append(r)
 
-    # Загружаем историю для всех закрытых вакансий (для корректного расчёта рабочих дней)
     final_vac_ids = {
         v.id for v in all_vacs
         if v.status_id in (closed_ids | exit_ids)
@@ -803,7 +980,7 @@ async def get_dashboard_metrics(
         for r in hist_rows:
             history_by_vac[r.vacancy_id].append(r)
 
-                                                                                 
+    # Chart 1: Источник найма (только закрытые)
     src_cnt: Counter = Counter()
     for v in vacs:
         if get_effective_status(v) == "Закрыта":
@@ -816,10 +993,8 @@ async def get_dashboard_metrics(
         key=lambda x: -x["value"],
     )
 
-    open_cnt = 0
-    closed_cnt = 0
-    hold_cnt = 0
-    cancel_cnt = 0
+    # Chart 2: Вакансии по статусам
+    open_cnt = closed_cnt = hold_cnt = cancel_cnt = 0
     for v in vacs:
         eff = get_effective_status(v)
         if eff == "Закрыта":
@@ -839,10 +1014,13 @@ async def get_dashboard_metrics(
         "cancel": cancel_cnt,
     }
 
+    # Chart 3: Воронка найма (с учётом выбранного периода по неделям отчётов)
     vac_ids3 = {v.id for v in vacs}
     funnel: dict = defaultdict(int)
     for v_id in vac_ids3:
         for r in reports_by_vac.get(v_id, []):
+            if not _report_in_period(r, dt_start, dt_end):
+                continue
             funnel["resumes_sent"]         += r.resumes_sent         or 0
             funnel["candidates_agreed"]    += r.candidates_agreed    or 0
             funnel["interviews_conducted"] += r.interviews_conducted or 0
@@ -851,7 +1029,13 @@ async def get_dashboard_metrics(
 
     closed_in_funnel = sum(1 for v in vacs if get_effective_status(v) == "Закрыта")
     if funnel["offer_accepted"] == 0:
-        funnel["offer_accepted"] = sum(v.offer_accepted_cnt or 0 for v in vacs)
+        if not dt_start and not dt_end:
+            funnel["offer_accepted"] = sum(v.offer_accepted_cnt or 0 for v in vacs)
+        else:
+            funnel["offer_accepted"] = sum(
+                v.offer_accepted_cnt or 0 for v in vacs
+                if get_effective_status(v) == "Закрыта"
+            )
         if funnel["offer_accepted"] == 0 and closed_in_funnel > 0:
             funnel["offer_accepted"] = closed_in_funnel
 
@@ -877,12 +1061,14 @@ async def get_dashboard_metrics(
             "conv_total": tot_pct,
         })
 
+    # Chart 4: Топ-15 компаний
     comp_cnt: Counter = Counter()
     for v in vacs:
         if get_effective_status(v) == "Закрыта" and v.candidate_company and v.candidate_company.strip():
             comp_cnt[v.candidate_company.strip()] += 1
     chart4 = [{"company": k, "value": cnt} for k, cnt in comp_cnt.most_common(15)]
 
+    # Chart 5: Средний срок закрытия
     use_map    = it_role_map if group_by == "it_role" else level_map
     group_attr = "it_role_id" if group_by == "it_role" else "level_id"
 
@@ -914,6 +1100,7 @@ async def get_dashboard_metrics(
         key=lambda x: -x["avg_days"],
     )
 
+    # Chart 6: Детализация статусов (открытые по этапам + финальные)
     st_cnt: Counter = Counter()
     for v in vacs:
         eff = get_effective_status(v)
@@ -931,11 +1118,13 @@ async def get_dashboard_metrics(
         key=lambda x: -x["value"],
     )
 
+    # Chart 7: JO rate
     jo_closed    = sum(1 for v in vacs if get_effective_status(v) == "Закрыта")
     offers_total = sum(
         r.offer_made or 0
         for v in vacs
         for r in reports_by_vac.get(v.id, [])
+        if _report_in_period(r, dt_start, dt_end)
     )
     jo_rate = round(jo_closed / offers_total * 100, 1) if offers_total else 0
     chart7  = {
@@ -944,31 +1133,33 @@ async def get_dashboard_metrics(
         "jo_rate":      jo_rate,
     }
 
-                                                                                
-    recruiter_rows = (await db.execute(
-        select(User.id, User.full_name).where(User.is_active == True)
-    )).all()
-    recruiters_opts = sorted(
-        [{"id": r.id, "value": r.full_name} for r in recruiter_rows],
-        key=lambda x: x["value"]
-    )
+    user_name_map, recruiters_opts = await _load_recruiters_lookup(db, all_vacs, active_delegations)
 
-                                                                               
+    # Chart 8 & Recruiter load matrix:
+    # Единственный блок, где учитываются основной + доп. рекрутер + замещающий (делегирование)
+    vacs_for_recruiter_load = [v for v in all_vacs if matches_filters(v, "recruiter")]
     recruiter_load: dict = defaultdict(int)
-    for v in vacs:
-        if v.recruiter_id:
-            name = next(
-                (r["value"] for r in recruiters_opts if r["id"] == v.recruiter_id),
-                f"ID {v.recruiter_id}"
-            )
+    for v in vacs_for_recruiter_load:
+        for uid in _get_vacancy_recruiter_ids(v, active_delegations):
+            if f_recruiters and uid not in f_recruiters:
+                continue
+            name = user_name_map.get(uid, f"ID {uid}")
             recruiter_load[name] += 1
     chart8 = sorted(
         [{"recruiter": name, "value": cnt} for name, cnt in recruiter_load.items()],
         key=lambda x: -x["value"],
     )
 
-    recruiter_load_matrix, recruiter_load_totals = _calculate_recruiter_load(vacs, recruiters_opts, status_map)
+    recruiter_load_matrix, recruiter_load_totals = _calculate_recruiter_load(
+        vacs_for_recruiter_load,
+        user_name_map,
+        status_map,
+        eff_status_fn=get_effective_status,
+        active_delegations=active_delegations,
+        f_recruiters=f_recruiters,
+    )
 
+    # Levels, Replacement, Employment
     lvl_cnt: Counter = Counter()
     for v in vacs:
         label = level_map.get(v.level_id, "Не указан") if v.level_id else "Не указан"
@@ -989,6 +1180,7 @@ async def get_dashboard_metrics(
     total_emp = sum(emp_cnt.values()) or 1
     chart_employment = sorted([{"name": k, "value": cnt, "pct": round(cnt/total_emp*100,1)} for k, cnt in emp_cnt.items()], key=lambda x: -x["value"])
 
+    # Salaries
     import statistics
     sals = [v.salary_gross for v in vacs if v.salary_gross and v.salary_gross > 0]
     if sals:
@@ -1007,15 +1199,23 @@ async def get_dashboard_metrics(
         p25, p50, p75 = 0, 0, 0
     chart_salaries = {"p25": round(p25), "p50": round(p50), "p75": round(p75), "count": len(sals)}
 
-    # Причины отказа: все причины из справочника со значением 0 по умолчанию
+    # Rejections (с учётом выбранного периода)
     rejection_reason_map = await _dict_map(db, DictionaryType.OFFER_REJECTION_REASON)
     rejection_cnt: dict[str, int] = {name: 0 for name in rejection_reason_map.values()}
     for v in vacs:
-        raw_reasons = []
-        for r in reports_by_vac.get(v.id, []):
-            if getattr(r, 'offer_rejection_reason', None) and r.offer_rejection_reason.strip():
-                raw_reasons.append(r.offer_rejection_reason.strip())
-        if not raw_reasons and v.offer_rejection_reason and v.offer_rejection_reason.strip():
+        all_v_reps = reports_by_vac.get(v.id, [])
+        any_rep_has_reason = any(
+            getattr(r, 'offer_rejection_reason', None) and r.offer_rejection_reason.strip()
+            for r in all_v_reps
+        )
+        raw_reasons = [
+            r.offer_rejection_reason.strip()
+            for r in all_v_reps
+            if _report_in_period(r, dt_start, dt_end)
+            and getattr(r, 'offer_rejection_reason', None)
+            and r.offer_rejection_reason.strip()
+        ]
+        if not raw_reasons and not any_rep_has_reason and v.offer_rejection_reason and v.offer_rejection_reason.strip():
             raw_reasons.append(v.offer_rejection_reason.strip())
 
         for raw in raw_reasons:
@@ -1034,8 +1234,9 @@ async def get_dashboard_metrics(
     )
 
     # Конверсия принятия JO (кумулятивная по месяцам, кварталам, году)
-    target_year = (dt_end or dt_start).year if (dt_end or dt_start) else _date.today().year
-    closed_vacs_pool = [v for v in all_vacs if matches_filters(v, "status") and get_effective_status(v) == "Закрыта" and v.close_date]
+    today_local = _local_today()
+    target_year = (dt_end or dt_start).year if (dt_end or dt_start) else today_local.year
+    closed_vacs_pool = [v for v in vacs if get_effective_status(v) == "Закрыта" and v.close_date]
     year_closed_vacs = [v for v in closed_vacs_pool if v.close_date.year == target_year]
 
     vac_offers = {}
@@ -1046,12 +1247,14 @@ async def get_dashboard_metrics(
             off = max(v.offer_accepted_cnt or 0, v.quantity or 1)
         vac_offers[v.id] = off
 
+    min_m = dt_start.month if (dt_start and dt_start.year == target_year) else 1
     if dt_end and dt_end.year == target_year:
         max_m = dt_end.month
     else:
         months_in_data = [v.close_date.month for v in year_closed_vacs]
-        max_m = max(months_in_data) if months_in_data else (_date.today().month if target_year == _date.today().year else 12)
-    max_m = max(1, min(12, max_m))
+        max_m = max(months_in_data) if months_in_data else (today_local.month if target_year == today_local.year else 12)
+    min_m = max(1, min(12, min_m))
+    max_m = max(min_m, min(12, max_m))
 
     MONTH_NAMES = [
         ("Янв", "январь"), ("Фев", "февраль"), ("Мар", "март"),
@@ -1061,7 +1264,7 @@ async def get_dashboard_metrics(
     ]
 
     month_items = []
-    for m in range(1, max_m + 1):
+    for m in range(min_m, max_m + 1):
         cum_vacs = [v for v in year_closed_vacs if v.close_date.month <= m]
         cum_closed = sum(v.quantity or 1 for v in cum_vacs)
         cum_off = sum(vac_offers.get(v.id, 0) for v in cum_vacs)
@@ -1078,10 +1281,11 @@ async def get_dashboard_metrics(
     quarter_items = []
     for q in range(1, 5):
         q_start_m = (q - 1) * 3 + 1
-        if max_m < q_start_m:
-            break
-        q_end_m = min(q * 3, max_m)
-        cum_vacs = [v for v in year_closed_vacs if v.close_date.month <= q_end_m]
+        q_end_m = q * 3
+        if q_end_m < min_m or q_start_m > max_m:
+            continue
+        eff_q_end = min(q_end_m, max_m)
+        cum_vacs = [v for v in year_closed_vacs if v.close_date.month <= eff_q_end]
         cum_closed = sum(v.quantity or 1 for v in cum_vacs)
         cum_off = sum(vac_offers.get(v.id, 0) for v in cum_vacs)
         rate = round(cum_closed / cum_off * 100, 1) if cum_off > 0 else (100.0 if cum_closed > 0 else 0.0)
@@ -1128,7 +1332,7 @@ async def get_dashboard_metrics(
     year_closed_avg = [v for v in closed_vacs_pool if v.close_date.year == target_year and v.id in vac_days_map]
 
     avg_month_items = []
-    for m in range(1, max_m + 1):
+    for m in range(min_m, max_m + 1):
         m_vacs = [v for v in year_closed_avg if v.close_date.month == m]
         m_days = [vac_days_map[v.id] for v in m_vacs]
         avg_d = round(sum(m_days) / len(m_days), 1) if m_days else 0
@@ -1142,10 +1346,11 @@ async def get_dashboard_metrics(
     avg_quarter_items = []
     for q in range(1, 5):
         q_start_m = (q - 1) * 3 + 1
-        if max_m < q_start_m:
-            break
-        q_end_m = min(q * 3, max_m)
-        q_vacs = [v for v in year_closed_avg if q_start_m <= v.close_date.month <= q_end_m]
+        q_end_m = q * 3
+        if q_end_m < min_m or q_start_m > max_m:
+            continue
+        eff_q_end = min(q_end_m, max_m)
+        q_vacs = [v for v in year_closed_avg if q_start_m <= v.close_date.month <= eff_q_end]
         q_days = [vac_days_map[v.id] for v in q_vacs]
         avg_d = round(sum(q_days) / len(q_days), 1) if q_days else 0
         avg_quarter_items.append({
@@ -1171,7 +1376,7 @@ async def get_dashboard_metrics(
         "year": avg_year_items,
     }
 
-    # Взаимозависимые фильтры, зависимые от даты и остальных выбранных фильтров
+    # Взаимозависимые фильтры
     def _opts(m: dict, allowed_ids: Optional[set] = None):
         if allowed_ids is not None:
             return sorted([{"id": k, "value": v} for k, v in m.items() if k in allowed_ids], key=lambda x: x["value"])
@@ -1183,11 +1388,15 @@ async def get_dashboard_metrics(
     avail_levels     = {v.level_id for v in all_vacs if v.level_id and matches_filters(v, "level")}
     avail_admin_mgrs = {v.admin_manager_id for v in all_vacs if v.admin_manager_id and matches_filters(v, "admin_manager")}
     avail_recruiters = {
-        v.recruiter_id for v in all_vacs if v.recruiter_id and matches_filters(v, "recruiter")
+        uid
+        for v in all_vacs
+        if matches_filters(v, "recruiter")
+        for uid in _get_vacancy_recruiter_ids(v, active_delegations)
     }
     avail_status_names = {get_effective_status(v) for v in all_vacs if matches_filters(v, "status")}
     avail_status_names.discard(None)
     avail_statuses   = {sid for sid, name in status_map.items() if name in avail_status_names}
+
     filter_blocks         = _opts(block_map, avail_blocks)
     filter_projects       = _opts(project_map, avail_projects)
     filter_it_roles       = _opts(it_role_map, avail_it_roles)
@@ -1211,22 +1420,22 @@ async def get_dashboard_metrics(
     filter_vacancies = sorted(vac_items, key=_vac_sort_key)
     filter_vacancies = [{"id": x["id"], "value": x["value"]} for x in filter_vacancies]
 
-    # График «Вакансии по статусам для Ивахина А»:
-    # Уникальное количество вакансий, исключая дублирование доп. рекрутерами и замещающими
+    # График «Вакансии по статусам для Ивахина А»
+    # Использует единый набор нестатичных фильтров + месячную оценку статуса + allowed_status_names
     ivakhin_vacs = [
         v for v in all_vacs
         if (v.quantity != 0.001) and
-        (not f_vac_tokens or str(v.id) in f_vac_tokens or (v.vacancy_id and str(v.vacancy_id).strip() in f_vac_tokens)) and
+        (not f_vac_tokens or _matches_vac_tokens(v, f_vac_tokens, all_pk_strs)) and
         (not f_it_roles or v.it_role_id in f_it_roles) and
         (not f_levels or v.level_id in f_levels) and
         (not f_admin_mgrs or v.admin_manager_id in f_admin_mgrs) and
         (not f_projects or v.project_id in f_projects) and
         (not f_recruiters or v.recruiter_id in f_recruiters) and
-        (not f_blocks or v.block_id in f_blocks) and
-        (not f_statuses or v.status_id in f_statuses)
+        (not f_blocks or v.block_id in f_blocks)
     ]
     chart_ivakhin_statuses = _calculate_ivakhin_statuses(
-        ivakhin_vacs, block_map, status_map, hold_exits, dt_start, dt_end
+        ivakhin_vacs, block_map, status_map, hold_intervals, dt_start, dt_end,
+        allowed_status_names=allowed_status_names,
     )
 
     return {
@@ -1260,6 +1469,7 @@ async def get_dashboard_metrics(
         },
     }
 
+
 @router.get("/export/recruiter-load")
 async def export_recruiter_load(
     start_date:         Optional[str] = Query(None),
@@ -1278,43 +1488,24 @@ async def export_recruiter_load(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.RECRUITER):
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещен",
-        )
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-    dt_start: Optional[_date] = None
-    dt_end:   Optional[_date] = None
-    try:
-        if start_date: dt_start = _date.fromisoformat(start_date)
-        if end_date:   dt_end   = _date.fromisoformat(end_date)
-        if dt_start and dt_end and dt_start > dt_end:
-            dt_start, dt_end = dt_end, dt_start
-    except ValueError:
-        pass
-
-    f_it_roles   = _parse_ids(it_role_ids)
-    f_levels     = _parse_ids(level_ids)
-    f_admin_mgrs = _parse_ids(admin_manager_ids)
-    f_projects   = _parse_ids(project_ids)
-    f_recruiters = _parse_ids(recruiter_ids)
-    f_blocks     = _parse_ids(block_ids)
-    f_statuses   = _parse_ids(status_ids)
-    f_vac_tokens = set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None
-
-    if block_id   and not f_blocks:   f_blocks   = [block_id]
-    if project_id and not f_projects: f_projects = [project_id]
+    flt = _parse_dashboard_filters(
+        start_date, end_date, it_role_ids, level_ids, admin_manager_ids,
+        project_ids, recruiter_ids, block_ids, status_ids, vacancy_ids,
+        block_id, project_id,
+    )
+    dt_start, dt_end = flt["dt_start"], flt["dt_end"]
+    f_it_roles = flt["f_it_roles"]
+    f_levels = flt["f_levels"]
+    f_admin_mgrs = flt["f_admin_mgrs"]
+    f_projects = flt["f_projects"]
+    f_recruiters = flt["f_recruiters"]
+    f_blocks = flt["f_blocks"]
+    f_statuses = flt["f_statuses"]
+    f_vac_tokens = flt["f_vac_tokens"]
 
     status_map = await _dict_map(db, DictionaryType.VACANCY_STATUS)
-
-    recruiter_rows = (await db.execute(
-        select(User.id, User.full_name).where(User.is_active == True)
-    )).all()
-    recruiters_opts = sorted(
-        [{"id": r.id, "value": r.full_name} for r in recruiter_rows],
-        key=lambda x: x["value"]
-    )
-
     all_vacs = (await db.execute(
         select(
             Vacancy.id, Vacancy.vacancy_id, Vacancy.status_id,
@@ -1323,37 +1514,45 @@ async def export_recruiter_load(
             Vacancy.admin_manager_id, Vacancy.recruiter_id,
             Vacancy.co_recruiter_id,
             Vacancy.open_date, Vacancy.close_date,
+            Vacancy.status_changed_at, Vacancy.quantity,
         )
     )).all()
 
-    vacs = []
-    for v in all_vacs:
-        if dt_start and v.open_date and v.open_date < dt_start:
-            continue
-        if dt_end and v.open_date and v.open_date > dt_end:
-            continue
-        if f_it_roles and v.it_role_id not in f_it_roles:
-            continue
-        if f_levels and v.level_id not in f_levels:
-            continue
-        if f_admin_mgrs and v.admin_manager_id not in f_admin_mgrs:
-            continue
-        if f_projects and v.project_id not in f_projects:
-            continue
-        if f_recruiters and v.recruiter_id not in f_recruiters:
-            continue
-        if f_blocks and v.block_id not in f_blocks:
-            continue
-        if f_statuses and v.status_id not in f_statuses:
-            continue
-        if f_vac_tokens:
-            v_id_str = str(v.id)
-            v_num_str = str(v.vacancy_id) if v.vacancy_id else ""
-            if v_id_str not in f_vac_tokens and v_num_str not in f_vac_tokens:
-                continue
-        vacs.append(v)
+    cutoff_date = dt_end or _local_today()
+    active_delegations = await _load_active_delegations(db, cutoff_date)
+    user_name_map, _ = await _load_recruiters_lookup(db, all_vacs, active_delegations)
+    hold_intervals = await _load_hold_intervals(db)
+    all_pk_strs = {str(v.id) for v in all_vacs}
+    allowed_status_names = (
+        {status_map[sid] for sid in f_statuses if sid in status_map}
+        if f_statuses else None
+    )
 
-    matrix, totals = _calculate_recruiter_load(vacs, recruiters_opts, status_map)
+    eff_cache = {
+        v.id: _compute_effective_status(v, dt_start, dt_end, status_map, hold_intervals)
+        for v in all_vacs
+    }
+
+    vacs_for_load = [
+        v for v in all_vacs
+        if eff_cache.get(v.id) is not None and
+        (not f_vac_tokens or _matches_vac_tokens(v, f_vac_tokens, all_pk_strs)) and
+        (not f_it_roles or v.it_role_id in f_it_roles) and
+        (not f_levels or v.level_id in f_levels) and
+        (not f_admin_mgrs or v.admin_manager_id in f_admin_mgrs) and
+        (not f_projects or v.project_id in f_projects) and
+        (not f_blocks or v.block_id in f_blocks) and
+        (allowed_status_names is None or eff_cache.get(v.id) in allowed_status_names)
+    ]
+
+    matrix, totals = _calculate_recruiter_load(
+        vacs_for_load,
+        user_name_map,
+        status_map,
+        eff_status_fn=lambda v: eff_cache.get(v.id),
+        active_delegations=active_delegations,
+        f_recruiters=f_recruiters,
+    )
     excel_stream = generate_recruiter_load_excel(matrix, totals)
     return StreamingResponse(
         excel_stream,
@@ -1380,59 +1579,26 @@ async def export_ivakhin_statuses(
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role not in (UserRole.ADMIN, UserRole.SUPERADMIN, UserRole.RECRUITER):
-        raise HTTPException(
-            status_code=403,
-            detail="Доступ запрещен",
-        )
+        raise HTTPException(status_code=403, detail="Доступ запрещен")
 
-    dt_start: Optional[_date] = None
-    dt_end:   Optional[_date] = None
-    try:
-        if start_date: dt_start = _date.fromisoformat(start_date)
-        if end_date:   dt_end   = _date.fromisoformat(end_date)
-        if dt_start and dt_end and dt_start > dt_end:
-            dt_start, dt_end = dt_end, dt_start
-    except ValueError:
-        pass
-
-    f_it_roles   = _parse_ids(it_role_ids)
-    f_levels     = _parse_ids(level_ids)
-    f_admin_mgrs = _parse_ids(admin_manager_ids)
-    f_projects   = _parse_ids(project_ids)
-    f_recruiters = _parse_ids(recruiter_ids)
-    f_blocks     = _parse_ids(block_ids)
-    f_statuses   = _parse_ids(status_ids)
-    f_vac_tokens = set(x.strip() for x in vacancy_ids.split(",") if x.strip()) if vacancy_ids else None
-
-    if block_id   and not f_blocks:   f_blocks   = [block_id]
-    if project_id and not f_projects: f_projects = [project_id]
+    flt = _parse_dashboard_filters(
+        start_date, end_date, it_role_ids, level_ids, admin_manager_ids,
+        project_ids, recruiter_ids, block_ids, status_ids, vacancy_ids,
+        block_id, project_id,
+    )
+    dt_start, dt_end = flt["dt_start"], flt["dt_end"]
+    f_it_roles = flt["f_it_roles"]
+    f_levels = flt["f_levels"]
+    f_admin_mgrs = flt["f_admin_mgrs"]
+    f_projects = flt["f_projects"]
+    f_recruiters = flt["f_recruiters"]
+    f_blocks = flt["f_blocks"]
+    f_statuses = flt["f_statuses"]
+    f_vac_tokens = flt["f_vac_tokens"]
 
     status_map = await _dict_map(db, DictionaryType.VACANCY_STATUS)
     block_map  = await _dict_map(db, DictionaryType.BLOCK)
-
-    # Load hold exits
-    hist_hold_rows = (await db.execute(
-        select(
-            VacancyHistory.vacancy_id,
-            VacancyHistory.created_at,
-            VacancyHistory.changes,
-        ).where(
-            VacancyHistory.changes.ilike('%Hold%'),
-            VacancyHistory.action_type == "UPDATE",
-        )
-    )).all()
-    import json as _json
-    hold_exits = {}
-    for hr in hist_hold_rows:
-        try:
-            ch = _json.loads(hr.changes) if isinstance(hr.changes, str) else hr.changes
-            st_ch = ch.get("Статус вакансии") or ch.get("status")
-            if st_ch and st_ch.get("old") == "Hold":
-                exit_d = hr.created_at.date() if hasattr(hr.created_at, "date") else hr.created_at
-                if hr.vacancy_id not in hold_exits or exit_d > hold_exits[hr.vacancy_id]:
-                    hold_exits[hr.vacancy_id] = exit_d
-        except Exception:
-            pass
+    hold_intervals = await _load_hold_intervals(db)
 
     all_vacs = (await db.execute(
         select(
@@ -1445,21 +1611,27 @@ async def export_ivakhin_statuses(
         )
     )).all()
 
+    all_pk_strs = {str(v.id) for v in all_vacs}
+    allowed_status_names = (
+        {status_map[sid] for sid in f_statuses if sid in status_map}
+        if f_statuses else None
+    )
+
     ivakhin_vacs = [
         v for v in all_vacs
         if (v.quantity != 0.001) and
-        (not f_vac_tokens or str(v.id) in f_vac_tokens or (v.vacancy_id and str(v.vacancy_id).strip() in f_vac_tokens)) and
+        (not f_vac_tokens or _matches_vac_tokens(v, f_vac_tokens, all_pk_strs)) and
         (not f_it_roles or v.it_role_id in f_it_roles) and
         (not f_levels or v.level_id in f_levels) and
         (not f_admin_mgrs or v.admin_manager_id in f_admin_mgrs) and
         (not f_projects or v.project_id in f_projects) and
         (not f_recruiters or v.recruiter_id in f_recruiters) and
-        (not f_blocks or v.block_id in f_blocks) and
-        (not f_statuses or v.status_id in f_statuses)
+        (not f_blocks or v.block_id in f_blocks)
     ]
 
     months_data = _calculate_ivakhin_statuses(
-        ivakhin_vacs, block_map, status_map, hold_exits, dt_start, dt_end
+        ivakhin_vacs, block_map, status_map, hold_intervals, dt_start, dt_end,
+        allowed_status_names=allowed_status_names,
     )
     excel_stream = generate_ivakhin_statuses_excel(months_data)
     return StreamingResponse(

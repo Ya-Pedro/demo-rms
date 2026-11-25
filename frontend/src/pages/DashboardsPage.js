@@ -99,8 +99,8 @@ const CHART_FORMULAS = {
   recruiter_load: {
     title: 'Загрузка рекрутеров',
     formula: 'Количество вакансий у каждого рекрутера',
-    description: 'Объём вакансий у каждого рекрутера команды.',
-    rules: 'Учитываются основной и дополнительный рекрутеры.',
+    description: 'Объём вакансий у каждого рекрутера команды (может превышать число уникальных вакансий при совместном ведении и замещении).',
+    rules: 'Учитываются основной, дополнительный (со-рекрутер) и замещающий (по активному делегированию на время отпуска) рекрутеры.',
   },
   open_details: {
     title: 'Детализация «Открытых» вакансий',
@@ -1731,7 +1731,11 @@ export default function DashboardsPage() {
 
   const [period,         setPeriod]        = useState(() => {
     if (savedDashboardsFilters?.period && savedDashboardsFilters.period.length === 2) {
-      return [dayjs(savedDashboardsFilters.period[0]), dayjs(savedDashboardsFilters.period[1])];
+      const d0 = dayjs(savedDashboardsFilters.period[0]);
+      const d1 = dayjs(savedDashboardsFilters.period[1]);
+      if (d0.isValid() && d1.isValid()) {
+        return [d0, d1];
+      }
     }
     return null;
   });
@@ -1920,7 +1924,9 @@ export default function DashboardsPage() {
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: [
       'dashboards',
-      period, itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, vacancyIds, groupBy
+      period?.[0]?.format('YYYY-MM-DD') || null,
+      period?.[1]?.format('YYYY-MM-DD') || null,
+      itRoleIds, levelIds, adminMgrIds, projectIds, recruiterIds, blockIds, statusIds, vacancyIds, groupBy
     ],
     queryFn: fetchDashboardData,
     keepPreviousData: true,
