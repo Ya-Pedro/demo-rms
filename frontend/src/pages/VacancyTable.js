@@ -24,16 +24,14 @@ import VacancyHistoryDrawer from '../components/VacancyHistoryDrawer';
 import {
   Table, Button, Space, Tag, Tooltip,
   Input, message, Upload, Modal, Checkbox, DatePicker, App, Select,
-  Radio, Alert, Spin, Divider,
+  Radio, Spin,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined,
   ClearOutlined, FileTextOutlined, UploadOutlined,
   SettingOutlined, ArrowUpOutlined, ArrowDownOutlined, PushpinOutlined,
   ReloadOutlined, QuestionCircleOutlined, UserSwitchOutlined, HistoryOutlined,
-  CommentOutlined, CheckCircleOutlined, ExclamationCircleOutlined,
-  CloseCircleOutlined, InfoCircleOutlined, CheckOutlined,
-  InboxOutlined, FileExcelOutlined, SyncOutlined,
+  CommentOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
@@ -1522,247 +1520,181 @@ const VacancyTable = ({
       <Modal
         open={importOpen}
         onCancel={handleImportClose}
-        title={<span style={{ fontSize: 16, fontWeight: 700 }}>Импорт вакансий из Excel</span>}
-        width={720}
+        title="Импорт вакансий"
+        width={560}
         maskClosable={!importLoading && !importPreviewLoading}
         footer={[
-          <Button key="cancel" onClick={handleImportClose} disabled={importLoading || importPreviewLoading} style={{ fontSize: 14 }}>
+          <Button key="cancel" onClick={handleImportClose} disabled={importLoading || importPreviewLoading}>
             {importResult ? 'Закрыть' : 'Отмена'}
           </Button>,
           !importResult && (
             <Button
               key="submit"
               type="primary"
-              icon={<UploadOutlined />}
               loading={importLoading}
               disabled={!importFile || importPreviewLoading || !!importResult}
               onClick={handleImportSubmit}
-              style={{ fontSize: 14 }}
             >
-              {importPreview?.has_conflicts ? 'Применить и импортировать' : 'Импортировать'}
+              Импортировать
             </Button>
           ),
         ]}
         destroyOnClose
       >
-        <Space direction="vertical" style={{ width: '100%', fontSize: 14 }} size={16}>
+        <Space direction="vertical" style={{ width: '100%' }} size={12}>
           {!importFile && (
             <Upload.Dragger
               accept=".xlsx,.xls"
               showUploadList={false}
               beforeUpload={handleImportSelect}
               disabled={importLoading || importPreviewLoading || !!importResult}
-              style={{ padding: '24px 0' }}
+              style={{ padding: '16px 0' }}
             >
-              <InboxOutlined style={{ fontSize: 44, color: '#1890ff', margin: '8px 0' }} />
-              <p style={{ fontWeight: 600, fontSize: 15, margin: '6px 0' }}>Перетащите файл или нажмите для выбора</p>
-              <p style={{ color: '#8c8c8c', fontSize: 13 }}>Поддерживаются файлы форматов .xlsx и .xls</p>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>
+                Выберите или перетащите файл (.xlsx, .xls)
+              </div>
             </Upload.Dragger>
           )}
 
           {importFile && (
             <div style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              borderRadius: 8,
-              padding: '12px 16px',
+              border: '1px solid var(--border-color, #e5e7eb)',
+              borderRadius: 6,
+              padding: '8px 12px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              gap: 12,
             }}>
-              <Space size={12}>
-                <FileExcelOutlined style={{ fontSize: 28, color: '#16a34a' }} />
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: '#1e293b' }}>{importFile.name}</div>
-                  <div style={{ color: '#64748b', fontSize: 13 }}>
-                    {(importFile.size / 1024).toFixed(1)} КБ
-                  </div>
-                </div>
-              </Space>
+              <div style={{ fontSize: 13, minWidth: 0 }}>
+                <span style={{ fontWeight: 500 }}>{importFile.name}</span>
+                <span style={{ color: '#8c8c8c', marginLeft: 8 }}>
+                  {(importFile.size / 1024).toFixed(1)} КБ
+                </span>
+              </div>
               {!importLoading && !importResult && (
-                <Button size="middle" onClick={() => {
+                <Button size="small" onClick={() => {
                   setImportFile(null);
                   setImportPreview(null);
                   setImportError(null);
                   setRecruiterEmails({});
-                }} style={{ fontSize: 13 }}>
-                  Выбрать другой файл
+                }}>
+                  Другой файл
                 </Button>
               )}
             </div>
           )}
 
           {importPreviewLoading && (
-            <div style={{ textAlign: 'center', padding: '36px 12px' }}>
-              <Spin size="large" />
-              <div style={{ marginTop: 14, color: '#475569', fontSize: 14, fontWeight: 500 }}>
-                Анализ файла... Проверяем колонки, справочники и строки
-              </div>
+            <div style={{ textAlign: 'center', padding: '20px 0', color: '#8c8c8c', fontSize: 13 }}>
+              <Spin size="small" style={{ marginRight: 8 }} />
+              Проверка файла...
             </div>
           )}
 
           {importPreview && !importResult && (
             <>
-              {/* Статистика строк */}
-              <div style={{
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: 6,
-                padding: '8px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                fontSize: 13,
-                flexWrap: 'wrap',
-                gap: 12,
-              }}>
-                <span>Всего строк: <strong>{importPreview.total_rows}</strong></span>
-                <span style={{ color: '#0369a1' }}>К обновлению: <strong>{importPreview.existing_count}</strong></span>
-                <span style={{ color: '#15803d' }}>Новых вакансий: <strong>{importPreview.new_count}</strong></span>
+              <div style={{ fontSize: 13, color: '#595959' }}>
+                Строк: <strong>{importPreview.total_rows}</strong>
+                {' · '}К обновлению: <strong>{importPreview.existing_count}</strong>
+                {' · '}Новых: <strong>{importPreview.new_count}</strong>
+                {!importPreview.has_conflicts && !(importPreview.missing_status_dates?.length > 0) && (
+                  <span style={{ color: '#389e0d', marginLeft: 8 }}>— ошибок нет</span>
+                )}
               </div>
 
-              {/* Уведомление если нет конфликтов */}
-              {!importPreview.has_conflicts && !(importPreview.missing_status_dates?.length > 0) && (
-                <Alert
-                  type="success"
-                  showIcon
-                  message={<span style={{ fontSize: 14, fontWeight: 600 }}>Файл проверен</span>}
-                  description={<span style={{ fontSize: 13 }}>Все строки и справочники корректны. Можно начинать импорт.</span>}
-                />
-              )}
-
-              {/* Предупреждение о вакансиях в финальных статусах/Hold без даты изменения статуса */}
               {importPreview.missing_status_dates?.length > 0 && (
-                <Alert
-                  type="warning"
-                  showIcon
-                  message={
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>
-                      Не заполнена «Дата изм. статуса» ({importPreview.missing_status_dates.length} стр.)
-                    </span>
-                  }
-                  description={
-                    <div style={{ fontSize: 12, color: '#475569' }}>
-                      Для статусов «Отмена» / «Закрыта» / «Hold» дата смены статуса нужна для корректного учёта на дашбордах.
-                      <div style={{ marginTop: 4, maxHeight: 80, overflowY: 'auto' }}>
-                        {importPreview.missing_status_dates.slice(0, 15).map((item, i) => (
-                          <div key={i}>
-                            • Стр. {item.row} (ID {item.vacancy_id}, статус «{item.status}»{item.has_close_date ? ', есть дата закрытия' : ', дата закрытия тоже пуста'})
-                          </div>
-                        ))}
-                        {importPreview.missing_status_dates.length > 15 && (
-                          <div>...и ещё {importPreview.missing_status_dates.length - 15}</div>
-                        )}
+                <div style={{
+                  border: '1px solid #ffe58f',
+                  background: '#fffbe6',
+                  borderRadius: 6,
+                  padding: '8px 12px',
+                  fontSize: 12,
+                }}>
+                  <div style={{ fontWeight: 500, color: '#ad6800', marginBottom: 4 }}>
+                    Нет «Даты изм. статуса» ({importPreview.missing_status_dates.length}):
+                  </div>
+                  <div style={{ maxHeight: 80, overflowY: 'auto', color: '#595959' }}>
+                    {importPreview.missing_status_dates.slice(0, 15).map((item, i) => (
+                      <div key={i}>
+                        Стр. {item.row} · ID {item.vacancy_id} · {item.status}{item.has_close_date ? '' : ' (нет даты закрытия)'}
                       </div>
-                    </div>
-                  }
-                />
+                    ))}
+                    {importPreview.missing_status_dates.length > 15 && (
+                      <div>и ещё {importPreview.missing_status_dates.length - 15}</div>
+                    )}
+                  </div>
+                </div>
               )}
 
-              {/* Блок параметров и сопоставления данных */}
               {importPreview.has_conflicts && (
-                <div style={{
-                  background: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 8,
-                  padding: '14px 16px',
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    marginBottom: 12,
-                    paddingBottom: 8,
-                    borderBottom: '1px solid #f1f5f9',
-                  }}>
-                    <SettingOutlined style={{ color: '#0284c7', fontSize: 15 }} />
-                    <span style={{ fontWeight: 600, color: '#1e293b', fontSize: 14 }}>
-                      Параметры импорта
-                    </span>
-                  </div>
-
-                  {/* 1. Недостающие справочники */}
+                <Space direction="vertical" style={{ width: '100%' }} size={12}>
                   {importPreview.missing_dictionaries?.length > 0 && (
-                    <div style={{ marginBottom: 14 }}>
+                    <div>
                       <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         marginBottom: 6,
+                        fontSize: 13,
                       }}>
-                        <span style={{ fontWeight: 600, fontSize: 13, color: '#334155' }}>
-                          Новые значения справочников ({importPreview.missing_dictionaries.length}):
+                        <span style={{ fontWeight: 500 }}>
+                          Новые значения справочников ({importPreview.missing_dictionaries.length})
                         </span>
-                        <Space size={8} style={{ fontSize: 12 }}>
+                        <Space size={8}>
                           <Button size="small" type="link" onClick={selectAllDicts} style={{ padding: 0, height: 'auto', fontSize: 12 }}>
-                            Выбрать все
+                            Все
                           </Button>
-                          <span style={{ color: '#cbd5e1' }}>•</span>
                           <Button size="small" type="link" onClick={unselectAllDicts} style={{ padding: 0, height: 'auto', fontSize: 12 }}>
-                            Снять все
+                            Снять
                           </Button>
                         </Space>
                       </div>
 
                       <div style={{
-                        maxHeight: 180,
+                        maxHeight: 160,
                         overflowY: 'auto',
-                        background: '#fafbfc',
-                        border: '1px solid #e2e8f0',
+                        border: '1px solid var(--border-color, #e5e7eb)',
                         borderRadius: 6,
                       }}>
                         {importPreview.missing_dictionaries.map((dictItem) => {
                           const key = `${dictItem.dict_type}:::${dictItem.value}`;
-                          const isChecked = selectedDicts.has(key);
                           return (
                             <div key={key} style={{
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between',
-                              padding: '6px 10px',
-                              borderBottom: '1px solid #f1f5f9',
-                              fontSize: 13,
-                              gap: 10,
+                              padding: '5px 10px',
+                              borderBottom: '1px solid #f5f5f5',
+                              fontSize: 12,
+                              gap: 8,
                             }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                                <Checkbox
-                                  checked={isChecked}
-                                  onChange={() => toggleDictItem(key)}
-                                />
-                                <span style={{ fontWeight: 500, fontSize: 13, color: '#1e293b' }}>
-                                  {dictItem.value}
+                              <Checkbox
+                                checked={selectedDicts.has(key)}
+                                onChange={() => toggleDictItem(key)}
+                              >
+                                <span style={{ fontWeight: 500 }}>{dictItem.value}</span>
+                                <span style={{ color: '#8c8c8c', marginLeft: 6 }}>
+                                  ({dictItem.dict_title || dictItem.dict_type})
                                 </span>
-                                <Tag color="blue" style={{ fontSize: 11, padding: '0 6px', margin: 0, borderRadius: 3 }}>
-                                  {dictItem.dict_title || dictItem.dict_type}
-                                </Tag>
-                              </div>
-                              <span style={{ color: '#94a3b8', fontSize: 12, whiteSpace: 'nowrap' }}>
-                                {dictItem.count} {dictItem.count === 1 ? 'строка' : (dictItem.count > 1 && dictItem.count < 5 ? 'строки' : 'строк')}
+                              </Checkbox>
+                              <span style={{ color: '#8c8c8c', whiteSpace: 'nowrap' }}>
+                                {dictItem.count}
                               </span>
                             </div>
                           );
                         })}
                       </div>
-                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                        Выбранные значения будут автоматически добавлены в справочники
-                      </div>
                     </div>
                   )}
 
-                  {/* 2. Ненайденные рекрутеры */}
                   {importPreview.missing_recruiters?.length > 0 && (
-                    <div style={{ marginBottom: 14 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: 6 }}>
-                        <span style={{ fontWeight: 600, fontSize: 13, color: '#334155' }}>
-                          Рекрутеры, не найденные в системе ({importPreview.missing_recruiters.length}):
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+                        Рекрутеры не найдены ({importPreview.missing_recruiters.length}):{' '}
+                        <span style={{ fontWeight: 400, color: '#595959' }}>
+                          {importPreview.missing_recruiters.map(r => `${r.name} (${r.count})`).join(', ')}
                         </span>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                          {importPreview.missing_recruiters.map((rec, i) => (
-                            <Tag key={i} color="orange" style={{ margin: 0, fontSize: 12, padding: '1px 6px', borderRadius: 3 }}>
-                              {rec.name} ({rec.count} {rec.count === 1 ? 'стр.' : 'стр.'})
-                            </Tag>
-                          ))}
-                        </div>
                       </div>
 
                       <Radio.Group
@@ -1770,43 +1702,29 @@ const VacancyTable = ({
                         onChange={(e) => setRecruitersAction(e.target.value)}
                         style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
                       >
-                        <Radio value="leave_empty">
-                          <span style={{ fontSize: 13 }}>
-                            Оставить пустым <span style={{ color: '#64748b', fontSize: 12 }}>(рекомендуется)</span>
-                          </span>
-                        </Radio>
-                        <Radio value="create_users">
-                          <span style={{ fontSize: 13 }}>
-                            Создать учетные записи с ролью «Рекрутер»
-                          </span>
-                        </Radio>
+                        <Radio value="leave_empty">Оставить пустым</Radio>
+                        <Radio value="create_users">Создать рекрутеров</Radio>
                       </Radio.Group>
 
                       {recruitersAction === 'create_users' && (
                         <div style={{
                           marginTop: 8,
-                          background: '#fafbfc',
-                          border: '1px solid #e2e8f0',
+                          border: '1px solid var(--border-color, #e5e7eb)',
                           borderRadius: 6,
-                          padding: '8px 12px',
+                          padding: '8px 10px',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: 6,
                         }}>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>
-                            Корпоративный email для новых рекрутеров:
-                          </div>
                           {importPreview.missing_recruiters.map((rec) => (
-                            <div key={rec.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <span style={{ fontSize: 13, fontWeight: 500, minWidth: 140, color: '#1e293b' }}>
-                                {rec.name}:
-                              </span>
+                            <div key={rec.name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, minWidth: 130 }}>{rec.name}:</span>
                               <Input
                                 size="small"
-                                placeholder="например: a.mosina@company.ru"
+                                placeholder="email"
                                 value={recruiterEmails[rec.name] || ''}
                                 onChange={(e) => setRecruiterEmails(prev => ({ ...prev, [rec.name]: e.target.value }))}
-                                style={{ maxWidth: 280, fontSize: 13 }}
+                                style={{ maxWidth: 260 }}
                               />
                             </div>
                           ))}
@@ -1815,152 +1733,85 @@ const VacancyTable = ({
                     </div>
                   )}
 
-                  {/* 3. Вакансии без названия */}
                   {importPreview.missing_positions?.length > 0 && (
-                    <div style={{ marginBottom: 12 }}>
-                      <Checkbox
-                        checked={autoFillMissingPositions}
-                        onChange={(e) => setAutoFillMissingPositions(e.target.checked)}
-                      >
-                        <span style={{ fontSize: 13, color: '#1e293b' }}>
-                          Присвоить <strong>«Вакансия {'{ID}'}»</strong> строкам без названия ({importPreview.missing_positions.map(p => p.row).join(', ')})
-                        </span>
-                      </Checkbox>
-                    </div>
+                    <Checkbox
+                      checked={autoFillMissingPositions}
+                      onChange={(e) => setAutoFillMissingPositions(e.target.checked)}
+                    >
+                      <span style={{ fontSize: 13 }}>
+                        Назвать пустые как «Вакансия {'{ID}'}» (стр. {importPreview.missing_positions.map(p => p.row).join(', ')})
+                      </span>
+                    </Checkbox>
                   )}
 
-                  {/* 4. Прочерки в датах */}
-                  {importPreview.dash_dates_count > 0 && (
-                    <div style={{
-                      color: '#64748b',
-                      fontSize: 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      paddingTop: 6,
-                      borderTop: '1px solid #f1f5f9',
-                    }}>
-                      <InfoCircleOutlined style={{ color: '#94a3b8' }} />
-                      <span>Прочерки в датах ({importPreview.dash_dates_count} яч.) будут сохранены как пустые значения</span>
-                    </div>
-                  )}
-
-                  {/* 5. Прочие ошибки формата */}
                   {importPreview.other_errors?.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ color: '#dc2626', fontWeight: 600, fontSize: 13, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <CloseCircleOutlined style={{ color: '#dc2626' }} />
-                        <span>Ошибки формата данных ({importPreview.other_errors.length}):</span>
+                    <div style={{
+                      border: '1px solid #ffccc7',
+                      background: '#fff2f0',
+                      borderRadius: 6,
+                      padding: '8px 10px',
+                      fontSize: 12,
+                    }}>
+                      <div style={{ color: '#cf1322', fontWeight: 500, marginBottom: 4 }}>
+                        Ошибки ({importPreview.other_errors.length}):
                       </div>
-                      <div style={{
-                        maxHeight: 120,
-                        overflowY: 'auto',
-                        background: '#fff7f7',
-                        border: '1px solid #fecaca',
-                        borderRadius: 6,
-                        padding: '6px 10px',
-                        fontSize: 12,
-                        fontFamily: 'monospace',
-                      }}>
+                      <div style={{ maxHeight: 110, overflowY: 'auto', color: '#cf1322' }}>
                         {importPreview.other_errors.map((err, i) => (
-                          <div key={i} style={{ color: '#dc2626', marginBottom: 2 }}>
-                            • {err}
-                          </div>
+                          <div key={i}>{err}</div>
                         ))}
                       </div>
                     </div>
                   )}
-                </div>
+                </Space>
               )}
             </>
           )}
 
           {importError && (
             <div style={{
-              background: '#fff2f0',
               border: '1px solid #ffccc7',
-              borderRadius: 8,
-              padding: '14px 16px',
+              background: '#fff2f0',
+              borderRadius: 6,
+              padding: '8px 12px',
+              fontSize: 13,
             }}>
-              <div style={{ color: '#cf1322', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, marginBottom: importError.errors?.length ? 10 : 0 }}>
-                <CloseCircleOutlined style={{ color: '#cf1322' }} />
-                <span>{importError.message}</span>
-              </div>
+              <div style={{ color: '#cf1322', fontWeight: 500 }}>{importError.message}</div>
               {importError.errors?.length > 0 && (
-                <>
-                  <div style={{ fontSize: 13, color: '#64748b', marginBottom: 6 }}>
-                    Обнаружены ошибки ({importError.errors.length}):
-                  </div>
-                  <div style={{
-                    maxHeight: 180,
-                    overflowY: 'auto',
-                    background: '#ffffff',
-                    border: '1px solid #ffa39e',
-                    borderRadius: 6,
-                    padding: '8px 12px',
-                    fontSize: 13,
-                    lineHeight: '1.5',
-                  }}>
-                    {importError.errors.map((e, i) => (
-                      <div key={i} style={{ color: '#cf1322', marginBottom: 4, fontFamily: 'monospace' }}>
-                        • {e}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {importResult && (
-            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 8, padding: '14px 18px' }}>
-              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>Результат импорта:</div>
-              <Space size={24} style={{ fontSize: 14 }}>
-                <span style={{ color: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircleOutlined style={{ color: '#16a34a' }} /> Создано: <strong>{importResult.created}</strong>
-                </span>
-                <span style={{ color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <SyncOutlined style={{ color: '#2563eb' }} /> Обновлено: <strong>{importResult.updated}</strong>
-                </span>
-                <span style={{ color: '#475569' }}>
-                  Всего строк: <strong>{importResult.total_rows}</strong>
-                </span>
-              </Space>
-              {importResult.errors?.length > 0 && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ color: '#d97706', fontWeight: 600, fontSize: 13, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <ExclamationCircleOutlined style={{ color: '#d97706' }} />
-                    <span>Пропущены строки с ошибками ({importResult.errors.length}):</span>
-                  </div>
-                  <div style={{
-                    maxHeight: 180,
-                    overflowY: 'auto',
-                    background: '#fffbe6',
-                    border: '1px solid #ffe58f',
-                    borderRadius: 6,
-                    padding: '8px 12px',
-                    fontSize: 13,
-                    lineHeight: '1.5',
-                  }}>
-                    {importResult.errors.map((e, i) => (
-                      <div key={i} style={{ color: '#b45309', marginBottom: 4, fontFamily: 'monospace' }}>
-                        • {e}
-                      </div>
-                    ))}
-                  </div>
+                <div style={{ maxHeight: 140, overflowY: 'auto', marginTop: 6, fontSize: 12, color: '#cf1322' }}>
+                  {importError.errors.map((e, i) => (
+                    <div key={i}>{e}</div>
+                  ))}
                 </div>
               )}
             </div>
           )}
 
-          {!importFile && (
-            <div style={{
-              background: '#f8fafc', border: '1px solid #e2e8f0',
-              borderRadius: 6, padding: '10px 14px', fontSize: 13, color: '#475569',
-              display: 'flex', alignItems: 'center', gap: 8,
-            }}>
-              <InfoCircleOutlined style={{ color: '#64748b' }} />
-              <span>Импорт обновляет существующие вакансии по полю «ID вакансии» и создаёт новые. Доступен только суперадмину.</span>
+          {importResult && (
+            <div style={{ fontSize: 13 }}>
+              <div>
+                Создано: <strong>{importResult.created}</strong>
+                {' · '}Обновлено: <strong>{importResult.updated}</strong>
+                {' · '}Всего: <strong>{importResult.total_rows}</strong>
+              </div>
+              {importResult.errors?.length > 0 && (
+                <div style={{
+                  marginTop: 8,
+                  border: '1px solid #ffe58f',
+                  background: '#fffbe6',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                  fontSize: 12,
+                }}>
+                  <div style={{ color: '#ad6800', fontWeight: 500, marginBottom: 4 }}>
+                    Пропущено ({importResult.errors.length}):
+                  </div>
+                  <div style={{ maxHeight: 140, overflowY: 'auto', color: '#ad6800' }}>
+                    {importResult.errors.map((e, i) => (
+                      <div key={i}>{e}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </Space>
